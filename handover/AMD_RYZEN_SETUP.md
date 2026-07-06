@@ -164,16 +164,24 @@ The laptop restarts into Windows.
 
 ### Step 1D — Confirm SVM Is Now Active
 
-After Windows loads, open PowerShell and run:
+After Windows loads, open PowerShell (no Admin needed) and run:
 
 ```powershell
-# Check if virtualization is enabled
-(Get-ComputerInfo).HyperVRequirementVirtualizationFirmwareEnabled
+systeminfo | findstr /i "Virtualization Enabled In Firmware"
 ```
 
-Expected output: `True`
+Expected output:
+```
+Virtualization Enabled In Firmware: Yes
+```
 
-If it shows `False`, SVM is still disabled — return to BIOS and try again.
+If it shows `No`, SVM is still disabled — return to BIOS and try again.
+
+If the line does not appear at all, run the broader Hyper-V check:
+```powershell
+systeminfo | findstr /i "Hyper-V"
+```
+Look for `Virtualization Enabled In Firmware: Yes` among the results.
 
 ---
 
