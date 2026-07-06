@@ -24,6 +24,9 @@ const drawer = ref(mdAndUp.value)
 const referenceDataOpen = ref(false)
 // PHASE BBBB (BBBB-1a): User Management multi-level group expand state.
 const userMgmtOpen = ref(false)
+// T-NAV: Expandable module group states for UO and COI.
+const uoOpen = ref(false)
+const coiOpen = ref(false)
 // PHASE BBBB (BBBB-2a): pending access-request count for the nav badge (admins only).
 const pendingAccessCount = ref(0)
 
@@ -38,6 +41,8 @@ onMounted(() => {
     // Dropdown states
     referenceDataOpen.value = localStorage.getItem('sidebar_referenceData') === 'true'
     userMgmtOpen.value = localStorage.getItem('sidebar_userMgmt') === 'true'
+    uoOpen.value = localStorage.getItem('sidebar_uo') === 'true'
+    coiOpen.value = localStorage.getItem('sidebar_coi') === 'true'
   }
   // PHASE BBBB (BBBB-2a): load the pending access-request count for the badge.
   loadPendingAccessCount()
@@ -72,14 +77,23 @@ watch(userMgmtOpen, (val) => {
     localStorage.setItem('sidebar_userMgmt', String(val))
   }
 })
+watch(uoOpen, (val) => {
+  if (import.meta.client) {
+    localStorage.setItem('sidebar_uo', String(val))
+  }
+})
+watch(coiOpen, (val) => {
+  if (import.meta.client) {
+    localStorage.setItem('sidebar_coi', String(val))
+  }
+})
 
 // Main operational modules - filtered by user permissions
 const mainModules = computed(() => {
-  // MMM-C: workflow-ordered — Dashboard → UO → Infrastructure → Repair → GAD
+  // MMM-C: workflow-ordered — Dashboard → Repair → GAD
+  // T-NAV: UO and COI are now expandable groups rendered separately in the template.
   const allModules = [
     { title: 'Dashboard', icon: 'mdi-view-dashboard', to: '/dashboard', key: 'dashboard' },
-    { title: 'University Operations', icon: 'mdi-school', to: '/university-operations', key: 'university_operations' },
-    { title: 'Infrastructure Projects', icon: 'mdi-office-building', to: '/coi', key: 'coi' },
     { title: 'Repair Projects', icon: 'mdi-tools', to: '/repairs', key: 'repairs' },
     { title: 'GAD Parity', icon: 'mdi-gender-male-female', to: '/gad', key: 'gad' },
   ]
@@ -246,6 +260,8 @@ async function handleLogout() {
       <!-- Main Modules -->
       <v-list nav density="comfortable">
         <v-list-subheader>MODULES</v-list-subheader>
+
+        <!-- Dashboard (always first) -->
         <v-list-item
           v-for="item in mainModules"
           :key="item.to"
@@ -256,6 +272,85 @@ async function handleLogout() {
           rounded="lg"
           class="mb-1 ga-1"
         />
+
+        <!-- T-NAV: University Operations — expandable group (same v-list-group pattern as User Management) -->
+        <v-list-group v-if="canAccessModule('university_operations')" v-model="uoOpen" value="universityOps">
+          <template #activator="{ props }">
+            <v-list-item v-bind="props" prepend-icon="mdi-school" title="University Operations" color="primary" rounded="lg" class="mb-1" />
+          </template>
+          <v-list-item
+            to="/university-operations"
+            prepend-icon="mdi-chart-bar"
+            title="BAR"
+            color="primary"
+            rounded="lg"
+            class="mb-1 nav-child-item"
+          />
+          <v-list-item
+            prepend-icon="mdi-file-chart-outline"
+            color="primary"
+            rounded="lg"
+            class="mb-1 nav-child-item"
+            disabled
+          >
+            <template #title>
+              BED
+              <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Soon</v-chip>
+            </template>
+          </v-list-item>
+          <v-list-item
+            prepend-icon="mdi-file-document-outline"
+            color="primary"
+            rounded="lg"
+            class="mb-1 nav-child-item"
+            disabled
+          >
+            <template #title>
+              FAR
+              <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Soon</v-chip>
+            </template>
+          </v-list-item>
+        </v-list-group>
+
+        <!-- T-NAV: Infrastructure Projects (COI) — expandable group (same v-list-group pattern as User Management) -->
+        <v-list-group v-if="canAccessModule('coi')" v-model="coiOpen" value="infraProjects">
+          <template #activator="{ props }">
+            <v-list-item v-bind="props" prepend-icon="mdi-office-building" title="Infrastructure Projects" color="primary" rounded="lg" class="mb-1" />
+          </template>
+          <v-list-item
+            to="/coi"
+            prepend-icon="mdi-office-building-outline"
+            title="Infrastructure Projects"
+            color="primary"
+            rounded="lg"
+            class="mb-1 nav-child-item"
+          />
+          <v-list-item
+            prepend-icon="mdi-file-send-outline"
+            color="primary"
+            rounded="lg"
+            class="mb-1 nav-child-item"
+            disabled
+          >
+            <template #title>
+              Project Proposals
+              <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Soon</v-chip>
+            </template>
+          </v-list-item>
+          <v-list-item
+            prepend-icon="mdi-layers-outline"
+            color="primary"
+            rounded="lg"
+            class="mb-1 nav-child-item"
+            disabled
+          >
+            <template #title>
+              Tranche Management
+              <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Soon</v-chip>
+            </template>
+          </v-list-item>
+        </v-list-group>
+
       </v-list>
 
       <!-- PHASE BBBC (Task A): three labelled administration sections. -->
@@ -391,5 +486,11 @@ html {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   line-height: 1.3;
+}
+
+/* T-NAV: Child nav items — flush indent matching v-list-group__items override above */
+.nav-child-item {
+  padding-inline-start: 16px !important;
+  margin-inline-start: 0 !important;
 }
 </style>
