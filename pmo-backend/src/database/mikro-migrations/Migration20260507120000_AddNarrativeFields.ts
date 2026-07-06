@@ -17,15 +17,26 @@ export class Migration20260507120000_AddNarrativeFields extends Migration {
          ADD COLUMN IF NOT EXISTS facilities TEXT;`,
     );
 
-    this.addSql(
-      `ALTER TABLE construction_projects
-         ALTER COLUMN beneficiaries TYPE INTEGER
-         USING (CASE
-                  WHEN beneficiaries IS NULL OR beneficiaries = '' THEN NULL
-                  WHEN beneficiaries ~ '^[0-9]+$' THEN beneficiaries::INTEGER
-                  ELSE NULL
-                END);`,
-    );
+    // Guard: only cast when column is still VARCHAR (createSchema already creates it as INTEGER)
+    this.addSql(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'construction_projects'
+            AND column_name = 'beneficiaries'
+            AND data_type = 'character varying'
+        ) THEN
+          ALTER TABLE construction_projects
+            ALTER COLUMN beneficiaries TYPE INTEGER
+            USING (CASE
+                     WHEN beneficiaries IS NULL OR beneficiaries = '' THEN NULL
+                     WHEN beneficiaries ~ '^[0-9]+$' THEN beneficiaries::INTEGER
+                     ELSE NULL
+                   END);
+        END IF;
+      END $$;
+    `);
   }
 
   override async down(): Promise<void> {

@@ -228,6 +228,7 @@ export class AuthController {
   @Post('ldap')
   @UseGuards(AuthGuard('ldap'))
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute — mirrors /auth/login
   @ApiOperation({
     summary: 'LDAP login',
     description: 'Authenticate with institutional LDAP/AD credentials',

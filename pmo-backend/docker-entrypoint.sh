@@ -2,7 +2,7 @@
 set -e
 
 echo "Running database migrations..."
-npx mikro-orm migration:up
+node /app/migrate.js
 
 echo "Starting backend..."
 exec "$@"

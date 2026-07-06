@@ -22,3 +22,5 @@ prototype/
 
 # Local-only documentation (research, planning, internal notes — not shared via Git)
 docs/
+# Real-data migration dumps (PII/bcrypt) — transferred out-of-band, never committed
+database/migration-data/

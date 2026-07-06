@@ -63,15 +63,39 @@ export class AuthService {
       return null;
     }
 
-    // SSO-only account sentinel
-    if (user.googleId && (!user.passwordHash || user.passwordHash === '')) {
+    // Accounts with no local password hash — route to LDAP if configured.
+    // Covers both Google-only accounts (googleId set) and LDAP-provisioned accounts.
+    if (!user.passwordHash || user.passwordHash === '') {
+      const ldapOk = await this.attemptLdapAuth(identifier, password);
+      if (ldapOk) {
+        this.logger.log(`LDAP_UNIFIED_SUCCESS: user_id=${user.id}`);
+        user.failedLoginAttempts = 0;
+        user.accountLockedUntil = undefined;
+        await this.em.flush();
+        return {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          password_hash: user.passwordHash,
+          is_active: user.isActive,
+          google_id: user.googleId,
+          failed_login_attempts: user.failedLoginAttempts,
+          account_locked_until: user.accountLockedUntil,
+          first_name: user.firstName,
+          last_name: user.lastName,
+          rank_level: user.rankLevel,
+          campus: user.campus,
+          must_change_password: user.mustChangePassword,
+          profile_completed: user.profileCompleted,
+        };
+      }
       this.logger.warn(
-        `LOGIN_FAILURE: user_id=${user.id}, reason=SSO_ONLY_ACCOUNT`,
+        `LOGIN_FAILURE: user_id=${user.id}, reason=NO_LOCAL_PASSWORD_LDAP_FAIL`,
       );
       return null;
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordHash || '');
+    const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
       const attempts = (user.failedLoginAttempts ?? 0) + 1;
       user.failedLoginAttempts = attempts;
@@ -613,6 +637,34 @@ export class AuthService {
     return {
       message: 'Reset request submitted. An administrator will contact you.',
     };
+  }
+
+  // T-UNI: Programmatic LDAP auth for the unified login endpoint.
+  // Called when an account has no local passwordHash (LDAP or SSO-only accounts).
+  // Returns false immediately if LDAP_URL is not configured — no network call, no hang.
+  private async attemptLdapAuth(username: string, password: string): Promise<boolean> {
+    const ldapUrl = process.env.LDAP_URL || '';
+    if (!ldapUrl) return false;
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const LdapAuth = require('ldapauth-fork');
+    const auth = new LdapAuth({
+      url: ldapUrl,
+      bindDN: process.env.LDAP_BIND_DN || '',
+      bindCredentials: process.env.LDAP_BIND_PASSWORD || '',
+      searchBase: process.env.LDAP_SEARCH_BASE || '',
+      searchFilter: process.env.LDAP_SEARCH_FILTER || '(mail={{username}})',
+      tlsOptions: {
+        rejectUnauthorized: (process.env.LDAP_TLS_REJECT_UNAUTHORIZED ?? 'true') === 'true',
+      },
+    });
+
+    return new Promise((resolve) => {
+      auth.authenticate(username, password, (err: any, _user: any) => {
+        auth.close(() => {});
+        resolve(!err && !!_user);
+      });
+    });
   }
 
   private async buildSsoTokenForUser(

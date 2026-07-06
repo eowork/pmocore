@@ -1,0 +1,29 @@
+# PMO CORE — LDAP test directory seed
+# Loaded by osixia/openldap:1.5.0 at first startup via --copy-service.
+# Mounted at: /container/service/slapd/assets/config/bootstrap/ldif/custom/
+# Contains the ou=users branch and one test entry per local DB user.
+#
+# mail attribute MUST match the user's email in the local `users` table.
+# LdapStrategy.validate() looks up the local DB by email after LDAP auth succeeds.
+#
+# Test credentials (LDAP password — separate from local DB password):
+#   meoangelo.alcantara@carsu.edu.ph / testldap123
+#   pmoadmin@carsu.edu.ph            / testldap123
+
+dn: ou=users,dc=carsu,dc=edu,dc=ph
+objectClass: organizationalUnit
+ou: users
+
+dn: cn=meoangelo.alcantara,ou=users,dc=carsu,dc=edu,dc=ph
+objectClass: inetOrgPerson
+cn: meoangelo.alcantara
+sn: Alcantara
+mail: meoangelo.alcantara@carsu.edu.ph
+userPassword: testldap123
+
+dn: cn=pmoadmin,ou=users,dc=carsu,dc=edu,dc=ph
+objectClass: inetOrgPerson
+cn: pmoadmin
+sn: Admin
+mail: pmoadmin@carsu.edu.ph
+userPassword: testldap123

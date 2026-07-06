@@ -2,6 +2,7 @@
 import {
   adaptProjectDetail,
   adaptGalleryItem,
+  qualifyBackendUrl,
   type UIProjectDetail,
   type BackendProjectDetail,
   type BackendGalleryItem,
@@ -13,6 +14,7 @@ definePageMeta({})
 const route = useRoute()
 const router = useRouter()
 const api = useApi()
+const { public: { apiBase } } = useRuntimeConfig()
 
 const project = ref<UIProjectDetail | null>(null)
 const gallery = ref<UIGalleryItem[]>([])
@@ -76,7 +78,7 @@ async function fetchGallery() {
     const res = await api.get<{ data: BackendGalleryItem[] }>(
       `/api/public/construction-projects/${projectId}/gallery`,
     )
-    gallery.value = (res.data || []).map(adaptGalleryItem)
+    gallery.value = (res.data || []).map((b) => adaptGalleryItem(b, apiBase))
   } catch (err) {
     console.error('[COI Public Detail] Failed to fetch gallery:', err)
   } finally {

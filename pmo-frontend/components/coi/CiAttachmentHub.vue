@@ -7,6 +7,7 @@
 // Directive ZY-D1: this is the ONLY place attachment sections are rendered.
 
 import { KEY_DOC_TYPECODES, type StagedQueue } from '~/utils/coiFormState'
+import { qualifyBackendUrl } from '~/utils/adapters'
 
 interface HubDoc {
   id: string
@@ -89,6 +90,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: StagedQueue] }>()
 const api = useApi()
 const toast = useToast()
 const filter = useAttachmentFilter()
+const { public: { apiBase } } = useRuntimeConfig()
 
 const isStaging = computed(() => props.mode === 'staging')
 const hasProject = computed(() => !!props.projectId && !isStaging.value)
@@ -250,7 +252,7 @@ async function fetchGallery() {
   loadingGallery.value = true
   try {
     const res = await api.get<{ data: HubGallery[] }>(`/api/construction-projects/${props.projectId}/gallery`)
-    gallery.value = res.data || []
+    gallery.value = (res.data || []).map((img) => ({ ...img, imageUrl: qualifyBackendUrl(img.imageUrl, apiBase) }))
   } catch (err) {
     console.error('[CiAttachmentHub] fetch gallery failed:', err)
   } finally {
@@ -262,7 +264,14 @@ async function fetchDocTypes() {
     const res = await api.get<HubDocTypeGroup[] | { data: HubDocTypeGroup[] }>(
       '/api/construction-projects/document-types/grouped',
     )
-    docTypeGroups.value = Array.isArray(res) ? res : (res?.data || [])
+    const raw: HubDocTypeGroup[] = Array.isArray(res) ? res : (res?.data || [])
+    docTypeGroups.value = raw.map((g) => ({
+      ...g,
+      types: g.types.map((t) => ({
+        ...t,
+        templateUrl: qualifyBackendUrl(t.templateUrl, apiBase) || null,
+      })),
+    }))
   } catch (err) {
     console.error('[CiAttachmentHub] fetch grouped doc types failed:', err)
     docTypeGroups.value = []

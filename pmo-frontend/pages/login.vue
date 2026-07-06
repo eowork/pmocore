@@ -50,8 +50,9 @@ function closeResetDialog() {
 }
 
 // Phase HT: Google OAuth (Directive 206)
+const runtimeConfig = useRuntimeConfig()
 function handleGoogleLogin() {
-  window.location.href = '/api/auth/google'
+  window.location.href = `${runtimeConfig.public.apiBase}/api/auth/google`
 }
 
 async function handleLogin() {

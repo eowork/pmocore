@@ -1,8 +1,13 @@
 import 'dotenv/config';
-import { existsSync, readFileSync } from 'node:fs';
-import { GeneratedCacheAdapter, Options } from '@mikro-orm/core';
+import { Options, ReflectMetadataProvider } from '@mikro-orm/core';
 import { PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { TsMorphMetadataProvider } from '@mikro-orm/reflection';
+
+// Production (Docker/compiled JS): ReflectMetadataProvider reads decorator metadata baked
+// in by the TypeScript compiler (emitDecoratorMetadata: true) — no ts-morph, no TS sources needed.
+// Development: TsMorphMetadataProvider reads .ts sources directly, so explicit @Property types
+// are optional.
+const isProduction = process.env.NODE_ENV === 'production';
 
 const config: Options<PostgreSqlDriver> = {
   driver: PostgreSqlDriver,
@@ -11,24 +16,13 @@ const config: Options<PostgreSqlDriver> = {
   dbName: process.env.DATABASE_NAME || 'pmo_dashboard',
   user: process.env.DATABASE_USER || 'postgres',
   password: process.env.DATABASE_PASSWORD || 'postgres',
-  entities: ['./dist/database/entities/**/*.entity.js'],
-  entitiesTs: ['./src/database/entities/**/*.entity.ts'],
-  metadataProvider: TsMorphMetadataProvider,
-  // Production (Docker/Linux) loads a build-time combined metadata cache so the JS-only
-  // runtime image never parses TS sources or runs ts-morph at boot. The cache is emitted by
-  // `mikro-orm cache:generate --combined` in the Dockerfile build stage (writes ./metadata.json).
-  // Dev (no metadata.json present) transparently falls back to TsMorphMetadataProvider.
-  metadataCache: {
-    enabled: true,
-    ...(existsSync('./metadata.json')
-      ? {
-          adapter: GeneratedCacheAdapter,
-          options: {
-            data: JSON.parse(readFileSync('./metadata.json', { encoding: 'utf8' })),
-          },
-        }
-      : {}),
-  },
+  // Entities live in multiple locations (database/entities, activity-logs/, contractor-auth/entities/),
+  // so the glob spans the whole tree — NestJS autoLoadEntities sees all 56 via forFeature, but the
+  // standalone migrate.js relies on this glob alone. A narrower path would make createSchema() skip
+  // activity_logs and the contractor tables on a fresh deploy.
+  entities: ['./dist/**/*.entity.js'],
+  entitiesTs: ['./src/**/*.entity.ts'],
+  metadataProvider: isProduction ? ReflectMetadataProvider : TsMorphMetadataProvider,
   migrations: {
     tableName: 'mikro_orm_migrations',
     // Runtime image ships only ./dist; migrations are compiled to dist/database/mikro-migrations.

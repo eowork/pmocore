@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { adaptProjectDetail, adaptGalleryItem, type UIProjectDetail, type BackendProjectDetail, type BackendGalleryItem, type UIGalleryItem, type PublicationStatus } from '~/utils/adapters'
+import { adaptProjectDetail, adaptGalleryItem, qualifyBackendUrl, type UIProjectDetail, type BackendProjectDetail, type BackendGalleryItem, type UIGalleryItem, type PublicationStatus } from '~/utils/adapters'
 import { getStatusColor, getPublicationStatusColor } from '~/utils/status-colors'
 import { formatDate } from '~/utils/userFormat'
 import { KEY_DOC_TYPECODES } from '~/utils/coiFormState'
@@ -17,6 +17,7 @@ definePageMeta({
 const route = useRoute()
 const router = useRouter()
 const api = useApi()
+const { public: { apiBase } } = useRuntimeConfig()
 const toast = useToast()
 const { isAdmin, isStaff, canEdit, canApprove } = usePermissions()
 const authStore = useAuthStore()
@@ -266,7 +267,7 @@ async function fetchGallery() {
   loadingGallery.value = true
   try {
     const res = await api.get<{ data: BackendGalleryItem[] }>(`/api/construction-projects/${projectId}/gallery`)
-    gallery.value = (res.data || []).map(adaptGalleryItem)
+    gallery.value = (res.data || []).map((b) => adaptGalleryItem(b, apiBase))
   } catch (err) {
     console.error('[COI Detail] Failed to fetch gallery:', err)
   } finally {

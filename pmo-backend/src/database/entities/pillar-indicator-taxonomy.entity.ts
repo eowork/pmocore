@@ -9,7 +9,9 @@ export class PillarIndicatorTaxonomy {
   @Property({ length: 50 })
   pillarType!: string;
 
-  @Property({ length: 255 })
+  // 500 to fit the longest BAR1 indicator (AE-OC-01 multi-part descriptor, 447 chars);
+  // matches the live dev DB column width.
+  @Property({ length: 500 })
   indicatorName!: string;
 
   @Property({ nullable: true, length: 50 })

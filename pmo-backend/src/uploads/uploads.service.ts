@@ -15,7 +15,7 @@ export class UploadsService {
   ) {
     this.maxFileSize = this.configService.get<number>(
       'MAX_FILE_SIZE',
-      25 * 1024 * 1024,
+      10 * 1024 * 1024,
     );
     const mimeTypesStr = this.configService.get<string>(
       'ALLOWED_MIME_TYPES',

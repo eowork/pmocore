@@ -1,15 +1,15 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-pmo_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PG18+ images store data in a version subdir and expect the mount at
+      # /var/lib/postgresql (NOT /data) — see docker-library/postgres#1259.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -26,11 +26,15 @@ services:
     env_file:
       - ./pmo-backend/.env
     environment:
+      # Force production in the container — overrides NODE_ENV=development from the
+      # dev .env (env_file). Dev mode would select TsMorphMetadataProvider, which
+      # reads ./src/*.entity.ts (absent from the compiled image) and crashes startup.
+      NODE_ENV: production
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
       DATABASE_USER: ${POSTGRES_USER:-postgres}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       PORT: 3000
     depends_on:
       postgres:
@@ -40,7 +44,7 @@ services:
     volumes:
       - backend_uploads:/app/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -63,6 +67,26 @@ services:
         condition: service_healthy
     ports:
       - "${FRONTEND_PORT:-3001}:3000"
+
+  # T5a — Self-hosted LDAP test directory (proves auth before MIS cutover)
+  # NOT started by default. Start explicitly with:
+  #   docker compose --profile ldap-test up -d
+  # Then add LDAP_* vars to pmo-backend/.env and run:
+  #   docker compose up -d backend   (recreates backend with LDAP env active)
+  # See ldap-test/MIS_SWAP.md for the full procedure and MIS swap guide.
+  openldap:
+    profiles: ["ldap-test"]
+    image: osixia/openldap:1.5.0
+    command: ["--copy-service"]
+    environment:
+      LDAP_ORGANISATION: CSU CORE
+      LDAP_DOMAIN: carsu.edu.ph
+      LDAP_ADMIN_PASSWORD: testldapadmin
+      LDAP_TLS: "false"
+    volumes:
+      - ./ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
+    ports:
+      - "1389:389"
 
 volumes:
   pgdata:

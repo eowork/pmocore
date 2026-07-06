@@ -701,10 +701,21 @@ export function adaptFinancial(backend: BackendFinancial): UIFinancial {
   }
 }
 
-export function adaptGalleryItem(backend: BackendGalleryItem): UIGalleryItem {
+// Prepends apiBase to backend-relative asset paths (/uploads/, /templates/).
+// In dev mode apiBase is '' so devProxy continues to handle them.
+// In Docker production apiBase is 'http://localhost:3000' (set via NUXT_PUBLIC_API_BASE).
+export function qualifyBackendUrl(path: string | null | undefined, apiBase: string): string {
+  if (!path) return ''
+  if (path.startsWith('/uploads/') || path.startsWith('/templates/')) {
+    return `${apiBase}${path}`
+  }
+  return path
+}
+
+export function adaptGalleryItem(backend: BackendGalleryItem, apiBase = ''): UIGalleryItem {
   return {
     id: backend.id,
-    imageUrl: backend.imageUrl,
+    imageUrl: qualifyBackendUrl(backend.imageUrl, apiBase),
     caption: backend.caption || '',
     category: backend.category || 'IN_PROGRESS',
     isFeatured: backend.isFeatured || false,

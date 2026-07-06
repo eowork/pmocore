@@ -762,7 +762,7 @@ export class UniversityOperationsService {
       return this.findOne(id);
     }
 
-    let setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+    let setClause = fields.map((f) => `${f} = ?`).join(', ');
     const values: any[] = fields.map((f) =>
       f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
     );
@@ -777,13 +777,12 @@ export class UniversityOperationsService {
           `submitted_at = NULL`,
         ];
       } else {
-        const nextIdx = fields.length + 1;
         resetFields = [
           `publication_status = 'DRAFT'`,
           `reviewed_by = NULL`,
           `reviewed_at = NULL`,
           `review_notes = NULL`,
-          `submitted_by = $${nextIdx}`,
+          `submitted_by = ?`,
           `submitted_at = NOW()`,
         ];
         values.push(userId);
@@ -795,8 +794,8 @@ export class UniversityOperationsService {
 
     await this.em.getConnection().execute(
       `UPDATE university_operations
-       SET ${setClause}, updated_by = $${values.length + 1}, updated_at = NOW()
-       WHERE id = $${values.length + 2} AND deleted_at IS NULL
+       SET ${setClause}, updated_by = ?, updated_at = NOW()
+       WHERE id = ? AND deleted_at IS NULL
        RETURNING *`,
       [...values, userId, id],
     );
@@ -1857,8 +1856,10 @@ export class UniversityOperationsService {
     }
 
     // Perform dynamic field update (same logic as generic updateIndicator, excluding pillar_indicator_id)
+    // reported_quarter is also excluded: it is an immutable partitioning key set at CREATE time;
+    // mutating it via PATCH on a NULL-quarter row triggers the uq_oi_quarterly_per_quarter constraint.
     const fields = Object.keys(dto).filter(
-      (k) => dto[k] !== undefined && k !== 'pillar_indicator_id',
+      (k) => dto[k] !== undefined && k !== 'pillar_indicator_id' && k !== 'reported_quarter',
     );
     if (fields.length === 0) {
       // No changes, return current state with metrics
@@ -1986,15 +1987,15 @@ export class UniversityOperationsService {
       return current[0];
     }
 
-    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+    const setClause = fields.map((f) => `${f} = ?`).join(', ');
     const values = fields.map((f) =>
       f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
     );
 
     const result = await this.em.getConnection().execute(
       `UPDATE operation_indicators
-       SET ${setClause}, updated_by = $${fields.length + 1}, updated_at = NOW()
-       WHERE id = $${fields.length + 2}
+       SET ${setClause}, updated_by = ?, updated_at = NOW()
+       WHERE id = ?
        RETURNING *`,
       [...values, userId, indicatorId],
     );
@@ -2154,15 +2155,15 @@ export class UniversityOperationsService {
       return this.computeFinancialMetrics(current[0]);
     }
 
-    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+    const setClause = fields.map((f) => `${f} = ?`).join(', ');
     const values = fields.map((f) =>
       f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
     );
 
     const result = await this.em.getConnection().execute(
       `UPDATE operation_financials
-       SET ${setClause}, updated_by = $${fields.length + 1}, updated_at = NOW()
-       WHERE id = $${fields.length + 2}
+       SET ${setClause}, updated_by = ?, updated_at = NOW()
+       WHERE id = ?
        RETURNING *`,
       [...values, userId, financialId],
     );
