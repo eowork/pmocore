@@ -89,6 +89,24 @@ async function handleLogin() {
 
 <template>
   <div class="login-container">
+    <!-- T-HOME-POLISH: fixed top-left return path, out of the form's flow so it
+         doesn't compete with the centered heading below it. -->
+    <v-tooltip text="Back to PMO CORE home" location="bottom">
+      <template #activator="{ props: tipProps }">
+        <v-btn
+          v-bind="tipProps"
+          to="/"
+          icon
+          variant="flat"
+          size="small"
+          class="back-home-btn"
+          aria-label="Back to PMO CORE home"
+        >
+          <v-icon size="20">mdi-arrow-left</v-icon>
+        </v-btn>
+      </template>
+    </v-tooltip>
+
     <!-- Left Panel: Branding -->
     <div class="branding-panel">
       <div class="branding-content">
@@ -288,6 +306,22 @@ async function handleLogin() {
   width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
+  position: relative;
+}
+
+/* T-HOME-POLISH: fixed corner affordance — reads correctly over both the dark
+   branding panel (desktop) and the light form panel (mobile). */
+.back-home-btn {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  background-color: rgba(255, 255, 255, 0.92);
+  color: #003300;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.back-home-btn:hover {
+  background-color: #ffffff;
 }
 
 /* Left Panel - Branding */

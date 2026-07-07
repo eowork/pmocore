@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { adaptProjects, type UIProject, type BackendProject } from '~/utils/adapters'
 
-definePageMeta({})
+// T-HOME (TH-10): public shell — anonymous visitors must not see the admin chrome.
+definePageMeta({ layout: 'public' })
 
 const router = useRouter()
 const api = useApi()

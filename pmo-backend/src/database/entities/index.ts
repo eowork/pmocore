@@ -51,3 +51,5 @@ export { QuarterlyReportSubmission } from './quarterly-report-submission.entity'
 export { FiscalYear } from './fiscal-year.entity';
 export { PillarIndicatorTaxonomy } from './pillar-indicator-taxonomy.entity';
 export { OperationOrganizationalInfo } from './operation-organizational-info.entity';
+export { HomepageSetting } from './homepage-setting.entity';
+export { HomepageItem } from './homepage-item.entity';

@@ -148,6 +148,94 @@ async function seedFreshDatabase(orm) {
     WHERE NOT EXISTS (SELECT 1 FROM system_settings);
   `);
 
+  // T-HOME-CMS (THC-1): default public-homepage content. Fresh DBs fake-mark
+  // Migration20260707000000_CreateHomepageContent (ADR-023), so its seed rows
+  // must be duplicated here. Idempotent: inserts only when the tables are empty.
+  await conn.execute(`
+    INSERT INTO homepage_settings (setting_key, setting_value, data_type)
+    SELECT * FROM (VALUES
+      ('hero_headline', 'Caraga State University PMO CORE', 'string'),
+      ('hero_subtitle', 'Centralized Operations and Reporting Engine', 'string'),
+      ('hero_body', 'PMO CORE is the University''s integrated platform for planning, monitoring, and reporting — bringing infrastructure projects, university operations, and institutional programs into one transparent system managed by the Project Management Office.', 'string'),
+      ('about_core_title', 'About PMO CORE', 'string'),
+      ('about_core_body', 'CORE stands for Centralized Operations and Reporting Engine. It is maintained by the Project Management Office of Caraga State University as the single source of truth for university project and operations reporting. Records pass through a review-and-approval workflow before publication, and only information approved for public viewing appears on this site.', 'string'),
+      ('footer_mission', 'PMO CORE publishes infrastructure and university operations information to promote transparency and accountability across CSU campuses.', 'string'),
+      ('contact_address', 'Ampayon, Butuan City, Agusan del Norte', 'string'),
+      ('contact_website', 'www.carsu.edu.ph', 'string'),
+      ('social_links', '[]', 'json')
+    ) AS v(setting_key, setting_value, data_type)
+    WHERE NOT EXISTS (SELECT 1 FROM homepage_settings);
+  `);
+
+  // T-HOME-CMS-4 (TH4-4): Transparency section copy.
+  await conn.execute(`
+    INSERT INTO homepage_settings (setting_key, setting_value, data_type)
+    VALUES
+      ('transparency_title', 'Why PMO CORE Exists', 'string'),
+      ('transparency_body', 'The Project Management Office maintains PMO CORE so that students, employees, and the public can see how university infrastructure and operations are planned, funded, and delivered. Only records approved for public viewing appear here.', 'string')
+    ON CONFLICT (setting_key) DO NOTHING;
+  `);
+
+  // T-HOME-CMS-2 (THM-1/THM-5): theme preset + section visibility/order config.
+  // Separate ON CONFLICT insert (not the "table empty" guard above) — these two
+  // keys also need to land on databases where homepage_settings is already seeded.
+  await conn.execute(`
+    INSERT INTO homepage_settings (setting_key, setting_value, data_type)
+    VALUES ('homepage_theme', 'light_emerald', 'string')
+    ON CONFLICT (setting_key) DO NOTHING;
+  `);
+  await conn.execute(`
+    INSERT INTO homepage_settings (setting_key, setting_value, data_type)
+    VALUES (
+      'homepage_sections_config',
+      '[{"key":"about_core","visible":true,"order":1},{"key":"highlights","visible":true,"order":2},{"key":"featured_projects","visible":true,"order":3},{"key":"announcements","visible":true,"order":4},{"key":"latest_updates","visible":true,"order":5},{"key":"transparency","visible":true,"order":6},{"key":"faq","visible":true,"order":7}]',
+      'json'
+    )
+    ON CONFLICT (setting_key) DO NOTHING;
+  `);
+
+  await conn.execute(`
+    INSERT INTO homepage_items (section_key, item_order, title, body, icon, link_url, value_source, manual_value)
+    SELECT * FROM (VALUES
+      ('highlight', 1, 'Centralized Reporting', 'Infrastructure, operations, and program reporting unified in one university-wide platform.', 'mdi-database-outline', NULL, 'manual', NULL),
+      ('highlight', 2, 'Transparent Governance', 'Every published record passes a review-and-approval workflow before public release.', 'mdi-scale-balance', NULL, 'manual', NULL),
+      ('highlight', 3, 'Quarterly Publication', 'Accomplishments and progress are reported on a quarterly cycle aligned with national standards.', 'mdi-calendar-check-outline', NULL, 'manual', NULL),
+      ('highlight', 4, 'University-Wide Reach', 'Serving both the Main and Cabadbaran campuses under one unified reporting platform.', 'mdi-map-marker-radius-outline', NULL, 'manual', '2 Campuses'),
+      ('faq', 1, 'What is PMO CORE?', 'PMO CORE (Centralized Operations and Reporting Engine) is the public transparency portal of the Project Management Office of Caraga State University. It publishes information on infrastructure projects, repairs, and university operations across CSU campuses.', NULL, NULL, NULL, NULL),
+      ('faq', 2, 'Who maintains the data?', 'Records are entered and maintained by authorized PMO personnel. Each record passes through a review-and-approval workflow before it is published.', NULL, NULL, NULL, NULL),
+      ('faq', 3, 'How often is the information updated?', 'Reporting follows a quarterly cycle aligned with university and national budget-reporting standards. Individual project records may be updated more frequently as progress reports are filed.', NULL, NULL, NULL, NULL),
+      ('faq', 4, 'Why are some projects not shown here?', 'Only records approved for public viewing appear on this site. Drafts, records under review, and internal working documents are not published.', NULL, NULL, NULL, NULL),
+      ('faq', 5, 'Who can edit the data?', 'Only authenticated PMO staff with the appropriate role can create or modify records. Public visitors have read-only access to published information.', NULL, NULL, NULL, NULL),
+      ('quick_link', 1, 'Published Projects', 'Browse published infrastructure projects across all campuses.', 'mdi-office-building-outline', '/coi/public', NULL, NULL),
+      ('quick_link', 2, 'Staff Sign In', 'Authorized personnel access for data entry and review.', 'mdi-login', '/login', NULL, NULL)
+    ) AS v(section_key, item_order, title, body, icon, link_url, value_source, manual_value)
+    WHERE NOT EXISTS (SELECT 1 FROM homepage_items);
+  `);
+
+  // T-HOME-CMS-4 (TH4-4): About PMO CORE facets + Transparency pillars —
+  // previously hardcoded in the .vue files, now CMS-editable. Separate guards
+  // (not the "table empty" check above) since these two section_keys are new.
+  await conn.execute(`
+    INSERT INTO homepage_items (section_key, item_order, title, body, icon)
+    SELECT * FROM (VALUES
+      ('about_facet', 1, 'Centralized', 'One platform for infrastructure, operations, and program reporting across all CSU campuses.', 'mdi-hub-outline'),
+      ('about_facet', 2, 'Operations', 'Live monitoring of university projects and quarterly accomplishments from proposal to completion.', 'mdi-cog-outline'),
+      ('about_facet', 3, 'Reporting', 'Structured, standards-aligned reports reviewed and approved before publication.', 'mdi-file-chart-outline'),
+      ('about_facet', 4, 'Engine', 'The system that powers transparency and evidence-based decisions for university governance.', 'mdi-engine-outline')
+    ) AS v(section_key, item_order, title, body, icon)
+    WHERE NOT EXISTS (SELECT 1 FROM homepage_items WHERE section_key = 'about_facet');
+  `);
+  await conn.execute(`
+    INSERT INTO homepage_items (section_key, item_order, title, body, icon)
+    SELECT * FROM (VALUES
+      ('transparency_pillar', 1, 'Transparency', 'Published project records are open to the public, no account required.', 'mdi-eye-outline'),
+      ('transparency_pillar', 2, 'Accountability', 'Every published record passes a review-and-approval workflow before release.', 'mdi-scale-balance'),
+      ('transparency_pillar', 3, 'Monitoring', 'Physical progress and timelines are tracked from proposal to completion.', 'mdi-chart-timeline-variant'),
+      ('transparency_pillar', 4, 'Governance', 'Reporting follows university and national budget-reporting standards.', 'mdi-domain')
+    ) AS v(section_key, item_order, title, body, icon)
+    WHERE NOT EXISTS (SELECT 1 FROM homepage_items WHERE section_key = 'transparency_pillar');
+  `);
+
   console.log('[seed] Reference data seeded.');
 
   // BAR1 pillar-indicator taxonomy — authoritative 14-indicator set, extracted from the
