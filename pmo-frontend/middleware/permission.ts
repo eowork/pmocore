@@ -63,6 +63,15 @@ export default defineNuxtRouteMiddleware((to) => {
       return navigateTo('/dashboard')
     }
   }
+  // T-HOME-CMS (THC-6): Homepage Management — any Admin/SuperAdmin (backend RolesGuard
+  // allows the Admin role; no 'users' grant required). Carved out before the broad
+  // /admin guard, which additionally demands canManageUsers.
+  else if (to.path.startsWith('/admin/homepage-management')) {
+    if (!isAdmin.value && !isSuperAdmin.value) {
+      console.warn('[Permission] Access denied to /admin/homepage-management - insufficient permissions')
+      return navigateTo('/dashboard')
+    }
+  }
   // Admin-only routes (everything else under /admin)
   else if (to.path.startsWith('/admin')) {
     if (!isSuperAdmin.value && !canManageUsers.value) {

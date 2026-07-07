@@ -26,6 +26,10 @@ export class MediaService {
     'construction_project',
     'repair_project',
     'university_operation',
+    // T-HOME-CMS (THC-2): homepage CMS images (carousel slides, card banners).
+    'homepage_hero',
+    'homepage_carousel',
+    'homepage_card',
   ];
 
   constructor(

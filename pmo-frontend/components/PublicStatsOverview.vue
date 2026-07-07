@@ -1,36 +1,22 @@
 <script setup lang="ts">
-interface PublicProject {
-  id: string
-  status?: string | null
-}
+// T-HOME (TH-5): quick statistics — consumes the shared published-projects
+// composable (no fetch of its own) and renders responsive stat tiles.
+const { fetchOnce, loading, total, ongoing, completed, totalContractValue } = usePublicProjects()
 
-const api = useApi()
+onMounted(fetchOnce)
 
-const total = ref(0)
-const ongoing = ref(0)
-const completed = ref(0)
-const loading = ref(true)
-
-onMounted(async () => {
-  try {
-    const response = await api.get<{ data: PublicProject[] }>(
-      '/api/public/construction-projects?publication_status=PUBLISHED',
-    )
-    const list = response.data || []
-    total.value = list.length
-    ongoing.value = list.filter(p => (p.status || '').toUpperCase() === 'ONGOING').length
-    completed.value = list.filter(p => (p.status || '').toUpperCase() === 'COMPLETED').length
-  } catch {
-    // Public stats are non-critical; leave at zero on failure
-  } finally {
-    loading.value = false
-  }
+const pesoCompact = new Intl.NumberFormat('en-PH', {
+  style: 'currency',
+  currency: 'PHP',
+  notation: 'compact',
+  maximumFractionDigits: 1,
 })
 
 const tiles = computed(() => [
-  { label: 'Total Published Projects', value: total.value, icon: 'mdi-clipboard-list-outline' },
-  { label: 'Ongoing', value: ongoing.value, icon: 'mdi-progress-clock' },
-  { label: 'Completed', value: completed.value, icon: 'mdi-check-circle-outline' },
+  { label: 'Published Projects', value: String(total.value), icon: 'mdi-clipboard-list-outline' },
+  { label: 'Ongoing', value: String(ongoing.value), icon: 'mdi-progress-clock' },
+  { label: 'Completed', value: String(completed.value), icon: 'mdi-check-circle-outline' },
+  { label: 'Total Contract Value', value: pesoCompact.format(totalContractValue.value), icon: 'mdi-cash-multiple' },
 ])
 </script>
 
@@ -47,20 +33,20 @@ const tiles = computed(() => [
         <v-col
           v-for="tile in tiles"
           :key="tile.label"
-          cols="12"
-          md="4"
+          cols="6"
+          sm="3"
         >
-          <v-card class="pa-6 text-center" variant="elevated">
-            <v-icon :icon="tile.icon" size="40" color="figma-accent" class="mb-3" />
-            <div class="text-h3 font-weight-bold text-figma-primary">
-              <v-progress-circular
-                v-if="loading"
-                :size="32"
-                :width="3"
-                indeterminate
-                color="figma-primary"
-              />
-              <span v-else>{{ tile.value }}</span>
+          <v-skeleton-loader v-if="loading" type="card" height="150" rounded="lg" />
+          <v-card
+            v-else
+            class="pa-4 pa-sm-6 text-center h-100"
+            variant="elevated"
+            role="status"
+            :aria-label="`${tile.label}: ${tile.value}`"
+          >
+            <v-icon :icon="tile.icon" size="36" color="figma-accent" class="mb-3" />
+            <div class="text-h4 text-sm-h3 font-weight-bold text-figma-primary">
+              {{ tile.value }}
             </div>
             <div class="text-subtitle-2 text-figma-muted mt-1">{{ tile.label }}</div>
           </v-card>

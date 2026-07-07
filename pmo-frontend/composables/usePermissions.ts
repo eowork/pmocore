@@ -75,7 +75,7 @@ const LEVEL_PERMISSIONS: Record<string, ModulePermissions> = {
  * Includes User Management and Reference Data modules (Contractors, Funding Sources)
  * Per research.md Section 1.33.E: Reference Data hidden from sidebar for non-Admin users
  */
-const ADMIN_ONLY_MODULES = ['users', 'contractors', 'funding-sources', 'funding_sources']
+const ADMIN_ONLY_MODULES = ['users', 'contractors', 'funding-sources', 'funding_sources', 'homepage']
 
 /**
  * Reference data modules - Contractors and Funding Sources

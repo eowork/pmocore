@@ -9,7 +9,8 @@ import {
   type UIGalleryItem,
 } from '~/utils/adapters'
 
-definePageMeta({})
+// T-HOME (TH-10): public shell — anonymous visitors must not see the admin chrome.
+definePageMeta({ layout: 'public' })
 
 const route = useRoute()
 const router = useRouter()

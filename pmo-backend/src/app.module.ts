@@ -29,6 +29,7 @@ import { CommonModule } from './common/common.module';
 import { ActivityLogModule } from './activity-logs/activity-log.module';
 import { ContractorAuthModule } from './contractor-auth/contractor-auth.module';
 import { AccessRequestsModule } from './access-requests/access-requests.module';
+import { HomepageModule } from './homepage/homepage.module';
 import { JwtAuthGuard } from './auth/guards';
 
 @Module({
@@ -103,6 +104,8 @@ import { JwtAuthGuard } from './auth/guards';
     ContractorAuthModule,
     // Self-service access requests (Phase BBBA)
     AccessRequestsModule,
+    // CMS-backed public homepage content (T-HOME-CMS)
+    HomepageModule,
   ],
   controllers: [AppController],
   providers: [

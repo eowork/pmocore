@@ -27,6 +27,9 @@ const userMgmtOpen = ref(false)
 // T-NAV: Expandable module group states for UO and COI.
 const uoOpen = ref(false)
 const coiOpen = ref(false)
+// T-HOME-CMS-3 (TH3-6): Public Website group (Homepage Management + reserved
+// future children) — same expand/persist pattern as the groups above.
+const publicWebsiteOpen = ref(false)
 // PHASE BBBB (BBBB-2a): pending access-request count for the nav badge (admins only).
 const pendingAccessCount = ref(0)
 
@@ -43,6 +46,7 @@ onMounted(() => {
     userMgmtOpen.value = localStorage.getItem('sidebar_userMgmt') === 'true'
     uoOpen.value = localStorage.getItem('sidebar_uo') === 'true'
     coiOpen.value = localStorage.getItem('sidebar_coi') === 'true'
+    publicWebsiteOpen.value = localStorage.getItem('sidebar_publicWebsite') === 'true'
   }
   // PHASE BBBB (BBBB-2a): load the pending access-request count for the badge.
   loadPendingAccessCount()
@@ -85,6 +89,11 @@ watch(uoOpen, (val) => {
 watch(coiOpen, (val) => {
   if (import.meta.client) {
     localStorage.setItem('sidebar_coi', String(val))
+  }
+})
+watch(publicWebsiteOpen, (val) => {
+  if (import.meta.client) {
+    localStorage.setItem('sidebar_publicWebsite', String(val))
   }
 })
 
@@ -146,8 +155,11 @@ const operationsItems = computed(() => {
   if (canAccessAdmin.value) {
     items.push({ title: 'Activity Logs', icon: 'mdi-history', to: '/coi/activity-logs' })
   }
+  // T-HOME-CMS-3 (TH3-6): Homepage Management moved into its own "Public
+  // Website" v-list-group (below) — no longer a flat operationsItems entry.
   return items
 })
+const hasPublicWebsiteAccess = computed(() => canAccessModule('homepage'))
 const hasOperationsAccess = computed(() => operationsItems.value.length > 0)
 
 async function handleLogout() {
@@ -261,17 +273,10 @@ async function handleLogout() {
       <v-list nav density="comfortable">
         <v-list-subheader>MODULES</v-list-subheader>
 
-        <!-- Dashboard (always first) -->
-        <v-list-item
-          v-for="item in mainModules"
-          :key="item.to"
-          :to="item.to"
-          :prepend-icon="item.icon"
-          :title="item.title"
-          color="primary"
-          rounded="lg"
-          class="mb-1 ga-1"
-        />
+        <!-- T-HOME-CMS-4 (TH4-3): University Operations and Infrastructure Projects
+             render before Dashboard/Repair/GAD per the required hierarchy — a
+             template-order-only change; mainModules, guards, and routes are
+             unchanged (see the v-for block below). -->
 
         <!-- T-NAV: University Operations — expandable group (same v-list-group pattern as User Management) -->
         <v-list-group v-if="canAccessModule('university_operations')" v-model="uoOpen" value="universityOps">
@@ -351,12 +356,23 @@ async function handleLogout() {
           </v-list-item>
         </v-list-group>
 
+        <!-- Dashboard, Repair Projects, GAD Parity — after the expandable groups. -->
+        <v-list-item
+          v-for="item in mainModules"
+          :key="item.to"
+          :to="item.to"
+          :prepend-icon="item.icon"
+          :title="item.title"
+          color="primary"
+          rounded="lg"
+          class="mb-1 ga-1"
+        />
       </v-list>
 
       <!-- PHASE BBBC (Task A): three labelled administration sections. -->
 
       <!-- A. Operations & Monitoring (Admin + SuperAdmin) -->
-      <template v-if="hasOperationsAccess">
+      <template v-if="hasOperationsAccess || hasPublicWebsiteAccess">
         <v-divider class="my-2" />
         <v-list nav density="comfortable">
           <v-list-subheader>OPERATIONS &amp; MONITORING</v-list-subheader>
@@ -370,6 +386,39 @@ async function handleLogout() {
             rounded="lg"
             class="mb-1"
           />
+
+          <!-- T-HOME-CMS-3 (TH3-6): Public Website group — Homepage is real;
+               remaining children are reserved placeholders (same disabled +
+               "Soon"-chip pattern as University Operations/Infrastructure
+               Projects above) so future public-site pages need no nav
+               restructuring later. -->
+          <v-list-group v-if="hasPublicWebsiteAccess" v-model="publicWebsiteOpen" value="publicWebsite">
+            <template #activator="{ props }">
+              <v-list-item v-bind="props" prepend-icon="mdi-web" title="Public Website" color="primary" rounded="lg" class="mb-1" />
+            </template>
+            <v-list-item
+              to="/admin/homepage-management"
+              prepend-icon="mdi-home-outline"
+              title="Homepage"
+              color="primary"
+              rounded="lg"
+              class="mb-1 nav-child-item"
+            />
+            <v-list-item
+              v-for="future in ['Announcements', 'Carousel', 'Quick Links', 'Contact Information', 'Footer', 'Themes', 'Future Public Pages']"
+              :key="future"
+              prepend-icon="mdi-file-outline"
+              color="primary"
+              rounded="lg"
+              class="mb-1 nav-child-item"
+              disabled
+            >
+              <template #title>
+                {{ future }}
+                <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Soon</v-chip>
+              </template>
+            </v-list-item>
+          </v-list-group>
         </v-list>
       </template>
 

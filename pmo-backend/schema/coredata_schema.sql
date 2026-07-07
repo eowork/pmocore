@@ -6131,3 +6131,59 @@ ALTER TABLE ONLY public.users
 --
 
 
+
+
+--
+-- T-HOME-CMS (THC-1, 2026-07-07): CMS-backed public homepage content.
+-- Appended per ADR-023 (this dump is the authoritative fresh-DB schema source;
+-- Migration20260707000000_CreateHomepageContent is fake-marked on fresh DBs).
+--
+
+CREATE TABLE public.homepage_settings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    setting_key character varying(100) NOT NULL,
+    setting_value text,
+    data_type character varying(20) DEFAULT 'string'::character varying NOT NULL,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    page_key character varying(50) DEFAULT 'home'::character varying NOT NULL
+);
+
+ALTER TABLE ONLY public.homepage_settings
+    ADD CONSTRAINT homepage_settings_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.homepage_settings
+    ADD CONSTRAINT homepage_settings_setting_key_unique UNIQUE (setting_key);
+
+CREATE TABLE public.homepage_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    section_key character varying(50) NOT NULL,
+    item_order integer DEFAULT 0 NOT NULL,
+    title character varying(255),
+    body text,
+    icon character varying(100),
+    link_url character varying(500),
+    value_source character varying(50),
+    manual_value character varying(100),
+    media_id uuid,
+    is_published boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    updated_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    deleted_by uuid,
+    is_pinned boolean DEFAULT false NOT NULL,
+    scheduled_start timestamp with time zone,
+    scheduled_end timestamp with time zone,
+    page_key character varying(50) DEFAULT 'home'::character varying NOT NULL
+);
+
+ALTER TABLE ONLY public.homepage_items
+    ADD CONSTRAINT homepage_items_pkey PRIMARY KEY (id);
+
+CREATE INDEX homepage_items_section_order_index ON public.homepage_items USING btree (section_key, item_order) WHERE (deleted_at IS NULL);
+
+CREATE INDEX homepage_items_page_section_index ON public.homepage_items USING btree (page_key, section_key, item_order) WHERE (deleted_at IS NULL);
