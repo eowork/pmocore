@@ -9,13 +9,12 @@
 // registration (nuxt.config.ts keeps `pathPrefix: false`, not `global: true`).
 import PublicAboutCore from '~/components/PublicAboutCore.vue'
 import PublicHighlights from '~/components/PublicHighlights.vue'
-import PublicFeaturedProjects from '~/components/PublicFeaturedProjects.vue'
+import PublicFeaturedNews from '~/components/PublicFeaturedNews.vue'
 import PublicAnnouncements from '~/components/PublicAnnouncements.vue'
 import PublicLatestUpdates from '~/components/PublicLatestUpdates.vue'
+import PublicQuickLinks from '~/components/PublicQuickLinks.vue'
 import PublicTransparency from '~/components/PublicTransparency.vue'
 import PublicFaq from '~/components/PublicFaq.vue'
-
-const authStore = useAuthStore()
 
 definePageMeta({
   layout: 'public',
@@ -32,22 +31,21 @@ useHead({
   ],
 })
 
-const checked = ref(false)
-
-if (import.meta.client) {
-  if (authStore.isAuthenticated) {
-    navigateTo('/dashboard', { replace: true })
-  } else {
-    checked.value = true
-  }
-}
+// T-HOME-CMS-10 (TH10-1): `/` is a PUBLIC route — accessible to guests AND
+// authenticated users alike, same as /coi/public/* has always behaved.
+// Reverses T-HOME's original D1 redirect (documented reversal, RH10-2):
+// authentication expands access, it never removes access to public pages.
+// Post-login routing to /dashboard still happens in login.vue, unaffected.
+// The TH6-4 ?preview=true bypass was removed with it — dead code once no
+// redirect exists to bypass.
 
 const SECTION_COMPONENTS: Record<string, unknown> = {
   about_core: PublicAboutCore,
   highlights: PublicHighlights,
-  featured_projects: PublicFeaturedProjects,
+  featured_projects: PublicFeaturedNews,
   announcements: PublicAnnouncements,
   latest_updates: PublicLatestUpdates,
+  quick_links: PublicQuickLinks,
   transparency: PublicTransparency,
   faq: PublicFaq,
 }
@@ -55,20 +53,27 @@ const SECTION_COMPONENTS: Record<string, unknown> = {
 const { fetchOnce, sectionsConfig } = useHomepageContent()
 onMounted(fetchOnce)
 
+// T-HOME-CMS-8 (TH8-2/D1): section-band alternation computed HERE, by
+// rendered position — the one place that actually knows render order — and
+// passed down as a prop. Fixes the root cause of repeated adjacent same-color
+// collisions (RH8-1/RH8-2): components no longer choose their own background,
+// so alternation stays correct even after an admin reorders sections.
 const orderedSections = computed(() =>
   [...sectionsConfig.value]
     .filter(s => s.visible && SECTION_COMPONENTS[s.key])
-    .sort((a, b) => a.order - b.order),
+    .sort((a, b) => a.order - b.order)
+    .map((s, index) => ({ ...s, variant: (index % 2 === 0 ? 'white' : 'neutral') as const })),
 )
 </script>
 
 <template>
-  <div v-if="checked && !authStore.isAuthenticated">
+  <div>
     <PublicHero />
     <component
       :is="SECTION_COMPONENTS[section.key]"
       v-for="section in orderedSections"
       :key="section.key"
+      :variant="section.variant"
     />
   </div>
 </template>

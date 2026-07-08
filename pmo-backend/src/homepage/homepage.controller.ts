@@ -20,17 +20,18 @@ import {
   UpdateHomepageItemDto,
   ReorderHomepageItemsDto,
 } from './dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
-import { Roles, CurrentUser } from '../auth/decorators';
+import { JwtAuthGuard } from '../auth/guards';
+import { CurrentUser } from '../auth/decorators';
 import { JwtPayload } from '../common/interfaces';
+import { HomepageAccessGuard } from './homepage-access.guard';
 
 // T-HOME-CMS (THC-3): admin CRUD for homepage content.
-// Admin/SuperAdmin only (RHC-7) — mirrors the settings/users authorization path.
+// T-HOME-CMS-6 (TH6-5): tightened from any-Admin (@Roles('Admin')) to
+// SuperAdmin or an explicit 'homepage' module override — see HomepageAccessGuard.
 @ApiTags('Homepage Management')
 @ApiBearerAuth('JWT-auth')
 @Controller('homepage')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('Admin')
+@UseGuards(JwtAuthGuard, HomepageAccessGuard)
 export class HomepageController {
   constructor(private readonly service: HomepageService) {}
 

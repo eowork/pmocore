@@ -75,7 +75,7 @@ const LEVEL_PERMISSIONS: Record<string, ModulePermissions> = {
  * Includes User Management and Reference Data modules (Contractors, Funding Sources)
  * Per research.md Section 1.33.E: Reference Data hidden from sidebar for non-Admin users
  */
-const ADMIN_ONLY_MODULES = ['users', 'contractors', 'funding-sources', 'funding_sources', 'homepage']
+const ADMIN_ONLY_MODULES = ['users', 'contractors', 'funding-sources', 'funding_sources']
 
 /**
  * Reference data modules - Contractors and Funding Sources
@@ -220,6 +220,13 @@ export function usePermissions() {
 
     // Dashboard is always accessible.
     if (normalizedId === 'dashboard') return true
+
+    // T-HOME-CMS-6 (TH6-5): Public Website / Homepage Management — SuperAdmin
+    // (returned true above), or an explicit 'homepage' module override. An
+    // Admin role alone no longer qualifies — mirrors canManageUsers' shape.
+    if (normalizedId === 'homepage') {
+      return moduleOverrides.value['homepage'] === true
+    }
 
     // Admin-only modules (User Management + reference-data management) — Admin/SuperAdmin only.
     if (ADMIN_ONLY_MODULES.includes(normalizedId)) {

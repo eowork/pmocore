@@ -8,6 +8,7 @@ definePageMeta({
 })
 
 import { LAYOUT_TEMPLATE_OPTIONS } from '~/utils/homepage-layout'
+import { MDI_ICON_LIBRARY } from '~/utils/mdi-icon-library'
 
 const api = useApi()
 const toast = useToast()
@@ -57,18 +58,33 @@ interface SectionConfigEntry {
   visible: boolean
   order: number
   layout?: string
+  emptyBehavior?: 'hide' | 'placeholder' | 'reminder'
 }
 
 // T-HOME-CMS-3 (TH3-4): layout picker shown only for sections that actually
 // render as an item grid — accordions (FAQ) and narrative sections don't
 // benefit from a grid template.
 const LAYOUT_APPLICABLE_SECTIONS = new Set(['highlights', 'announcements'])
+// T-HOME-CMS-8 (TH8-4): sections that can silently disappear with no
+// content — the ones the operator's directive names explicitly.
+const EMPTY_BEHAVIOR_APPLICABLE_SECTIONS = new Set([
+  'highlights', 'announcements', 'featured_projects', 'latest_updates',
+])
+const EMPTY_BEHAVIOR_OPTIONS = [
+  { title: 'Show placeholder message', value: 'placeholder' },
+  { title: 'Show reminder (admins only)', value: 'reminder' },
+  { title: 'Hide section entirely', value: 'hide' },
+]
 const SECTION_LABELS: Record<string, { title: string; icon: string }> = {
   about_core: { title: 'About PMO CORE', icon: 'mdi-information-outline' },
   highlights: { title: 'University Highlights', icon: 'mdi-star-outline' },
-  featured_projects: { title: 'Featured Projects', icon: 'mdi-office-building-outline' },
+  // T-HOME-CMS-11 (TH11-2/D2): renamed Featured Projects -> Featured News;
+  // section_key stays 'featured_projects' (Section Layout config key).
+  featured_projects: { title: 'Featured News', icon: 'mdi-newspaper-variant-outline' },
   announcements: { title: 'Announcements', icon: 'mdi-bullhorn-outline' },
   latest_updates: { title: 'Latest Updates', icon: 'mdi-update' },
+  // T-HOME-CMS-5 (TH5-3): wires in the already-built-but-unrendered Quick Links section.
+  quick_links: { title: 'Quick Links', icon: 'mdi-link-variant' },
   transparency: { title: 'Why PMO CORE Exists', icon: 'mdi-eye-outline' },
   faq: { title: 'Frequently Asked Questions', icon: 'mdi-help-circle-outline' },
 }
@@ -78,8 +94,20 @@ const DEFAULT_SECTION_ORDER: SectionConfigEntry[] = [
   { key: 'featured_projects', visible: true, order: 3 },
   { key: 'announcements', visible: true, order: 4 },
   { key: 'latest_updates', visible: true, order: 5 },
-  { key: 'transparency', visible: true, order: 6 },
-  { key: 'faq', visible: true, order: 7 },
+  { key: 'quick_links', visible: true, order: 6 },
+  { key: 'transparency', visible: true, order: 7 },
+  { key: 'faq', visible: true, order: 8 },
+]
+
+// T-HOME-CMS-5 (TH5-11): closed CSU-approved palette for per-highlight accent
+// color — never a freeform picker, same precedent as theme presets.
+const COLOR_TOKEN_OPTIONS = [
+  { title: 'Default (theme accent)', value: '' },
+  { title: 'CSU Green', value: 'green' },
+  { title: 'CSU Gold', value: 'gold' },
+  { title: 'CSU Orange', value: 'orange' },
+  { title: 'CSU Emerald', value: 'emerald' },
+  { title: 'CSU Gray', value: 'gray' },
 ]
 const sectionsConfig = ref<SectionConfigEntry[]>([...DEFAULT_SECTION_ORDER])
 const sectionsSaving = ref(false)
@@ -179,17 +207,38 @@ interface HomepageItemRow {
   isPinned: boolean
   scheduledStart: string | null
   scheduledEnd: string | null
+  colorToken: string | null
+  linkedProjectId: string | null
+  subtitle: string | null
+  fullDescription: string | null
+  author: string | null
+  department: string | null
+  publishDate: string | null
+  isFeatured: boolean
+  statusText: string | null
+  campusText: string | null
+  budgetText: string | null
+  completionText: string | null
 }
 
+// T-HOME-CMS-6 (TH6-2): array order mirrors the homepage's visual order —
+// Quick Links moved last. NAV_ITEMS derives from this via .map(), so the
+// left-rail nav reorders automatically.
+// T-HOME-CMS-11 (TH11-3): isFeaturedNews marks Featured News — a fully
+// standalone CMS card type, no COI dependency (RH11-3 supersedes T-HOME-CMS-8's
+// project-linked design).
 const SECTIONS = [
-  { key: 'hero_slide', label: 'Carousel Slides', icon: 'mdi-image-multiple-outline', hasImage: true, hasValue: false, hasSchedule: false },
-  { key: 'highlight', label: 'Highlights', icon: 'mdi-star-outline', hasImage: false, hasValue: true, hasSchedule: false },
-  { key: 'announcement', label: 'Announcements', icon: 'mdi-bullhorn-outline', hasImage: true, hasValue: false, hasSchedule: true },
-  { key: 'quick_link', label: 'Quick Links', icon: 'mdi-link-variant', hasImage: false, hasValue: false, hasSchedule: false },
-  { key: 'faq', label: 'FAQ', icon: 'mdi-help-circle-outline', hasImage: false, hasValue: false, hasSchedule: false },
+  { key: 'hero_slide', label: 'Carousel Slides', icon: 'mdi-image-multiple-outline', hasImage: true, hasValue: false, hasSchedule: false, isFeaturedNews: false },
+  { key: 'highlight', label: 'Highlights', icon: 'mdi-star-outline', hasImage: false, hasValue: true, hasSchedule: false, isFeaturedNews: false },
+  { key: 'featured_project', label: 'Featured News', icon: 'mdi-newspaper-variant-outline', hasImage: true, hasValue: false, hasSchedule: false, isFeaturedNews: true },
+  { key: 'announcement', label: 'Announcements', icon: 'mdi-bullhorn-outline', hasImage: true, hasValue: false, hasSchedule: true, isFeaturedNews: false },
+  { key: 'faq', label: 'FAQ', icon: 'mdi-help-circle-outline', hasImage: false, hasValue: false, hasSchedule: false, isFeaturedNews: false },
   // T-HOME-CMS-4 (TH4-4): previously hardcoded, no CMS path at all.
-  { key: 'about_facet', label: 'About PMO CORE Facets', icon: 'mdi-hub-outline', hasImage: false, hasValue: false, hasSchedule: false },
-  { key: 'transparency_pillar', label: 'Why PMO CORE Exists — Pillars', icon: 'mdi-eye-outline', hasImage: false, hasValue: false, hasSchedule: false },
+  // T-HOME-CMS-5 (TH5-4): about_facet gains image support — data model
+  // already supported it, this just opens the admin dialog's image field.
+  { key: 'about_facet', label: 'About PMO CORE Facets', icon: 'mdi-hub-outline', hasImage: true, hasValue: false, hasSchedule: false, isFeaturedNews: false },
+  { key: 'transparency_pillar', label: 'Why PMO CORE Exists — Pillars', icon: 'mdi-eye-outline', hasImage: false, hasValue: false, hasSchedule: false, isFeaturedNews: false },
+  { key: 'quick_link', label: 'Quick Links', icon: 'mdi-link-variant', hasImage: false, hasValue: false, hasSchedule: false, isFeaturedNews: false },
 ] as const
 
 const VALUE_SOURCE_OPTIONS = [
@@ -199,7 +248,27 @@ const VALUE_SOURCE_OPTIONS = [
   { title: 'Auto — Completed project count', value: 'auto:completed_count' },
 ]
 
+// T-HOME-CMS-5 (TH5-7): tabs -> sidebar subsection navigation. `activeTab`
+// keeps driving the same v-window it always did — only the outer nav chrome
+// changed (v-tabs -> a persistent left v-list), so every dialog/API call
+// below is untouched. Persisted like the sidebar's own group-open state.
 const activeTab = ref('settings')
+onMounted(() => {
+  if (import.meta.client) {
+    const saved = localStorage.getItem('homepage_admin_section')
+    if (saved) activeTab.value = saved
+  }
+})
+watch(activeTab, (val) => {
+  if (import.meta.client) localStorage.setItem('homepage_admin_section', val)
+})
+
+const NAV_ITEMS = computed(() => [
+  { value: 'settings', label: 'Page Content', icon: 'mdi-text-box-outline' },
+  { value: 'sections', label: 'Section Layout', icon: 'mdi-view-sequential-outline' },
+  ...SECTIONS.map(s => ({ value: s.key, label: s.label, icon: s.icon })),
+])
+
 const items = ref<HomepageItemRow[]>([])
 const itemsLoading = ref(true)
 
@@ -237,14 +306,31 @@ const form = reactive({
   is_pinned: false,
   scheduled_start: '',
   scheduled_end: '',
+  color_token: '',
+  // T-HOME-CMS-11 (TH11-3): Featured News fields — standalone, no COI link.
+  subtitle: '',
+  full_description: '',
+  author: '',
+  department: '',
+  publish_date: '',
+  is_featured: false,
+  status_text: '',
+  campus_text: '',
+  budget_text: '',
+  completion_text: '',
 })
 // T-HOME-CMS-2 (THM-3): array so a single v-file-input serves both the
 // "one image" (edit/replace) and "multiple images" (batch create) flows.
 const imageFiles = ref<File[]>([])
+// T-HOME-CMS-5 (TH5-6): custom SVG/PNG icon upload — only offered for
+// sections that don't already use `media_id` as a full photo (hasImage),
+// since the entity has a single media slot per item.
+const iconFiles = ref<File[]>([])
 
 const editingSectionMeta = computed(() =>
   SECTIONS.find(s => s.key === editingSection.value) ?? SECTIONS[0],
 )
+const allowIconUpload = computed(() => !editingSectionMeta.value.hasImage)
 
 // T-HOME-CMS-2 (THM-4): batch upload only makes sense when creating fresh
 // items (each file becomes its own item) — an existing single item can only
@@ -276,7 +362,21 @@ function openCreate(sectionKey: string) {
   form.is_pinned = false
   form.scheduled_start = ''
   form.scheduled_end = ''
+  form.color_token = ''
+  form.subtitle = ''
+  form.full_description = ''
+  // T-HOME-CMS-12 (TH12-5/D6): sensible default so a card is never
+  // accidentally uncredited — admin can still override it.
+  form.author = sectionKey === 'featured_project' ? 'PMO CORE' : ''
+  form.department = ''
+  form.publish_date = ''
+  form.is_featured = false
+  form.status_text = ''
+  form.campus_text = ''
+  form.budget_text = ''
+  form.completion_text = ''
   imageFiles.value = []
+  iconFiles.value = []
   dialogOpen.value = true
 }
 
@@ -293,8 +393,42 @@ function openEdit(item: HomepageItemRow) {
   form.is_pinned = item.isPinned
   form.scheduled_start = toDatetimeLocal(item.scheduledStart)
   form.scheduled_end = toDatetimeLocal(item.scheduledEnd)
+  form.color_token = item.colorToken ?? ''
+  form.subtitle = item.subtitle ?? ''
+  form.full_description = item.fullDescription ?? ''
+  form.author = item.author ?? ''
+  form.department = item.department ?? ''
+  form.publish_date = item.publishDate ? item.publishDate.slice(0, 10) : ''
+  form.is_featured = item.isFeatured
+  form.status_text = item.statusText ?? ''
+  form.campus_text = item.campusText ?? ''
+  form.budget_text = item.budgetText ?? ''
+  form.completion_text = item.completionText ?? ''
   imageFiles.value = []
+  iconFiles.value = []
   dialogOpen.value = true
+}
+
+// T-HOME-CMS-12 (TH12-2): clipboard-paste image upload — reads the raw
+// image bytes browsers put on the clipboard for a "Copy Image" action (no
+// server-side URL fetch involved, D3). Feeds the same imageFiles ref the
+// file picker already populates, so saveItem()/uploadImageToItem() are
+// untouched.
+function handleDialogPaste(event: ClipboardEvent) {
+  if (!editingSectionMeta.value.hasImage) return
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (!file) continue
+      event.preventDefault()
+      const renamed = new File([file], `pasted-image.${file.type.split('/')[1] || 'png'}`, { type: file.type })
+      imageFiles.value = allowMultipleUpload.value ? [...imageFiles.value, renamed] : [renamed]
+      toast.success('Image pasted')
+      break
+    }
+  }
 }
 
 async function uploadImageToItem(itemId: string, file: File, title: string, altText: string): Promise<void> {
@@ -305,6 +439,21 @@ async function uploadImageToItem(itemId: string, file: File, title: string, altT
   if (altText) fd.append('alt_text', altText)
   const media = await api.upload<{ id: string }>(
     `/api/media/homepage_carousel/${itemId}`,
+    fd,
+  )
+  await api.patch(`/api/homepage/items/${itemId}`, { media_id: media.id })
+}
+
+// T-HOME-CMS-5 (TH5-6): custom SVG/PNG icon upload — reuses the generic Media
+// pipeline under a dedicated `homepage_icon` entity type, same call shape as
+// uploadImageToItem but distinct from a section's own photo (hasImage).
+async function uploadIconToItem(itemId: string, file: File, title: string): Promise<void> {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('media_type', 'IMAGE')
+  fd.append('title', title || 'Homepage icon')
+  const media = await api.upload<{ id: string }>(
+    `/api/media/homepage_icon/${itemId}`,
     fd,
   )
   await api.patch(`/api/homepage/items/${itemId}`, { media_id: media.id })
@@ -322,6 +471,22 @@ async function saveItem() {
     if (editingSectionMeta.value.hasValue) {
       payload.value_source = form.value_source
       payload.manual_value = form.manual_value
+      payload.color_token = form.color_token
+    }
+    if (editingSectionMeta.value.isFeaturedNews) {
+      // T-HOME-CMS-11 (TH11-3): Category reuses manual_value (no dedicated
+      // column, same precedent as before) — fully standalone, no COI link.
+      payload.manual_value = form.manual_value
+      payload.subtitle = form.subtitle
+      payload.full_description = form.full_description
+      payload.author = form.author
+      payload.department = form.department
+      payload.publish_date = form.publish_date
+      payload.is_featured = form.is_featured
+      payload.status_text = form.status_text
+      payload.campus_text = form.campus_text
+      payload.budget_text = form.budget_text
+      payload.completion_text = form.completion_text
     }
     if (editingSectionMeta.value.hasSchedule) {
       payload.is_pinned = form.is_pinned
@@ -362,6 +527,9 @@ async function saveItem() {
 
     if (imageFiles.value.length === 1 && itemId) {
       await uploadImageToItem(itemId, imageFiles.value[0], form.title, form.alt_text)
+    }
+    if (allowIconUpload.value && iconFiles.value.length === 1 && itemId) {
+      await uploadIconToItem(itemId, iconFiles.value[0], form.title)
     }
 
     toast.success(editingId.value ? 'Item updated' : 'Item created')
@@ -438,6 +606,9 @@ onMounted(() => {
           Manage the content of the public PMO CORE landing page.
         </p>
       </div>
+      <!-- T-HOME-CMS-10 (TH10-2): device-frame preview removed per operator
+           product decision (RH10-4). Plain link works now that TH10-1 stopped
+           redirecting authenticated users away from the public homepage. -->
       <v-btn
         href="/"
         target="_blank"
@@ -450,20 +621,28 @@ onMounted(() => {
     </div>
 
     <v-card elevation="1" rounded="lg">
-      <v-tabs v-model="activeTab" color="primary" show-arrows>
-        <v-tab value="settings" prepend-icon="mdi-text-box-outline">Page Content</v-tab>
-        <v-tab value="sections" prepend-icon="mdi-view-sequential-outline">Section Layout</v-tab>
-        <v-tab
-          v-for="section in SECTIONS"
-          :key="section.key"
-          :value="section.key"
-          :prepend-icon="section.icon"
-        >
-          {{ section.label }}
-        </v-tab>
-      </v-tabs>
-      <v-divider />
+      <v-row no-gutters>
+        <!-- T-HOME-CMS-5 (TH5-7): persistent left-rail section nav, replacing
+             v-tabs — reduces scrolling fatigue as the section count grows;
+             new sections just become new list entries, same as before. -->
+        <v-col cols="12" md="3" lg="3" class="admin-nav-col">
+          <v-list nav density="comfortable" class="py-2">
+            <v-list-subheader>HOMEPAGE SECTIONS</v-list-subheader>
+            <v-list-item
+              v-for="nav in NAV_ITEMS"
+              :key="nav.value"
+              :active="activeTab === nav.value"
+              :prepend-icon="nav.icon"
+              :title="nav.label"
+              color="primary"
+              rounded="lg"
+              class="mb-1"
+              @click="activeTab = nav.value"
+            />
+          </v-list>
+        </v-col>
 
+        <v-col cols="12" md="9" lg="9" class="admin-content-col">
       <v-window v-model="activeTab">
         <!-- Singleton settings -->
         <v-window-item value="settings">
@@ -556,6 +735,20 @@ onMounted(() => {
                 </v-list-item-title>
 
                 <template #append>
+                  <!-- T-HOME-CMS-8 (TH8-4): per-section empty-state behavior. -->
+                  <v-select
+                    v-if="EMPTY_BEHAVIOR_APPLICABLE_SECTIONS.has(entry.key)"
+                    :model-value="entry.emptyBehavior || 'placeholder'"
+                    :items="EMPTY_BEHAVIOR_OPTIONS"
+                    label="If empty"
+                    density="compact"
+                    hide-details
+                    variant="outlined"
+                    style="width: 200px;"
+                    class="mr-3"
+                    :disabled="sectionsSaving"
+                    @update:model-value="(v: string) => { entry.emptyBehavior = v as any; saveSectionsConfig() }"
+                  />
                   <v-select
                     v-if="LAYOUT_APPLICABLE_SECTIONS.has(entry.key)"
                     :model-value="entry.layout || 'four_card'"
@@ -703,48 +896,216 @@ onMounted(() => {
           </v-card-text>
         </v-window-item>
       </v-window>
+        </v-col>
+      </v-row>
     </v-card>
 
     <!-- Item editor dialog -->
-    <v-dialog v-model="dialogOpen" max-width="640" persistent>
+    <!-- T-HOME-CMS-12 (TH12-2): paste-to-upload — listens anywhere in the
+         dialog, not just while a specific field is focused. -->
+    <v-dialog v-model="dialogOpen" max-width="640" persistent @paste="handleDialogPaste">
       <v-card rounded="lg">
         <v-card-title class="d-flex align-center ga-2">
           <v-icon :icon="editingSectionMeta.icon" size="20" />
           {{ editingId ? 'Edit' : 'Add' }} {{ editingSectionMeta.label.replace(/s$/, '') }}
         </v-card-title>
-        <v-card-text>
-          <v-text-field v-model="form.title" label="Title" class="mb-2" />
-          <v-textarea v-model="form.body" label="Description / Body" rows="3" auto-grow class="mb-2" />
-          <v-row dense>
-            <v-col cols="12" sm="6">
-              <v-text-field
+        <!-- T-HOME-CMS-6 (TH6-3): fields grouped under labeled sections with
+             helper text — CMS-style authoring, not a flat database form.
+             Same fields, same payloads; template restructuring only. -->
+        <v-card-text class="pt-4">
+          <!-- ── Content ── -->
+          <div class="dialog-group-label">Content</div>
+          <p class="dialog-group-hint">What this item says, and where it links.</p>
+          <!-- T-HOME-CMS-11 (TH11-3): Featured News is fully standalone —
+               no COI project selection, manually curated (RH11-3). -->
+          <v-text-field
+            v-model="form.title"
+            label="Title"
+            class="mb-4"
+          />
+          <template v-if="editingSectionMeta.isFeaturedNews">
+            <v-text-field
+              v-model="form.subtitle"
+              label="Subtitle (optional)"
+              class="mb-4"
+            />
+            <v-text-field
+              v-model="form.manual_value"
+              label="Category"
+              placeholder="e.g. Research, Awards, Events"
+              class="mb-4"
+            />
+          </template>
+          <v-textarea
+            v-model="form.body"
+            :label="editingSectionMeta.isFeaturedNews ? 'Short Description' : 'Description / Body'"
+            :hint="editingSectionMeta.isFeaturedNews ? 'Shown on the card face' : undefined"
+            :persistent-hint="editingSectionMeta.isFeaturedNews"
+            rows="3"
+            auto-grow
+            class="mb-4"
+          />
+          <v-textarea
+            v-if="editingSectionMeta.isFeaturedNews"
+            v-model="form.full_description"
+            label="Full Description (optional)"
+            hint="Longer copy for an expanded/detail view"
+            persistent-hint
+            rows="4"
+            auto-grow
+            class="mb-4"
+          />
+          <template v-if="editingSectionMeta.isFeaturedNews">
+            <v-row dense class="mb-1">
+              <v-col cols="12" sm="6">
+                <v-text-field v-model="form.author" label="Author (optional)" />
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field v-model="form.department" label="Department (optional)" />
+              </v-col>
+            </v-row>
+            <v-row dense class="mb-1">
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="form.status_text"
+                  label="Status badge (optional)"
+                  placeholder="e.g. Ongoing, Completed"
+                />
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="form.campus_text"
+                  label="Campus badge (optional)"
+                  placeholder="e.g. Ampayon Campus"
+                />
+              </v-col>
+            </v-row>
+            <v-row dense class="mb-1">
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="form.budget_text"
+                  label="Budget (optional)"
+                  placeholder="e.g. ₱45,000,000 or Grant-funded"
+                />
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="form.completion_text"
+                  label="Completion (optional)"
+                  placeholder="e.g. 80% or In Progress"
+                />
+              </v-col>
+            </v-row>
+          </template>
+          <v-text-field
+            v-model="form.link_url"
+            :label="editingSectionMeta.isFeaturedNews ? 'Button URL (internal path or full https://)' : 'Link URL (optional)'"
+            placeholder="/coi/public"
+            hint="Internal path (/coi/public) or full https:// address"
+            persistent-hint
+            class="mb-4"
+          />
+          <template v-if="editingSectionMeta.isFeaturedNews">
+            <v-row dense class="mb-1">
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-model="form.publish_date"
+                  type="date"
+                  label="Publish Date (optional)"
+                />
+              </v-col>
+              <v-col cols="12" sm="6" class="d-flex align-center">
+                <v-switch
+                  v-model="form.is_featured"
+                  label="Featured (larger billing)"
+                  color="primary"
+                  density="compact"
+                  hide-details
+                />
+              </v-col>
+            </v-row>
+          </template>
+          <template v-if="editingSectionMeta.hasValue">
+            <v-row dense class="mb-1">
+              <v-col cols="12" sm="6">
+                <v-select
+                  v-model="form.value_source"
+                  :items="VALUE_SOURCE_OPTIONS"
+                  label="Displayed value"
+                  hint="Auto values update live from published projects"
+                  persistent-hint
+                />
+              </v-col>
+              <v-col cols="12" sm="6">
+                <v-text-field
+                  v-if="form.value_source === 'manual'"
+                  v-model="form.manual_value"
+                  label="Manual value (optional)"
+                  placeholder="e.g. 2 Campuses"
+                  hint="Shown as the big number/figure on the card"
+                  persistent-hint
+                />
+              </v-col>
+            </v-row>
+          </template>
+
+          <!-- ── Appearance ── -->
+          <v-divider class="my-4" />
+          <div class="dialog-group-label">Appearance</div>
+          <p class="dialog-group-hint">Icon, color, and imagery for this item's card.</p>
+          <v-row dense class="mb-1">
+            <v-col cols="12" :sm="editingSectionMeta.hasValue ? 6 : 12">
+              <!-- T-HOME-CMS-5 (TH5-5): searchable icon library with live preview;
+                   free-text mdi-* entry stays available for icons outside the
+                   curated set (enhance only — nothing removed). -->
+              <v-combobox
                 v-model="form.icon"
-                label="Icon (mdi-*)"
+                :items="MDI_ICON_LIBRARY"
+                item-title="label"
+                item-value="icon"
+                label="Icon"
                 placeholder="mdi-star-outline"
                 :prepend-inner-icon="form.icon || 'mdi-emoticon-outline'"
-              />
+                hint="Pick from the library or type any mdi-* name directly"
+                persistent-hint
+              >
+                <template #item="{ props: itemProps, item: opt }">
+                  <v-list-item
+                    v-bind="itemProps"
+                    :prepend-icon="opt.raw.icon"
+                    :title="opt.raw.label"
+                    :subtitle="opt.raw.icon"
+                  />
+                </template>
+              </v-combobox>
             </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model="form.link_url"
-                label="Link URL (optional)"
-                placeholder="/coi/public"
+            <v-col v-if="editingSectionMeta.hasValue" cols="12" sm="6">
+              <!-- T-HOME-CMS-5 (TH5-11): closed CSU palette, never a freeform picker. -->
+              <v-select
+                v-model="form.color_token"
+                :items="COLOR_TOKEN_OPTIONS"
+                label="Accent color"
+                hint="Applies to this card's icon/accent only"
+                persistent-hint
               />
             </v-col>
           </v-row>
-          <template v-if="editingSectionMeta.hasValue">
-            <v-select
-              v-model="form.value_source"
-              :items="VALUE_SOURCE_OPTIONS"
-              label="Displayed value"
-              class="mb-2"
-            />
-            <v-text-field
-              v-if="form.value_source === 'manual'"
-              v-model="form.manual_value"
-              label="Manual value (optional, e.g. '2 Campuses')"
-            />
-          </template>
+          <!-- T-HOME-CMS-5 (TH5-6): custom SVG/PNG icon upload — offered only
+               where media_id isn't already the section's own photo. Rendering
+               components display the uploaded image instead of the mdi-* icon
+               when one is present; auto-sized/clamped in CSS (TH5-6). -->
+          <v-file-input
+            v-if="allowIconUpload"
+            v-model="iconFiles"
+            label="Or upload a custom icon (SVG/PNG, optional)"
+            hint="Overrides the icon picked above; sized automatically"
+            persistent-hint
+            accept="image/svg+xml,image/png"
+            prepend-icon="mdi-upload-outline"
+            show-size
+            density="compact"
+            class="mb-4"
+          />
           <template v-if="editingSectionMeta.hasImage">
             <v-file-input
               v-model="imageFiles"
@@ -752,34 +1113,45 @@ onMounted(() => {
               :label="editingId
                 ? 'Replace image (optional — leave blank to keep current)'
                 : allowMultipleUpload
-                  ? 'Slide image(s) — select multiple to create one item per image'
-                  : 'Slide image (PNG/JPG/WebP)'"
-              :hint="editingId ? 'Only one file is used when editing an existing item.' : ''"
+                  ? 'Image(s) — select multiple to create one item per image'
+                  : 'Image (PNG/JPG/WebP)'"
+              :hint="editingId ? 'Only one file is used when editing an existing item.' : 'Displayed on the card; cropped to fit automatically.'"
               persistent-hint
               accept="image/*"
               prepend-icon="mdi-image-outline"
               show-size
-              class="mb-2"
+              class="mb-1"
             />
+            <!-- T-HOME-CMS-12 (TH12-2): paste a copied image (Ctrl+V) directly
+                 into the dialog — reuses the same imageFiles ref the file
+                 picker above populates, so save logic is untouched. -->
+            <p class="text-caption text-grey-darken-1 mb-4">
+              <v-icon size="14" class="mr-1">mdi-content-paste</v-icon>
+              You can also paste a copied image with Ctrl+V while this dialog is open.
+            </p>
             <v-text-field
               v-model="form.alt_text"
-              label="Alt text (accessibility — describes the image for screen readers)"
+              label="Alt text (accessibility)"
               placeholder="e.g. Students at the CSU main campus quadrangle"
               :disabled="!imageFiles.length"
-              :hint="!imageFiles.length ? 'Select an image above to set its alt text.' : ''"
+              :hint="imageFiles.length ? 'Describes the image for screen readers.' : 'Select an image above to set its alt text.'"
               persistent-hint
+              class="mb-4"
             />
           </template>
 
+          <!-- ── Visibility & Scheduling ── -->
           <template v-if="editingSectionMeta.hasSchedule">
-            <v-divider class="my-3" />
+            <v-divider class="my-4" />
+            <div class="dialog-group-label">Visibility &amp; Scheduling</div>
+            <p class="dialog-group-hint">Control when this announcement appears and how prominently.</p>
             <v-switch
               v-model="form.is_pinned"
-              label="Pin to top"
+              label="Pin to top (featured, full-width card)"
               color="primary"
               density="compact"
               hide-details
-              class="mb-2"
+              class="mb-4"
             />
             <v-row dense>
               <v-col cols="12" sm="6">
@@ -829,3 +1201,38 @@ onMounted(() => {
     </v-dialog>
   </div>
 </template>
+
+<style scoped>
+/* T-HOME-CMS-5 (TH5-7): two-pane admin layout — left rail section nav,
+   right pane content, replacing the prior v-tabs strip. */
+.admin-nav-col {
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  min-height: 480px;
+}
+@media (max-width: 959px) {
+  .admin-nav-col {
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    min-height: auto;
+  }
+}
+.admin-content-col {
+  min-width: 0;
+}
+
+/* T-HOME-CMS-6 (TH6-3): CMS-style grouped dialog — section labels + helper
+   text above each field group. */
+.dialog-group-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--v-theme-primary));
+  margin-bottom: 2px;
+}
+.dialog-group-hint {
+  font-size: 0.8rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  margin-bottom: 14px;
+}
+</style>

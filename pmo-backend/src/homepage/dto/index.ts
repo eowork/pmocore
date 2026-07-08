@@ -26,6 +26,8 @@ export const HOMEPAGE_SECTION_KEYS = [
   // previously hardcoded, now CMS-editable via the same generic item pattern.
   'about_facet',
   'transparency_pillar',
+  // T-HOME-CMS-8 (TH8-5): admin-curated Featured Projects cards.
+  'featured_project',
 ] as const;
 
 export const HOMEPAGE_VALUE_SOURCES = [
@@ -34,6 +36,10 @@ export const HOMEPAGE_VALUE_SOURCES = [
   'auto:ongoing_count',
   'auto:completed_count',
 ] as const;
+
+// T-HOME-CMS-5 (TH5-11): closed CSU-approved palette — never a freeform picker.
+// Empty string is valid (clears the override, falls back to the theme accent).
+export const HOMEPAGE_COLOR_TOKENS = ['', 'green', 'gold', 'orange', 'emerald', 'gray'] as const;
 
 export class UpdateHomepageSettingDto {
   @IsString()
@@ -97,6 +103,65 @@ export class CreateHomepageItemDto {
   @IsOptional()
   @IsISO8601()
   scheduled_end?: string;
+
+  // T-HOME-CMS-5 (TH5-11): Highlights only — closed CSU-palette token, validated
+  // against COLOR_TOKENS below (empty string clears to the default accent).
+  @IsOptional()
+  @IsIn(HOMEPAGE_COLOR_TOKENS as unknown as string[])
+  color_token?: string;
+
+  // T-HOME-CMS-8 (TH8-5): unused since T-HOME-CMS-11 decoupled Featured News from COI.
+  @IsOptional()
+  @IsUUID()
+  linked_project_id?: string;
+
+  // T-HOME-CMS-11 (TH11-2): Featured News fields.
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  subtitle?: string;
+
+  @IsOptional()
+  @IsString()
+  full_description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  author?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  department?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  publish_date?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  is_featured?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  status_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  campus_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  budget_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  completion_text?: string;
 }
 
 export class UpdateHomepageItemDto {
@@ -153,6 +218,63 @@ export class UpdateHomepageItemDto {
   @IsOptional()
   @IsString()
   scheduled_end?: string;
+
+  @IsOptional()
+  @IsIn(HOMEPAGE_COLOR_TOKENS as unknown as string[])
+  color_token?: string;
+
+  // T-HOME-CMS-8 (TH8-5): unused since T-HOME-CMS-11 decoupled Featured News from COI.
+  @IsOptional()
+  @IsUUID()
+  linked_project_id?: string;
+
+  // T-HOME-CMS-11 (TH11-2): Featured News fields.
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  subtitle?: string;
+
+  @IsOptional()
+  @IsString()
+  full_description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  author?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  department?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  publish_date?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  is_featured?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  status_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  campus_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  budget_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  completion_text?: string;
 }
 
 export class ReorderEntryDto {

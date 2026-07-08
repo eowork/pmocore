@@ -30,6 +30,8 @@ export class MediaService {
     'homepage_hero',
     'homepage_carousel',
     'homepage_card',
+    // T-HOME-CMS-5 (TH5-6): custom SVG/PNG icon uploads for icon-only sections.
+    'homepage_icon',
   ];
 
   constructor(

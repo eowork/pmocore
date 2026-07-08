@@ -188,7 +188,7 @@ async function seedFreshDatabase(orm) {
     INSERT INTO homepage_settings (setting_key, setting_value, data_type)
     VALUES (
       'homepage_sections_config',
-      '[{"key":"about_core","visible":true,"order":1},{"key":"highlights","visible":true,"order":2},{"key":"featured_projects","visible":true,"order":3},{"key":"announcements","visible":true,"order":4},{"key":"latest_updates","visible":true,"order":5},{"key":"transparency","visible":true,"order":6},{"key":"faq","visible":true,"order":7}]',
+      '[{"key":"about_core","visible":true,"order":1},{"key":"highlights","visible":true,"order":2},{"key":"featured_projects","visible":true,"order":3},{"key":"announcements","visible":true,"order":4},{"key":"latest_updates","visible":true,"order":5},{"key":"quick_links","visible":true,"order":6},{"key":"transparency","visible":true,"order":7},{"key":"faq","visible":true,"order":8}]',
       'json'
     )
     ON CONFLICT (setting_key) DO NOTHING;

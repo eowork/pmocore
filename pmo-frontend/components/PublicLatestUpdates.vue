@@ -6,20 +6,37 @@ import { formatRelativeDate } from '~/utils/date-utils'
 import { formatDate } from '~/utils/userFormat'
 
 const { fetchOnce, loading, latestUpdated } = usePublicProjects()
+const { sectionsConfig } = useHomepageContent()
 
 onMounted(fetchOnce)
 
 const updates = computed(() => latestUpdated(5))
+
+// T-HOME-CMS-8 (TH8-2/TH8-3/TH8-4)
+defineProps<{ variant?: 'neutral' | 'white' }>()
+const emptyBehavior = computed(
+  () => sectionsConfig.value.find(s => s.key === 'latest_updates')?.emptyBehavior ?? 'placeholder',
+)
+// Not "empty" while still loading — the skeleton loader covers that state.
+const isEmpty = computed(() => !loading.value && !updates.value.length)
 </script>
 
 <template>
-  <v-container v-if="loading || updates.length" class="py-12">
-    <div class="text-center mb-8">
-      <h2 class="text-h4 font-weight-bold text-figma-primary mb-2">Latest Updates</h2>
-      <p class="text-subtitle-1 text-figma-muted mb-0">
-        The most recently updated published projects.
-      </p>
-    </div>
+  <PublicSectionBand
+    :variant="variant"
+    :is-empty="isEmpty"
+    :empty-behavior="emptyBehavior"
+    empty-message="Latest updates will appear here once published."
+    empty-icon="mdi-update"
+  >
+    <template #heading>
+      <div class="text-center mb-8">
+        <h2 class="text-h4 font-weight-bold text-figma-primary mb-2">Latest Updates</h2>
+        <p class="text-subtitle-1 text-figma-muted mb-0">
+          The most recently updated published projects.
+        </p>
+      </div>
+    </template>
 
     <v-row justify="center">
       <v-col cols="12" md="8" lg="7">
@@ -58,7 +75,7 @@ const updates = computed(() => latestUpdated(5))
         </v-timeline>
       </v-col>
     </v-row>
-  </v-container>
+  </PublicSectionBand>
 </template>
 
 <style scoped>

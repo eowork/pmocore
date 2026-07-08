@@ -15,12 +15,11 @@ useHead({
   ],
 })
 
-// THC-7: simplified public nav — Home only; Sign In stays as the standalone button.
 // T-HOME-CMS-3 (TH3-2): "Staff Sign In" → "Sign In" — cleaner wording that doesn't
 // imply staff-only access (future auth methods may serve other audiences too).
-const navLinks = [
-  { title: 'Home', to: '/' },
-]
+// T-HOME-CMS-17 (operator directive): the standalone "Home" nav button was removed —
+// redundant with the logo, which already links to "/" on every public page (including
+// /coi/public/*, which shares this layout). No functionality lost, one less click target.
 
 // T-HOME-CMS: footer copy is admin-managed with seeded fallbacks.
 // T-HOME-CMS-2 (THM-1): homepage theme preset — read here so it's set on the
@@ -64,19 +63,6 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
       </NuxtLink>
 
       <v-spacer />
-
-      <nav aria-label="Public navigation" class="d-none d-md-flex align-center ga-1 mr-2">
-        <v-btn
-          v-for="link in navLinks"
-          :key="link.to"
-          :to="link.to"
-          variant="text"
-          color="figma-primary"
-          class="text-none"
-        >
-          {{ link.title }}
-        </v-btn>
-      </nav>
 
       <v-btn
         to="/login"
@@ -178,6 +164,18 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
   --csu-gray: #4d4d4d;
   font-family: 'Parkinsans', 'Poppins', sans-serif;
 
+  /* T-HOME-CMS-10 (TH10-3): subtle theme-tinted dot grid — pure CSS (a
+     radial-gradient can read CSS variables; an SVG data-URI cannot), zero
+     assets, zero requests. Shows through the white section bands (made
+     transparent in PublicSectionBand) for a layered, textured feel; the
+     opacity is low enough that text contrast is unaffected. */
+  background-color: #ffffff;
+  background-image: radial-gradient(
+    rgba(var(--csu-accent-rgb, 0, 153, 0), 0.055) 1px,
+    transparent 1px
+  );
+  background-size: 26px 26px;
+
   /* Theme-able surfaces (all 8 section components + this layout's footer read
      these instead of hardcoded hex — see PublicHero/Highlights/Announcements/
      Faq.vue). Defaults = Light Emerald preset. */
@@ -192,13 +190,29 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
      via rgba(var(--csu-accent-rgb), alpha), matching Vuetify's own convention. */
   --csu-accent: var(--csu-green);
   --csu-accent-rgb: 0, 153, 0;
+
+  /* T-HOME-CMS-5 (TH5-8): expanded token set so switching presets visibly
+     changes cards, buttons, and hover states — not just a thin band border.
+     Additive vs. T-HOME-CMS-4's set; existing --csu-band-* and --csu-accent
+     bindings are kept, not replaced, so no consuming component breaks. */
+  --csu-card-bg: #ffffff;
+  --csu-card-border: #e2e8f0;
+  --csu-button-tint: var(--csu-green);
+  --csu-hover-tint: rgba(0, 153, 0, 0.07);
+
+  /* T-HOME-CMS-7 (TH7-1/D4): soft static section-boundary shadow — replaces
+     background-color as the primary separator between neutral bands, per
+     operator directive to avoid heavy borders/competing background colors. */
+  --csu-band-shadow: rgba(15, 23, 42, 0.05);
 }
 
 /* Theme presets (THM-1) — closed set, no freeform color picker, per directive.
-   Each preset re-tints the band/hero/accent surfaces above; none invert text
-   to a dark background, since every section's text classes (text-figma-primary
-   etc.) are hardcoded for light-surface contrast — a true dark mode would need
-   every component's text color audited, out of scope for a preset swap. */
+   Each preset re-tints the band/hero/accent/card/button/hover surfaces above;
+   none invert text to a dark background, since every section's text classes
+   (text-figma-primary etc.) are hardcoded for light-surface contrast — a true
+   dark mode would need every component's text color audited, out of scope for
+   a preset swap (RH5-7). Distinctness instead comes from stronger card
+   borders, differentiated accent color, and visibly different hover tints. */
 .public-homepage-root[data-theme='dark_emerald'] {
   --csu-band-bg: #eafbea;
   --csu-band-border: #bbf0c4;
@@ -206,6 +220,11 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
   --csu-hero-gradient-end: #ffffff;
   --csu-accent: var(--csu-gold); /* contrast against deeper emerald */
   --csu-accent-rgb: 249, 220, 7;
+  --csu-card-bg: #f4fbf5;
+  --csu-card-border: #7fd99a;
+  --csu-button-tint: var(--csu-gold);
+  --csu-hover-tint: rgba(249, 220, 7, 0.14);
+  --csu-band-shadow: rgba(21, 128, 61, 0.08);
 }
 
 .public-homepage-root[data-theme='csu_green'] {
@@ -213,8 +232,15 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
   --csu-band-border: #bbf7d0;
   --csu-hero-gradient-start: #dcfce7;
   --csu-hero-gradient-end: #ffffff;
-  --csu-accent: var(--csu-gold);
-  --csu-accent-rgb: 249, 220, 7;
+  /* TH5-8: distinct from dark_emerald (gold accent) — csu_green stays green,
+     the two presets no longer read as near-duplicates (RH5-7). */
+  --csu-accent: var(--csu-green);
+  --csu-accent-rgb: 0, 153, 0;
+  --csu-card-bg: #ffffff;
+  --csu-card-border: #4ade80;
+  --csu-button-tint: var(--csu-green);
+  --csu-hover-tint: rgba(0, 153, 0, 0.12);
+  --csu-band-shadow: rgba(0, 153, 0, 0.07);
 }
 
 .public-homepage-root[data-theme='white'] {
@@ -224,6 +250,11 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
   --csu-hero-gradient-end: #ffffff;
   --csu-accent: var(--csu-green);
   --csu-accent-rgb: 0, 153, 0;
+  --csu-card-bg: #ffffff;
+  --csu-card-border: #e5e7eb;
+  --csu-button-tint: var(--csu-green);
+  --csu-hover-tint: rgba(0, 0, 0, 0.04);
+  --csu-band-shadow: rgba(0, 0, 0, 0.04);
 }
 
 .public-homepage-root[data-theme='neutral_gray'] {
@@ -233,6 +264,11 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
   --csu-hero-gradient-end: #ffffff;
   --csu-accent: var(--csu-emerald);
   --csu-accent-rgb: 0, 51, 0;
+  --csu-card-bg: #f9fafb;
+  --csu-card-border: #9ca3af;
+  --csu-button-tint: var(--csu-emerald);
+  --csu-hover-tint: rgba(0, 51, 0, 0.08);
+  --csu-band-shadow: rgba(107, 114, 128, 0.08);
 }
 
 .skip-link {
@@ -291,5 +327,21 @@ const contactWebsite = computed(() => setting('contact_website', 'www.carsu.edu.
 }
 .csu-accent-avatar .v-icon {
   color: var(--csu-accent) !important;
+}
+
+/* T-HOME-CMS-5 (TH5-8): shared card treatment so every homepage card's
+   background/border/hover state visibly follows the active theme preset,
+   not just the accent color. Applied alongside each component's existing
+   card class (highlight-card, facet-card, pillar-card, announcement-card,
+   quick-link-card) — additive, no markup restructuring. */
+.csu-card {
+  background-color: var(--csu-card-bg, #ffffff) !important;
+  border: 1px solid var(--csu-card-border, #e2e8f0);
+}
+.csu-card:hover {
+  box-shadow: 0 4px 16px var(--csu-hover-tint, rgba(0, 0, 0, 0.06)) !important;
+}
+.csu-hero-accent-rule {
+  background-color: var(--csu-button-tint, var(--csu-gold)) !important;
 }
 </style>

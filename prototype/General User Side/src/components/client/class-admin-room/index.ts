@@ -1,1 +1,0 @@
-export { default as ClassroomAdministrativeOfficePage } from './ClassroomAdministrativeOfficePage';

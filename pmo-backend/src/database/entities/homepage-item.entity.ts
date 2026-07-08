@@ -42,8 +42,52 @@ export class HomepageItem {
   manualValue?: string;
 
   // Optional image via the existing Media module (mediableType homepage_*).
+  // Also doubles as a custom-uploaded icon image for sections that don't use
+  // this slot for a section photo (T-HOME-CMS-5, TH5-6).
   @Property({ nullable: true, columnType: 'uuid' })
   mediaId?: string;
+
+  // T-HOME-CMS-5 (TH5-11): Highlights only — closed CSU-palette accent color.
+  @Property({ nullable: true, length: 30 })
+  colorToken?: string;
+
+  // T-HOME-CMS-8 (TH8-5): unused since T-HOME-CMS-11 decoupled Featured News
+  // from COI (RH11-3) — kept in place per this project's additive-only
+  // migration convention, never populated by new code.
+  @Property({ nullable: true, columnType: 'uuid' })
+  linkedProjectId?: string;
+
+  // T-HOME-CMS-11 (TH11-2): Featured News fields.
+  @Property({ nullable: true, length: 255 })
+  subtitle?: string;
+
+  @Property({ nullable: true, columnType: 'text' })
+  fullDescription?: string;
+
+  @Property({ nullable: true, length: 255 })
+  author?: string;
+
+  @Property({ nullable: true, length: 255 })
+  department?: string;
+
+  @Property({ nullable: true, columnType: 'date' })
+  publishDate?: Date;
+
+  @Property({ default: false })
+  isFeatured: boolean = false;
+
+  // Plain optional text — no longer resolved from a COI record (RH11-3).
+  @Property({ nullable: true, length: 100 })
+  statusText?: string;
+
+  @Property({ nullable: true, length: 100 })
+  campusText?: string;
+
+  @Property({ nullable: true, length: 100 })
+  budgetText?: string;
+
+  @Property({ nullable: true, length: 50 })
+  completionText?: string;
 
   @Property({ default: true })
   isPublished: boolean = true;

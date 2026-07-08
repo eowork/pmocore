@@ -3,12 +3,13 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { HomepageController } from './homepage.controller';
 import { PublicHomepageController } from './public-homepage.controller';
 import { HomepageService } from './homepage.service';
+import { HomepageAccessGuard } from './homepage-access.guard';
 import { HomepageSetting, HomepageItem } from '../database/entities';
 
 // T-HOME-CMS (THC-3/THC-4): CMS-backed public homepage content.
 @Module({
   imports: [MikroOrmModule.forFeature([HomepageSetting, HomepageItem])],
   controllers: [HomepageController, PublicHomepageController],
-  providers: [HomepageService],
+  providers: [HomepageService, HomepageAccessGuard],
 })
 export class HomepageModule {}

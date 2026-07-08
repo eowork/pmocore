@@ -30,28 +30,51 @@ function resolveValue(h: { value_source: string; manual_value: string }): string
     default: return h.manual_value
   }
 }
+
+// T-HOME-CMS-8 (TH8-2/TH8-3/TH8-4): variant from pages/index.vue; empty state
+// now shows a placeholder (admin-configurable) instead of vanishing (RH8-3).
+defineProps<{ variant?: 'neutral' | 'white' }>()
+const emptyBehavior = computed(
+  () => sectionsConfig.value.find(s => s.key === 'highlights')?.emptyBehavior ?? 'placeholder',
+)
 </script>
 
 <template>
-  <div v-if="highlights.length" class="highlights-band py-12">
-    <v-container>
+  <PublicSectionBand
+    :variant="variant"
+    :is-empty="!highlights.length"
+    :empty-behavior="emptyBehavior"
+    empty-message="Highlights are being prepared."
+    empty-icon="mdi-star-outline"
+  >
+    <template #heading>
       <h2 class="text-h4 font-weight-bold text-figma-primary mb-8 text-center">
         University Highlights
       </h2>
+    </template>
       <div v-if="masonry" class="highlights-masonry">
         <v-card
           v-for="highlight in highlights"
           :key="highlight.id"
-          class="pa-5 highlight-card masonry-item"
+          class="pa-5 highlight-card csu-card masonry-item"
           elevation="2"
           rounded="lg"
         >
           <div class="d-flex align-start ga-4">
-            <v-avatar color="primary" variant="tonal" size="48" class="flex-shrink-0">
-              <v-icon :icon="highlight.icon || 'mdi-star-outline'" size="24" />
+            <v-avatar
+              color="primary"
+              variant="tonal"
+              size="48"
+              class="flex-shrink-0"
+              :style="highlight.color_token ? { backgroundColor: `var(--csu-${highlight.color_token})`, color: '#fff' } : undefined"
+            >
+              <!-- T-HOME-CMS-5 (TH5-6): custom-uploaded icon image, clamped to
+                   the avatar's own size — no separate normalization step needed. -->
+              <v-img v-if="highlight.image_url" :src="highlight.image_url" :alt="highlight.alt_text || highlight.title" cover />
+              <v-icon v-else :icon="highlight.icon || 'mdi-star-outline'" size="24" />
             </v-avatar>
             <div>
-              <div v-if="resolveValue(highlight)" class="text-h4 font-weight-bold text-figma-primary">
+              <div v-if="resolveValue(highlight)" class="text-h4 text-sm-h3 font-weight-bold text-figma-primary">
                 {{ resolveValue(highlight) }}
               </div>
               <h3 class="text-subtitle-1 font-weight-bold text-figma-primary">{{ highlight.title }}</h3>
@@ -60,21 +83,29 @@ function resolveValue(h: { value_source: string; manual_value: string }): string
           </div>
         </v-card>
       </div>
-      <v-row v-else dense>
+      <!-- T-HOME-CMS-6 (TH6-7): center partial rows. -->
+      <v-row v-else dense justify="center">
         <v-col
           v-for="highlight in highlights"
           :key="highlight.id"
           v-bind="colProps"
         >
-          <v-card class="pa-5 h-100 highlight-card" elevation="2" rounded="lg">
+          <v-card class="pa-5 h-100 highlight-card csu-card" elevation="2" rounded="lg">
             <div class="d-flex align-start ga-4">
-              <v-avatar color="primary" variant="tonal" size="48" class="flex-shrink-0">
-                <v-icon :icon="highlight.icon || 'mdi-star-outline'" size="24" />
+              <v-avatar
+                color="primary"
+                variant="tonal"
+                size="48"
+                class="flex-shrink-0"
+                :style="highlight.color_token ? { backgroundColor: `var(--csu-${highlight.color_token})`, color: '#fff' } : undefined"
+              >
+                <v-img v-if="highlight.image_url" :src="highlight.image_url" :alt="highlight.alt_text || highlight.title" cover />
+                <v-icon v-else :icon="highlight.icon || 'mdi-star-outline'" size="24" />
               </v-avatar>
               <div>
                 <div
                   v-if="resolveValue(highlight)"
-                  class="text-h4 font-weight-bold text-figma-primary"
+                  class="text-h4 text-sm-h3 font-weight-bold text-figma-primary"
                 >
                   {{ resolveValue(highlight) }}
                 </div>
@@ -89,18 +120,10 @@ function resolveValue(h: { value_source: string; manual_value: string }): string
           </v-card>
         </v-col>
       </v-row>
-    </v-container>
-  </div>
+  </PublicSectionBand>
 </template>
 
 <style scoped>
-/* THC-11: distinct tinted band with borders so the section reads separately. */
-.highlights-band {
-  background-color: var(--csu-band-bg, #f8fafc);
-  border-top: 1px solid var(--csu-band-border, #e2e8f0);
-  border-bottom: 1px solid var(--csu-band-border, #e2e8f0);
-}
-
 .highlight-card {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
