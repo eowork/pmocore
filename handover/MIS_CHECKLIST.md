@@ -76,7 +76,7 @@ These values must be transferred directly to the MIS successor. Do NOT put these
 
 When MIS provides their Active Directory details, follow these steps to activate institutional login.
 
-Full procedure is in `ldap-test/MIS_SWAP.md`. Summary:
+Full procedure is in `handover/ldap-test/MIS_SWAP.md`. Summary:
 
 ### Step 1 — Open `pmo-backend/.env` and update LDAP block
 
