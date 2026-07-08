@@ -35,17 +35,22 @@ const faqs = computed(() => {
   }
   return fallbackFaqs
 })
+
+// T-HOME-CMS-8 (TH8-2/TH8-3): variant from pages/index.vue. FAQ always has
+// fallback content (never empty), so no empty-state props needed.
+defineProps<{ variant?: 'neutral' | 'white' }>()
 </script>
 
 <template>
-  <div class="faq-band py-12">
-    <v-container>
+  <PublicSectionBand :variant="variant">
+    <template #heading>
       <div class="text-center mb-8">
         <h2 class="text-h4 font-weight-bold text-figma-primary mb-2">Frequently Asked Questions</h2>
         <p class="text-subtitle-1 text-figma-muted mb-0">
           Common questions about PMO CORE and the information it publishes.
         </p>
       </div>
+    </template>
       <v-row justify="center">
         <v-col cols="12" md="9">
           <v-expansion-panels variant="accordion" rounded="lg">
@@ -58,13 +63,5 @@ const faqs = computed(() => {
           </v-expansion-panels>
         </v-col>
       </v-row>
-    </v-container>
-  </div>
+  </PublicSectionBand>
 </template>
-
-<style scoped>
-.faq-band {
-  background-color: var(--csu-band-bg, #f8fafc);
-  border-top: 1px solid var(--csu-band-border, #e2e8f0);
-}
-</style>

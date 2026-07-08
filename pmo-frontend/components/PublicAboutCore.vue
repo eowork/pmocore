@@ -28,19 +28,34 @@ const facets = computed(() => {
   const cmsFacets = itemsFor('about_facet')
   return cmsFacets.length ? cmsFacets : FALLBACK_FACETS
 })
+
+// T-HOME-CMS-8 (TH8-2/TH8-3): variant supplied by pages/index.vue's render
+// loop — this component no longer decides its own background (RH8-2).
+defineProps<{ variant?: 'neutral' | 'white' }>()
 </script>
 
 <template>
-  <v-container class="py-12">
+  <PublicSectionBand :variant="variant">
     <v-row>
       <v-col cols="12" md="5" class="text-center text-md-left">
         <h2 class="text-h4 font-weight-bold text-figma-primary mb-4">{{ title }}</h2>
         <p class="text-body-1 text-figma-muted">{{ body }}</p>
       </v-col>
       <v-col cols="12" md="7">
-        <v-row dense>
+        <!-- T-HOME-CMS-6 (TH6-7): center partial rows. -->
+        <v-row dense justify="center">
           <v-col v-for="facet in facets" :key="facet.id" cols="12" sm="6">
-            <v-card class="pa-5 h-100 facet-card" elevation="2" rounded="lg">
+            <v-card class="pa-5 h-100 facet-card csu-card" elevation="2" rounded="lg">
+              <!-- T-HOME-CMS-5 (TH5-4): optional facet photo, admin-uploaded
+                   via the item's image field (about_facet now hasImage). -->
+              <v-img
+                v-if="facet.image_url"
+                :src="facet.image_url"
+                :alt="facet.alt_text || facet.title"
+                cover
+                height="120"
+                class="rounded mb-3"
+              />
               <v-avatar class="mb-3 csu-accent-avatar" variant="tonal" size="40">
                 <v-icon :icon="facet.icon" size="20" />
               </v-avatar>
@@ -53,7 +68,7 @@ const facets = computed(() => {
         </v-row>
       </v-col>
     </v-row>
-  </v-container>
+  </PublicSectionBand>
 </template>
 
 <style scoped>

@@ -100,6 +100,18 @@ export class HomepageService {
       isPinned: dto.is_pinned ?? false,
       scheduledStart: dto.scheduled_start ? new Date(dto.scheduled_start) : undefined,
       scheduledEnd: dto.scheduled_end ? new Date(dto.scheduled_end) : undefined,
+      colorToken: dto.color_token || undefined,
+      linkedProjectId: dto.linked_project_id || undefined,
+      subtitle: dto.subtitle,
+      fullDescription: dto.full_description,
+      author: dto.author,
+      department: dto.department,
+      publishDate: dto.publish_date ? new Date(dto.publish_date) : undefined,
+      isFeatured: dto.is_featured ?? false,
+      statusText: dto.status_text,
+      campusText: dto.campus_text,
+      budgetText: dto.budget_text,
+      completionText: dto.completion_text,
       createdBy: userId,
     });
     await this.em.persist(item).flush();
@@ -126,6 +138,21 @@ export class HomepageService {
     if (dto.media_id !== undefined) item.mediaId = dto.media_id;
     if (dto.is_published !== undefined) item.isPublished = dto.is_published;
     if (dto.is_pinned !== undefined) item.isPinned = dto.is_pinned;
+    // Empty string clears the color back to the default accent (TH5-11).
+    if (dto.color_token !== undefined) item.colorToken = dto.color_token || undefined;
+    if (dto.linked_project_id !== undefined) item.linkedProjectId = dto.linked_project_id || undefined;
+    if (dto.subtitle !== undefined) item.subtitle = dto.subtitle;
+    if (dto.full_description !== undefined) item.fullDescription = dto.full_description;
+    if (dto.author !== undefined) item.author = dto.author;
+    if (dto.department !== undefined) item.department = dto.department;
+    if (dto.publish_date !== undefined) {
+      item.publishDate = dto.publish_date ? new Date(dto.publish_date) : undefined;
+    }
+    if (dto.is_featured !== undefined) item.isFeatured = dto.is_featured;
+    if (dto.status_text !== undefined) item.statusText = dto.status_text;
+    if (dto.campus_text !== undefined) item.campusText = dto.campus_text;
+    if (dto.budget_text !== undefined) item.budgetText = dto.budget_text;
+    if (dto.completion_text !== undefined) item.completionText = dto.completion_text;
     // Empty string clears the bound (T-HOME-CMS-3, TH3-5).
     if (dto.scheduled_start !== undefined) {
       item.scheduledStart = dto.scheduled_start ? new Date(dto.scheduled_start) : undefined;
@@ -221,7 +248,20 @@ export class HomepageService {
         image_url: item.mediaId ? (mediaPaths.get(item.mediaId) ?? '') : '',
         alt_text: item.mediaId ? (mediaAlts.get(item.mediaId) ?? '') : '',
         is_pinned: item.isPinned,
+        color_token: item.colorToken ?? '',
         created_at: item.createdAt.toISOString(),
+        // T-HOME-CMS-11 (TH11-2): Featured News fields — plain, standalone,
+        // no COI resolution (RH11-3 supersedes T-HOME-CMS-8's linked_project).
+        subtitle: item.subtitle ?? '',
+        full_description: item.fullDescription ?? '',
+        author: item.author ?? '',
+        department: item.department ?? '',
+        publish_date: item.publishDate ? item.publishDate.toISOString().slice(0, 10) : '',
+        is_featured: item.isFeatured,
+        status_text: item.statusText ?? '',
+        campus_text: item.campusText ?? '',
+        budget_text: item.budgetText ?? '',
+        completion_text: item.completionText ?? '',
       });
     }
 

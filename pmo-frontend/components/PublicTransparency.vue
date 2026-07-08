@@ -28,24 +28,32 @@ const pillars = computed(() => {
   const cmsPillars = itemsFor('transparency_pillar')
   return cmsPillars.length ? cmsPillars : FALLBACK_PILLARS
 })
+
+// T-HOME-CMS-8 (TH8-2/TH8-3): variant from pages/index.vue. Never empty
+// (fallback pillars), no empty-state props needed.
+defineProps<{ variant?: 'neutral' | 'white' }>()
 </script>
 
 <template>
-  <v-container id="transparency" class="py-12">
-    <div class="text-center mb-8">
-      <h2 class="text-h4 font-weight-bold text-figma-primary mb-3">{{ title }}</h2>
-      <p class="text-body-1 text-figma-muted mx-auto" style="max-width: 640px;">
-        {{ body }}
-      </p>
-    </div>
+  <PublicSectionBand :variant="variant" container-id="transparency">
+    <template #heading>
+      <div class="text-center mb-8">
+        <h2 class="text-h4 font-weight-bold text-figma-primary mb-3">{{ title }}</h2>
+        <p class="text-body-1 text-figma-muted mx-auto" style="max-width: 640px;">
+          {{ body }}
+        </p>
+      </div>
+    </template>
     <v-row justify="center">
       <v-col cols="12" md="10" lg="8">
-        <v-row dense>
+        <!-- T-HOME-CMS-6 (TH6-7): center partial rows. -->
+        <v-row dense justify="center">
           <v-col v-for="pillar in pillars" :key="pillar.id" cols="12" sm="6">
-            <v-card class="pa-5 h-100 pillar-card" elevation="2" rounded="lg">
+            <v-card class="pa-5 h-100 pillar-card csu-card" elevation="2" rounded="lg">
               <div class="d-flex ga-3">
                 <v-avatar class="flex-shrink-0 csu-accent-avatar" variant="tonal" size="40">
-                  <v-icon :icon="pillar.icon" size="20" />
+                  <v-img v-if="pillar.image_url" :src="pillar.image_url" :alt="pillar.alt_text || pillar.title" cover />
+                  <v-icon v-else :icon="pillar.icon" size="20" />
                 </v-avatar>
                 <div>
                   <div class="text-subtitle-2 font-weight-bold text-figma-primary">{{ pillar.title }}</div>
@@ -57,7 +65,7 @@ const pillars = computed(() => {
         </v-row>
       </v-col>
     </v-row>
-  </v-container>
+  </PublicSectionBand>
 </template>
 
 <style scoped>

@@ -214,6 +214,21 @@ async function handleLogout() {
             </template>
           </v-list-item>
           <v-divider />
+          <!-- T-HOME-CMS-11 (TH11-1): Home relocated from the app bar into
+           the user menu — cleaner navbar, conventional placement. Every
+           authenticated user (all roles) can reach both Dashboard and Home,
+           since the public homepage is accessible while logged in (TH10-1). -->
+          <v-list-item
+            prepend-icon="mdi-view-dashboard-outline"
+            title="Dashboard"
+            to="/dashboard"
+          />
+          <v-list-item
+            prepend-icon="mdi-home-outline"
+            title="Home"
+            to="/"
+          />
+          <v-divider />
           <!-- MMM-E: account navigation (hidden for contractors) -->
           <template v-if="!isContractor">
             <v-list-item
@@ -273,10 +288,21 @@ async function handleLogout() {
       <v-list nav density="comfortable">
         <v-list-subheader>MODULES</v-list-subheader>
 
-        <!-- T-HOME-CMS-4 (TH4-3): University Operations and Infrastructure Projects
-             render before Dashboard/Repair/GAD per the required hierarchy — a
-             template-order-only change; mainModules, guards, and routes are
-             unchanged (see the v-for block below). -->
+        <!-- T-HOME-CMS-6 (TH6-1): required order — Dashboard, University
+             Operations, Infrastructure Projects, Repair Projects, GAD Parity.
+             Dashboard renders alone first; Repair/GAD render after the two
+             expandable groups from the same (unchanged) mainModules array.
+             Template-order-only; mainModules/guards/routes untouched. -->
+        <v-list-item
+          v-for="item in mainModules.filter(m => m.key === 'dashboard')"
+          :key="item.to"
+          :to="item.to"
+          :prepend-icon="item.icon"
+          :title="item.title"
+          color="primary"
+          rounded="lg"
+          class="mb-1 ga-1"
+        />
 
         <!-- T-NAV: University Operations — expandable group (same v-list-group pattern as User Management) -->
         <v-list-group v-if="canAccessModule('university_operations')" v-model="uoOpen" value="universityOps">
@@ -356,17 +382,31 @@ async function handleLogout() {
           </v-list-item>
         </v-list-group>
 
-        <!-- Dashboard, Repair Projects, GAD Parity — after the expandable groups. -->
+        <!-- T-HOME-CMS-6 (TH6-1): Repair Projects + GAD Parity after the
+             expandable groups. T-HOME-CMS-5 (TH5-2) "Soon" chip retained —
+             dev-status indicator only; pages stay fully accessible. -->
         <v-list-item
-          v-for="item in mainModules"
+          v-for="item in mainModules.filter(m => m.key !== 'dashboard')"
           :key="item.to"
           :to="item.to"
           :prepend-icon="item.icon"
-          :title="item.title"
           color="primary"
           rounded="lg"
           class="mb-1 ga-1"
-        />
+        >
+          <template #title>
+            {{ item.title }}
+            <v-chip
+              v-if="item.key === 'repairs' || item.key === 'gad'"
+              size="x-small"
+              variant="tonal"
+              color="grey"
+              class="ml-2"
+            >
+              Soon
+            </v-chip>
+          </template>
+        </v-list-item>
       </v-list>
 
       <!-- PHASE BBBC (Task A): three labelled administration sections. -->

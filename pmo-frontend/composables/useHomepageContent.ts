@@ -13,7 +13,19 @@ export interface HomepageItemUI {
   image_url: string
   alt_text: string
   is_pinned: boolean
+  color_token: string
   created_at: string
+  // T-HOME-CMS-11 (TH11-2): Featured News fields — standalone, no COI link.
+  subtitle: string
+  full_description: string
+  author: string
+  department: string
+  publish_date: string
+  is_featured: boolean
+  status_text: string
+  campus_text: string
+  budget_text: string
+  completion_text: string
 }
 
 // T-HOME-CMS-2 (THM-5): section-level enable/disable + order, stored as one
@@ -30,11 +42,18 @@ export type HomepageLayoutTemplate =
   | 'stacked'
   | 'masonry'
 
+// T-HOME-CMS-8 (TH8-4): admin-configurable behavior when a section has no
+// published content — 'hide' (today's old default), 'placeholder' (friendly
+// message, visible to everyone, new default), 'reminder' (message visible
+// only to homepage administrators, hidden from the public).
+export type HomepageEmptyBehavior = 'hide' | 'placeholder' | 'reminder'
+
 export interface HomepageSectionConfig {
   key: string
   visible: boolean
   order: number
   layout?: HomepageLayoutTemplate
+  emptyBehavior?: HomepageEmptyBehavior
 }
 
 const DEFAULT_SECTIONS_CONFIG: HomepageSectionConfig[] = [
@@ -43,8 +62,11 @@ const DEFAULT_SECTIONS_CONFIG: HomepageSectionConfig[] = [
   { key: 'featured_projects', visible: true, order: 3 },
   { key: 'announcements', visible: true, order: 4, layout: 'stacked' },
   { key: 'latest_updates', visible: true, order: 5 },
-  { key: 'transparency', visible: true, order: 6 },
-  { key: 'faq', visible: true, order: 7 },
+  // T-HOME-CMS-5 (TH5-3): PublicQuickLinks.vue was fully built and CMS-wired
+  // but never added to this config — wiring in an already-complete feature.
+  { key: 'quick_links', visible: true, order: 6 },
+  { key: 'transparency', visible: true, order: 7 },
+  { key: 'faq', visible: true, order: 8 },
 ]
 
 interface PublicHomepageResponse {

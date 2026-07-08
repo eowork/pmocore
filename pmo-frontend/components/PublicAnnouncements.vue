@@ -17,17 +17,30 @@ const rest = computed(() => announcements.value.filter(a => a.id !== featured.va
 const layout = computed(() => sectionsConfig.value.find(s => s.key === 'announcements')?.layout)
 const colProps = computed(() => colPropsForLayout(layout.value))
 const masonry = computed(() => isMasonryLayout(layout.value))
+
+// T-HOME-CMS-8 (TH8-2/TH8-3/TH8-4)
+defineProps<{ variant?: 'neutral' | 'white' }>()
+const emptyBehavior = computed(
+  () => sectionsConfig.value.find(s => s.key === 'announcements')?.emptyBehavior ?? 'placeholder',
+)
 </script>
 
 <template>
-  <div v-if="announcements.length" class="announcements-band py-12">
-    <v-container>
+  <PublicSectionBand
+    :variant="variant"
+    :is-empty="!announcements.length"
+    :empty-behavior="emptyBehavior"
+    empty-message="No announcements have been published."
+    empty-icon="mdi-bullhorn-outline"
+  >
+    <template #heading>
       <h2 class="text-h4 font-weight-bold text-figma-primary mb-8 text-center">Latest Announcements</h2>
+    </template>
 
       <!-- Featured / pinned announcement -->
       <v-card
         v-if="featured"
-        class="mb-6 featured-announcement"
+        class="mb-6 featured-announcement csu-card"
         elevation="3"
         rounded="lg"
         :to="featured.link_url || undefined"
@@ -60,7 +73,7 @@ const masonry = computed(() => isMasonryLayout(layout.value))
 
       <!-- Remaining announcements -->
       <div v-if="masonry" class="announcements-masonry">
-        <v-card v-for="a in rest" :key="a.id" class="pa-4 announcement-card masonry-item" elevation="1" rounded="lg" :to="a.link_url || undefined">
+        <v-card v-for="a in rest" :key="a.id" class="pa-4 announcement-card csu-card masonry-item" elevation="1" rounded="lg" :to="a.link_url || undefined">
           <v-img v-if="a.image_url" :src="a.image_url" :alt="a.alt_text || a.title" cover height="140" class="rounded mb-3" />
           <div class="d-flex align-center ga-2 mb-1">
             <v-icon :icon="a.icon || 'mdi-bullhorn-outline'" size="18" class="announcement-icon" />
@@ -73,9 +86,10 @@ const masonry = computed(() => isMasonryLayout(layout.value))
           </v-btn>
         </v-card>
       </div>
-      <v-row v-else dense>
+      <!-- T-HOME-CMS-6 (TH6-7): center partial rows. -->
+      <v-row v-else dense justify="center">
         <v-col v-for="a in rest" :key="a.id" v-bind="colProps">
-          <v-card class="pa-4 h-100 announcement-card" elevation="1" rounded="lg" :to="a.link_url || undefined">
+          <v-card class="pa-4 h-100 announcement-card csu-card" elevation="1" rounded="lg" :to="a.link_url || undefined">
             <v-img v-if="a.image_url" :src="a.image_url" :alt="a.alt_text || a.title" cover height="140" class="rounded mb-3" />
             <div class="d-flex align-center ga-2 mb-1">
               <v-icon :icon="a.icon || 'mdi-bullhorn-outline'" size="18" class="announcement-icon" />
@@ -89,17 +103,10 @@ const masonry = computed(() => isMasonryLayout(layout.value))
           </v-card>
         </v-col>
       </v-row>
-    </v-container>
-  </div>
+  </PublicSectionBand>
 </template>
 
 <style scoped>
-.announcements-band {
-  background-color: var(--csu-band-bg, #f8fafc);
-  border-top: 1px solid var(--csu-band-border, #e2e8f0);
-  border-bottom: 1px solid var(--csu-band-border, #e2e8f0);
-}
-
 /* T-HOME-POLISH (THP-6): CSU Orange is the directive's named use case for announcements. */
 .announcement-icon {
   color: var(--csu-orange, #ff9900);

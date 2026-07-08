@@ -8,7 +8,7 @@
  * SECURITY: Backend must still enforce permissions. This is UX enhancement only.
  */
 export default defineNuxtRouteMiddleware((to) => {
-  const { canManageUsers, isSuperAdmin, isAdmin, canAdd, canEdit, isContractor, canApprove } = usePermissions()
+  const { canManageUsers, isSuperAdmin, isAdmin, canAdd, canEdit, isContractor, canApprove, canAccessModule } = usePermissions()
 
   // QB: Contractor route isolation — allow only /dashboard, /coi, /login, /contractor paths
   if (isContractor.value) {
@@ -63,11 +63,11 @@ export default defineNuxtRouteMiddleware((to) => {
       return navigateTo('/dashboard')
     }
   }
-  // T-HOME-CMS (THC-6): Homepage Management — any Admin/SuperAdmin (backend RolesGuard
-  // allows the Admin role; no 'users' grant required). Carved out before the broad
-  // /admin guard, which additionally demands canManageUsers.
+  // T-HOME-CMS-6 (TH6-5): Homepage Management — SuperAdmin, or an explicit
+  // 'homepage' module override (Admin role alone no longer qualifies).
+  // Carved out before the broad /admin guard, which demands canManageUsers.
   else if (to.path.startsWith('/admin/homepage-management')) {
-    if (!isAdmin.value && !isSuperAdmin.value) {
+    if (!canAccessModule('homepage')) {
       console.warn('[Permission] Access denied to /admin/homepage-management - insufficient permissions')
       return navigateTo('/dashboard')
     }

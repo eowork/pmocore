@@ -129,21 +129,39 @@ const carouselHeight = computed(() =>
 
 <style scoped>
 /* T-HOME-POLISH (THP-5): hero band's gradient resolves to white, keeping the
-   band visually distinct without a border line beneath it. */
+   band visually distinct without a border line beneath it.
+   T-HOME-CMS-10 (TH10-3): extended to a 3-stop gradient (existing tokens
+   only) with a slight angle for layered depth — background change only,
+   hero layout/markup untouched per the standing constraint. */
 .hero-band {
   background: linear-gradient(
-    180deg,
+    170deg,
     var(--csu-hero-gradient-start, #f0fdf4) 0%,
-    var(--csu-hero-gradient-end, #ffffff) 100%
+    var(--csu-hero-gradient-end, #ffffff) 62%,
+    var(--csu-band-bg, #f8fafc) 100%
   );
+  /* T-HOME-CMS-15 (operator directive): at default viewport height, the next
+     section (About PMO CORE) was peeking in by ~20-30px at the bottom edge —
+     a background/sizing adjustment only (hero layout/markup untouched, per
+     the standing constraint). 64px = the public app-bar's own height, so the
+     band fills the remaining viewport on first load; content stays centered
+     via the existing `align="center"` row, just with more room to breathe. */
+  min-height: calc(100vh - 64px);
+  display: flex;
+  align-items: center;
+}
+.hero-band > .v-container {
+  width: 100%;
 }
 
-/* CSU gold brand accent under the overline (D3: brand moments only) */
+/* CSU gold brand accent under the overline (D3: brand moments only).
+   T-HOME-CMS-5 (TH5-8): now reads from the theme token so the accent
+   visibly shifts with the active preset — hero layout/markup unchanged. */
 .hero-accent-rule {
   width: 64px;
   height: 4px;
   border-radius: 2px;
-  background-color: #f9dc07;
+  background-color: var(--csu-button-tint, #f9dc07);
 }
 
 .hero-carousel {

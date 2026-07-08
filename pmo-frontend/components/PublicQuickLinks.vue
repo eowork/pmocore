@@ -9,12 +9,22 @@ const links = computed(() => itemsFor('quick_link'))
 function isExternal(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
+
+// T-HOME-CMS-8 (TH8-2/TH8-3/TH8-4)
+defineProps<{ variant?: 'neutral' | 'white' }>()
 </script>
 
 <template>
-  <v-container v-if="links.length" class="py-12">
-    <h2 class="text-h4 font-weight-bold text-figma-primary mb-8 text-center">Explore PMO CORE</h2>
-    <v-row dense>
+  <PublicSectionBand
+    :variant="variant"
+    :is-empty="!links.length"
+    empty-behavior="hide"
+  >
+    <template #heading>
+      <h2 class="text-h4 font-weight-bold text-figma-primary mb-8 text-center">Explore PMO CORE</h2>
+    </template>
+    <!-- T-HOME-CMS-6 (TH6-7): center partial rows — 1–3 links no longer pin left. -->
+    <v-row dense justify="center">
       <v-col
         v-for="link in links"
         :key="link.id"
@@ -24,7 +34,7 @@ function isExternal(url: string): boolean {
         lg="3"
       >
         <v-card
-          class="pa-4 h-100 quick-link-card"
+          class="pa-4 h-100 quick-link-card csu-card"
           elevation="1"
           rounded="lg"
           :to="!isExternal(link.link_url) && link.link_url ? link.link_url : undefined"
@@ -34,7 +44,8 @@ function isExternal(url: string): boolean {
         >
           <div class="d-flex align-center ga-3">
             <v-avatar color="primary" variant="tonal" size="44" class="flex-shrink-0">
-              <v-icon :icon="link.icon || 'mdi-link-variant'" size="22" />
+              <v-img v-if="link.image_url" :src="link.image_url" :alt="link.alt_text || link.title" cover />
+              <v-icon v-else :icon="link.icon || 'mdi-link-variant'" size="22" />
             </v-avatar>
             <div class="flex-grow-1">
               <h3 class="text-subtitle-2 font-weight-bold text-figma-primary mb-0">
@@ -47,7 +58,7 @@ function isExternal(url: string): boolean {
         </v-card>
       </v-col>
     </v-row>
-  </v-container>
+  </PublicSectionBand>
 </template>
 
 <style scoped>
