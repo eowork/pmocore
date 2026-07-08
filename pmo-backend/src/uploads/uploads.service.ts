@@ -17,9 +17,12 @@ export class UploadsService {
       'MAX_FILE_SIZE',
       10 * 1024 * 1024,
     );
+    // T-HOME-CMS-12 (TH12-1): fallback matches .env.example's already-correct
+    // value (webp/csv/doc/xls included) — a fresh deploy without an explicit
+    // ALLOWED_MIME_TYPES in .env no longer silently rejects webp uploads.
     const mimeTypesStr = this.configService.get<string>(
       'ALLOWED_MIME_TYPES',
-      'image/jpeg,image/png,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain',
+      'image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain',
     );
     this.allowedMimeTypes = mimeTypesStr.split(',').map((t) => t.trim());
   }
