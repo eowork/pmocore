@@ -73,7 +73,7 @@ services:
   #   docker compose --profile ldap-test up -d
   # Then add LDAP_* vars to pmo-backend/.env and run:
   #   docker compose up -d backend   (recreates backend with LDAP env active)
-  # See ldap-test/MIS_SWAP.md for the full procedure and MIS swap guide.
+  # See handover/ldap-test/MIS_SWAP.md for the full procedure and MIS swap guide.
   openldap:
     profiles: ["ldap-test"]
     image: osixia/openldap:1.5.0
@@ -84,7 +84,8 @@ services:
       LDAP_ADMIN_PASSWORD: testldapadmin
       LDAP_TLS: "false"
     volumes:
-      - ./ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
+      # SYS-AUDIT-02 (HA-1): path updated after ldap-test/ moved under handover/.
+      - ./handover/ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
     ports:
       - "1389:389"
 

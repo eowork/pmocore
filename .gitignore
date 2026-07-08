@@ -8,6 +8,7 @@ nul
 # Temporary Claude/AI session files
 **/tmpclaude-*-cwd
 .claude/
+.codex/
 .trae/
 
 # MCP configuration files (may contain API keys)
@@ -19,6 +20,9 @@ database/backups/
 database/staging/
 pmo-backend/uploads/
 prototype/
+# SYS-AUDIT-01: root-level backup archives (DB dumps + uploads, real PII/credentials) —
+# distinct path from database/backups/ above, was previously unprotected.
+/backups/
 
 # Local-only documentation (research, planning, internal notes — not shared via Git)
 docs/
