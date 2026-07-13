@@ -192,6 +192,29 @@ export class UniversityOperationsService {
     return result.length > 0;
   }
 
+  /**
+   * Track T-SEC-IDOR: Object-level read authorization for a single operation (OWASP API1 BOLA).
+   * Mirrors the non-admin visibility predicate in findAll() exactly, evaluated in-memory against
+   * the already-hydrated row (uses the row's assigned_users array — no extra query).
+   * Admin/SuperAdmin bypass. Returns true iff the user may view THIS record.
+   */
+  private userCanViewOperation(operation: any, user: JwtPayload): boolean {
+    if (this.isAdmin(user)) return true;
+    const isCreator = operation.created_by === user.sub;
+    const assigned = Array.isArray(operation.assigned_users)
+      ? operation.assigned_users
+      : [];
+    const isAssigned = assigned.some((u: any) => u?.id === user.sub);
+    const recordCampus = this.normalizeUserCampusToRecordCampus(user.campus);
+    if (recordCampus) {
+      return operation.campus === recordCampus || isCreator || isAssigned;
+    }
+    // Unmapped campus: fall back to PUBLISHED-or-own-or-assigned (mirrors findAll).
+    return (
+      operation.publication_status === 'PUBLISHED' || isCreator || isAssigned
+    );
+  }
+
   // ─── Phase CM/CN: Authorization Validation Helpers ───────────────────────────
 
   /**
@@ -575,7 +598,7 @@ export class UniversityOperationsService {
     return createPaginatedResponse(dataResult, total, page, limit);
   }
 
-  async findOne(id: string): Promise<any> {
+  async findOne(id: string, user?: JwtPayload): Promise<any> {
     const result = await this.em.getConnection().execute(
       `SELECT uo.*,
               creator.first_name || ' ' || creator.last_name as created_by_name,
@@ -597,6 +620,14 @@ export class UniversityOperationsService {
     }
 
     const operation = result[0];
+
+    // Track T-SEC-IDOR: object-level read authorization (OWASP API1 BOLA). Enforced ONLY when a
+    // user is supplied — internal write-path callers pass no user and run their own authz. An
+    // out-of-scope record returns 404 (not 403) to avoid ID enumeration, matching findAll's
+    // "invisible" visibility semantics.
+    if (user && !this.userCanViewOperation(operation, user)) {
+      throw new NotFoundException(`Operation with ID ${id} not found`);
+    }
 
     // Get organizational info
     const orgInfo = await this.em.getConnection().execute(
