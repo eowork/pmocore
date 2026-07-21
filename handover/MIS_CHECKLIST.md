@@ -2,7 +2,7 @@
 
 > **Audience:** MIS Director and outgoing PMO operator
 > **Purpose:** Ensure all institutional information is collected, all secrets transferred, and all MIS-side configuration is documented before turnover
-> **Deadline:** Before July 15, 2026
+> **Target handover window:** 3rd week of July 2026 — the outgoing operator's departure date, offered as context for scheduling, not a date imposed on MIS
 
 ---
 

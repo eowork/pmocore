@@ -174,6 +174,15 @@ Log in with:
 - **Identifier:** `pmoadmin`
 - **Password:** the value you set for `SEED_PMOADMIN_PASSWORD`
 
+> **Safety check — do this before continuing:** also try logging in with the password `pmocore`
+> (for `pmoadmin`) or `pmoadmincore` (for `admin`). **If either of these actually logs you in,
+> STOP** — it means your real `.env` password was not applied when the database was first
+> created, and the account is protected only by a well-known default. Because these accounts are
+> seeded only once, on the very first database initialization, editing `.env` now will **not**
+> retroactively fix an already-seeded weak password — you must reset it directly. Use
+> `RUNBOOK.md` → "Reset pmoadmin password" to set a real password immediately, then verify the
+> old default no longer works.
+
 ---
 
 ## Step 5 — Migrate Existing Data (if inheriting from prior deployment)
