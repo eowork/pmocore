@@ -74,4 +74,4 @@ Supporting material for the engineer:
 
 ---
 
-*Last updated: 2026-07-08 · Outgoing operator: Angelo Alcantara · Turnover deadline: 2026-07-15*
+*Last updated: 2026-07-14 · Outgoing operator: Angelo Alcantara · Target handover window: 3rd week of July 2026 (subject to MIS coordination)*

@@ -796,15 +796,15 @@ In production, real users have entered real data they depend on. Other people ar
 
 ## What Remains
 
-### Operator Tasks (Things Only You Can Do Before July 15)
+### Operator Tasks (Things Only You Can Do Before Handover)
 
 | Task | How | When |
 |---|---|---|
 | Schedule backup cron | `crontab -e` — one line | Today |
 | Run restore test | `bash restore.sh <timestamp>` in WSL | This week |
 | Clean-room dry run | Deploy on a second device using only `handover/DEPLOYMENT.md` | This week |
-| Transfer secrets | In person: pmoadmin password, `.env` files, backup set | Before July 15 |
-| GitHub access | Add successor as collaborator | Before July 15 |
+| Transfer secrets | In person: pmoadmin password, `.env` files, backup set | Before the 3rd week of July 2026 (target handover window) |
+| GitHub access | Add successor as collaborator | Before the 3rd week of July 2026 (target handover window) |
 
 ### MIS Tasks (After Handover)
 

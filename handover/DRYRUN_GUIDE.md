@@ -15,7 +15,7 @@ It is a rehearsal of the real handover deployment performed on a second machine 
 You follow the documentation alone — just as the MIS successor will have to do on the university server.
 
 **If it works: the documentation is proven.** You can hand over with confidence.
-**If it fails: you find the gaps now, fix them, and try again before July 15.**
+**If it fails: you find the gaps now, fix them, and try again before the target handover window (3rd week of July 2026).**
 
 ---
 
