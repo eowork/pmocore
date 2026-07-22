@@ -126,19 +126,26 @@ If both commands return version numbers, Docker is ready.
 
 All remaining commands run in the **Ubuntu (WSL2) terminal.**
 
-### Step 2A — Clone the Repository
+### Step 2A — Clone the Repository and Check Out the Release Tag
 
 ```bash
 cd ~
 git clone https://github.com/eowork/pmoprototype.git pmo-dash
 cd pmo-dash
-git checkout pmo-deploy
+git checkout v1.0-phase1
 ```
 
-Verify you are on the right branch:
+> **Why a tag and not a branch:** `v1.0-phase1` is the exact, frozen snapshot MIS will deploy
+> from — it does not move even if new commits land on `main` or `pmo-deploy` later. Checking out
+> the tag here is what makes this dry run a true rehearsal of the real handover. If you ever need
+> to rehearse against in-progress work instead, `git checkout pmo-deploy` still works — just note
+> in your results (Phase "What to Record") that the run was against the branch, not the tag.
+
+Verify you are on the right commit:
 ```bash
-git branch
-# Should show: * pmo-deploy
+git status
+# Expected: "HEAD detached at v1.0-phase1" — this is normal for a tag checkout, not an error
+git log -1 --oneline
 ```
 
 Verify the key files are present:
@@ -421,6 +428,7 @@ After the dry run, write down:
 | Item | Value |
 |---|---|
 | Date | |
+| Git ref tested (tag/branch) | |
 | Dry-run laptop model | |
 | Time to complete (minutes) | |
 | Steps that caused confusion | |
