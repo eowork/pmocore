@@ -63,9 +63,6 @@ Supporting material for the engineer:
   the architecture blueprint and the complete database reference (authoritative
   schema, every table's columns, relationships, active-vs-legacy classification).
   Start with `technical-reference/README.md`.
-- **`CLAUDE.md` / `AGENTS.md`** (repo root) — configuration for AI coding assistants
-  (Claude Code and Codex respectively) used during development. Near-identical
-  content; safe to ignore if you don't use those tools, useful context if you do.
 - **`docs/`** (repo root, if present locally) — the outgoing developer's *personal*
   working folder: day-to-day planning notes and research history. It is
   intentionally excluded from git and is **not** part of this repository — if you

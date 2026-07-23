@@ -130,7 +130,7 @@ All remaining commands run in the **Ubuntu (WSL2) terminal.**
 
 ```bash
 cd ~
-git clone https://github.com/eowork/pmoprototype.git pmo-dash
+git clone https://github.com/eowork/pmocore.git pmo-dash
 cd pmo-dash
 git checkout v1.0-phase1
 ```
