@@ -2,7 +2,7 @@
 
 > **Purpose:** Prove that a stranger with only this documentation and the repository can deploy and operate PMO CORE from scratch — with zero help from the original developer.
 > **Device:** Any Windows 11 laptop (Intel or AMD Ryzen — no difference in procedure)
-> **Time required:** 60–90 minutes including installation
+> **Time required:** 60–90 minutes in ideal conditions; budget a half-day for a first attempt — the 2026-07-23 dry run took ~4 hours after hitting a Docker/WSL2 DNS issue and some cross-device backup-transfer confusion (see "What to Record" below)
 > **Operator:** Angelo Alcantara (outgoing developer)
 > **Outcome:** PASS or FAIL with written findings
 
@@ -398,18 +398,26 @@ docker compose ps
 
 ### PASS — All of the following are true:
 
-- [ ] Stack boots from scratch with `docker compose up -d`
-- [ ] All 3 containers reach healthy/running state
-- [ ] `GET /health` returns `{"status":"ok"}`
-- [ ] Login with pmoadmin credentials works
-- [ ] Wrong password returns an error (not a crash)
-- [ ] Rate limiting triggers after 5 rapid failed logins
-- [ ] Swagger returns 404 in production mode
-- [ ] Document downloads return 403 (unauthorized)
-- [ ] COI public page loads without login
-- [ ] Backup script completes successfully
-- [ ] Restore script completes and system returns healthy
-- [ ] Stack survives a stop-start cycle
+- [x] Stack boots from scratch with `docker compose up -d`
+- [x] All 3 containers reach healthy/running state
+- [x] `GET /health` returns `{"status":"ok"}`
+- [x] Login with pmoadmin credentials works
+- [x] Wrong password returns an error (not a crash)
+- [x] Rate limiting triggers after 5 rapid failed logins — enforced and audited server-side; see note below
+- [x] Swagger returns 404 in production mode
+- [x] Document downloads return 403 (unauthorized)
+- [x] COI public page loads without login
+- [x] Backup script completes successfully
+- [x] Restore script completes and system returns healthy
+- [x] Stack survives a stop-start cycle
+
+> **Note on rate limiting (2026-07-23 dry run):** the backend correctly blocks the
+> 6th rapid attempt and the lockout is visible in the Users module's audit trail —
+> the mechanism works. However, the login page shows no explicit 429/"too many
+> attempts" message to the user in the browser, unlike row 4 of the 4A table
+> assumes. This is a UX/documentation gap, not a functional failure — logged
+> under "Documentation gaps found" below for the outgoing developer to fix or
+> hand off as a known item.
 
 ### FAIL — Any of the following is true:
 
@@ -427,15 +435,15 @@ After the dry run, write down:
 
 | Item | Value |
 |---|---|
-| Date | |
-| Git ref tested (tag/branch) | |
-| Dry-run laptop model | |
-| Time to complete (minutes) | |
-| Steps that caused confusion | |
-| Any step that failed | |
-| Workaround used (if any) | |
-| Overall result | PASS / FAIL |
-| Documentation gaps found | |
+| Date | 2026-07-23 |
+| Git ref tested (tag/branch) | `v1.0-phase1` |
+| Dry-run laptop model | Lenovo IdeaPad Gaming 3 15ACH6 |
+| Time to complete (minutes) | ~240 (4 hours) — see note below |
+| Steps that caused confusion | Cross-device path confusion transferring the real-data backup (Windows path vs. WSL `/mnt/c/` mount) — resolved, not a doc gap, just an operator mix-up |
+| Any step that failed | None — all 12 Pass/Fail criteria passed |
+| Workaround used (if any) | `pmoadmin` password reset directly via SQL (RUNBOOK.md procedure) to standardize the credential being transferred to MIS, both before and after restoring real data |
+| Overall result | PASS |
+| Documentation gaps found | Rate limiting (4A row 4) enforces correctly and is audited, but the frontend shows no explicit 429/"too many attempts" message — row 4's "Expected" column overstates current UI behavior |
 
 This record becomes input for updating `handover/DEPLOYMENT.md` before the real MIS handover.
 
