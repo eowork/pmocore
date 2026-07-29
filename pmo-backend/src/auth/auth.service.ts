@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { EntityManager } from '@mikro-orm/core';
@@ -18,9 +18,56 @@ import {
   PasswordResetRequest,
 } from '../database/entities';
 
+// T-LDAP-JIT: the subset of LDAP directory attributes attemptLdapAuth returns on a
+// successful bind, consumed by findOrCreateLdapUser to resolve/create the local account.
+export interface LdapProfile {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  // T-LDAP-ROOT (RF-6): the directory uid, preferred as the local username.
+  uid?: string;
+}
+
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
+
+  // T-LDAP-ROOT (RF-5/Step 6): non-fatal bind-only probe at boot so a wrong LDAP_URL / bind DN /
+  // password surfaces in the logs immediately, not on the first user login. Never throws.
+  onModuleInit(): void {
+    const url = process.env.LDAP_URL || '';
+    if (!url) return; // LDAP not configured — nothing to check (Directive 229).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const ldap = require('ldapjs');
+      const client = ldap.createClient({
+        url,
+        timeout: 5000,
+        connectTimeout: 5000,
+        tlsOptions: {
+          rejectUnauthorized:
+            (process.env.LDAP_TLS_REJECT_UNAUTHORIZED ?? 'true') === 'true',
+        },
+      });
+      client.on('error', (err: any) => {
+        this.logger.warn(`LDAP_STARTUP_FAIL: connect error — ${err?.message ?? err}`);
+      });
+      client.bind(
+        process.env.LDAP_BIND_DN || '',
+        process.env.LDAP_BIND_PASSWORD || '',
+        (err: any) => {
+          if (err) {
+            this.logger.warn(`LDAP_STARTUP_FAIL: bind failed — ${err?.message ?? err}`);
+          } else {
+            this.logger.log('LDAP_STARTUP_OK: service-account bind succeeded');
+          }
+          client.unbind(() => {});
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(`LDAP_STARTUP_SKIPPED: ${err?.message ?? err}`);
+    }
+  }
 
   // PHASE BBCH (Track 6, R-377): CSU domain for LDAP-ready account provisioning. Enforced on
   // registration (new accounts) and on Google SSO; existing accounts are unaffected at login.
@@ -41,7 +88,34 @@ export class AuthService {
     });
 
     if (!user) {
-      return null;
+      // T-LDAP-JIT: no local row for this identifier — attempt LDAP directly. On a valid
+      // bind, auto-provision (flag-gated) a dashboard-only account and continue. This is
+      // what lets a valid CARSU user log in without being pre-created in the database.
+      const ldapProfile = await this.attemptLdapAuth(identifier, password);
+      if (!ldapProfile) {
+        return null;
+      }
+      const provisioned = await this.findOrCreateLdapUser(ldapProfile);
+      if (!provisioned || !provisioned.isActive) {
+        return null;
+      }
+      this.logger.log(`LDAP_UNIFIED_SUCCESS: user_id=${provisioned.id}`);
+      return {
+        id: provisioned.id,
+        email: provisioned.email,
+        username: provisioned.username,
+        password_hash: provisioned.passwordHash,
+        is_active: provisioned.isActive,
+        google_id: provisioned.googleId,
+        failed_login_attempts: provisioned.failedLoginAttempts,
+        account_locked_until: provisioned.accountLockedUntil,
+        first_name: provisioned.firstName,
+        last_name: provisioned.lastName,
+        rank_level: provisioned.rankLevel,
+        campus: provisioned.campus,
+        must_change_password: provisioned.mustChangePassword,
+        profile_completed: provisioned.profileCompleted,
+      };
     }
 
     // Check if account is locked
@@ -66,8 +140,8 @@ export class AuthService {
     // Accounts with no local password hash — route to LDAP if configured.
     // Covers both Google-only accounts (googleId set) and LDAP-provisioned accounts.
     if (!user.passwordHash || user.passwordHash === '') {
-      const ldapOk = await this.attemptLdapAuth(identifier, password);
-      if (ldapOk) {
+      const ldapProfile = await this.attemptLdapAuth(identifier, password);
+      if (ldapProfile) {
         this.logger.log(`LDAP_UNIFIED_SUCCESS: user_id=${user.id}`);
         user.failedLoginAttempts = 0;
         user.accountLockedUntil = undefined;
@@ -642,9 +716,12 @@ export class AuthService {
   // T-UNI: Programmatic LDAP auth for the unified login endpoint.
   // Called when an account has no local passwordHash (LDAP or SSO-only accounts).
   // Returns false immediately if LDAP_URL is not configured — no network call, no hang.
-  private async attemptLdapAuth(username: string, password: string): Promise<boolean> {
+  private async attemptLdapAuth(
+    username: string,
+    password: string,
+  ): Promise<LdapProfile | null> {
     const ldapUrl = process.env.LDAP_URL || '';
-    if (!ldapUrl) return false;
+    if (!ldapUrl) return null;
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const LdapAuth = require('ldapauth-fork');
@@ -653,18 +730,128 @@ export class AuthService {
       bindDN: process.env.LDAP_BIND_DN || '',
       bindCredentials: process.env.LDAP_BIND_PASSWORD || '',
       searchBase: process.env.LDAP_SEARCH_BASE || '',
-      searchFilter: process.env.LDAP_SEARCH_FILTER || '(mail={{username}})',
+      // T-LDAP-ROOT (RF-7): default to the uid attribute — the real CSU directory is OpenLDAP/POSIX.
+      searchFilter: process.env.LDAP_SEARCH_FILTER || '(uid={{username}})',
       tlsOptions: {
         rejectUnauthorized: (process.env.LDAP_TLS_REJECT_UNAUTHORIZED ?? 'true') === 'true',
       },
     });
 
+    // T-LDAP-JIT: resolve the directory entry (not just a boolean) so the caller can
+    // auto-provision from mail/givenName/sn/uid. Resolves null on any bind failure.
     return new Promise((resolve) => {
       auth.authenticate(username, password, (err: any, _user: any) => {
         auth.close(() => {});
-        resolve(!err && !!_user);
+        if (err || !_user) {
+          // T-LDAP-ROOT (RF-5): surface the reason so a 401 is diagnosable in the logs.
+          this.logger.warn(
+            `LDAP_AUTH_ERROR: name=${err?.name ?? 'NO_ENTRY'}, code=${err?.code ?? ''}, message=${err?.message ?? 'no matching directory entry / bad credentials'}`,
+          );
+          resolve(null);
+          return;
+        }
+        resolve({
+          email: _user.mail || _user.userPrincipalName,
+          firstName: _user.givenName,
+          lastName: _user.sn,
+          uid: _user.uid,
+        });
       });
     });
+  }
+
+  // T-LDAP-JIT: single source of truth for resolving an LDAP-authenticated identity to a
+  // local User, shared by the unified login path (validateUser) and the /api/auth/ldap
+  // strategy. Returns the existing local row if present; otherwise, when
+  // LDAP_AUTO_PROVISION=true, auto-creates a dashboard-only (default-DENY) account. Returns
+  // null when the domain gate fails, the account is soft-deleted, or auto-provisioning is
+  // off and no row exists — callers then fail closed exactly as before.
+  async findOrCreateLdapUser(profile: LdapProfile): Promise<User | null> {
+    const email = (profile.email || '').trim().toLowerCase();
+    if (!email) {
+      this.logger.warn('LDAP_JIT_REJECT: reason=NO_EMAIL');
+      return null;
+    }
+    // Defense-in-depth domain gate — mirrors register() and Google OAuth. Only CSU
+    // institutional identities may auto-provision.
+    if (!email.endsWith(`@${AuthService.ALLOWED_DOMAIN}`)) {
+      this.logger.warn(`LDAP_JIT_REJECT: email=${email}, reason=DOMAIN_NOT_ALLOWED`);
+      return null;
+    }
+
+    const existing = await this.em.findOne(
+      User,
+      { email: { $ilike: email } },
+      { filters: false },
+    );
+    if (existing) {
+      if (existing.deletedAt) {
+        this.logger.warn(`LDAP_JIT_REJECT: email=${email}, reason=ACCOUNT_DELETED`);
+        return null;
+      }
+      return existing;
+    }
+
+    // No local row. Only auto-create when the operator has explicitly enabled it.
+    if ((process.env.LDAP_AUTO_PROVISION ?? 'false') !== 'true') {
+      return null;
+    }
+
+    // T-LDAP-ROOT (RF-6): prefer the LDAP uid as the local username (what users type to log in),
+    // falling back to the email local-part. Suffix on the rare collision (mirrors google.strategy).
+    const localPart = email.split('@')[0];
+    const base =
+      profile.uid && profile.uid.trim() ? profile.uid.trim().toLowerCase() : localPart;
+    let username = base;
+    const taken = await this.em.getConnection().execute(
+      `SELECT 1 FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1`,
+      [username],
+    );
+    if (taken.length > 0) {
+      username = `${base}.${Date.now().toString().slice(-4)}`;
+    }
+
+    const newUser = this.em.create(User, {
+      email,
+      username,
+      firstName: profile.firstName || localPart,
+      lastName: profile.lastName || '',
+      // LDAP-authenticated — never a local password (routing stays on the LDAP path).
+      passwordHash: '',
+      isActive: true,
+      status: 'ACTIVE',
+      // Route through onboarding like other new accounts.
+      profileCompleted: false,
+      metadata: {
+        registrationSource: 'ldap',
+        registeredAt: new Date().toISOString(),
+      },
+    });
+
+    try {
+      await this.em.persistAndFlush(newUser);
+    } catch (err: any) {
+      // Race: a concurrent login created the row between the lookup and this insert.
+      if (
+        err?.code === '23505' ||
+        (err?.message && (err.message as string).includes('unique constraint'))
+      ) {
+        const raced = await this.em.findOne(
+          User,
+          { email: { $ilike: email } },
+          { filters: false },
+        );
+        if (raced) return raced;
+      }
+      throw err;
+    }
+
+    // PHASE BBBA (BBBA-0b) parity: NO role, NO module assignment — dashboard-only,
+    // default-DENY until an admin grants access via Access Control.
+    this.logger.log(
+      `LDAP_AUTO_CREATED: user_id=${newUser.id}, email=${email}, access=DASHBOARD_ONLY`,
+    );
+    return newUser;
   }
 
   private async buildSsoTokenForUser(

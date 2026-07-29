@@ -95,38 +95,88 @@ The entire swap is a `.env` change + container restart. No code changes.
 
 ---
 
-## Current test values (local OpenLDAP)
+## Current test values (local OpenLDAP — `docker compose --profile ldap-test`)
 
 ```env
 LDAP_URL=ldap://openldap:389
 LDAP_BIND_DN=cn=admin,dc=carsu,dc=edu,dc=ph
 LDAP_BIND_PASSWORD=testldapadmin
 LDAP_SEARCH_BASE=ou=users,dc=carsu,dc=edu,dc=ph
-LDAP_SEARCH_FILTER=(mail={{username}})
+LDAP_SEARCH_FILTER=(uid={{username}})
 LDAP_TLS_REJECT_UNAUTHORIZED=false
 ```
 
+The bundled test directory (`seed.ldif`) mirrors the real CSU directory: `uid`-keyed
+`inetOrgPerson`/`posixAccount` entries. Log in with the **uid** (e.g. `pmoadmin` / `testldap123`).
+
 ---
 
-## MIS production values (fill in with MIS team)
+## MIS production values (CSU OpenLDAP directory)
+
+> ⚠️ The real CSU directory is **OpenLDAP/POSIX** — `objectClass: inetOrgPerson, posixAccount`;
+> users are keyed by **`uid`**; plain **`ldap://`** on port **389**. It is **NOT** Active Directory.
+> Do **not** use `sAMAccountName` or `ldaps://…:636` — those are AD conventions and will not match
+> this directory (using them is what caused the initial go-live 401s).
 
 ```env
-LDAP_URL=ldaps://ldap.carsu.edu.ph:636
-LDAP_BIND_DN=cn=svc-pmo,ou=ServiceAccounts,dc=carsu,dc=edu,dc=ph
+LDAP_URL=ldap://<ldap-host>:389
+LDAP_BIND_DN=<bind DN under dc=carsu,dc=edu,dc=ph — e.g. cn=admin,dc=carsu,dc=edu,dc=ph>
 LDAP_BIND_PASSWORD=<service-account-password-from-MIS>
-LDAP_SEARCH_BASE=ou=Users,dc=carsu,dc=edu,dc=ph
-LDAP_SEARCH_FILTER=(sAMAccountName={{username}})
+LDAP_SEARCH_BASE=dc=carsu,dc=edu,dc=ph
+LDAP_SEARCH_FILTER=(uid={{username}})
 LDAP_TLS_REJECT_UNAUTHORIZED=true
+LDAP_AUTO_PROVISION=false
 ```
 
-### Key differences from test config
+### Key differences from the test config
 
-| Setting | Test | MIS/AD | Why different |
-|---------|------|--------|---------------|
-| `LDAP_URL` | `ldap://openldap:389` | `ldaps://ldap.carsu.edu.ph:636` | Production uses LDAPS (TLS on port 636) |
-| `LDAP_BIND_DN` | `cn=admin,...` | `cn=svc-pmo,ou=ServiceAccounts,...` | MIS provisions a dedicated service account |
-| `LDAP_SEARCH_FILTER` | `(mail={{username}})` | `(sAMAccountName={{username}})` | AD users log in with Windows username, not email |
-| `LDAP_TLS_REJECT_UNAUTHORIZED` | `false` | `true` | Production requires valid TLS cert |
+| Setting | Test | MIS (production OpenLDAP) | Why different |
+|---------|------|---------------------------|---------------|
+| `LDAP_URL` | `ldap://openldap:389` | `ldap://<real-host>:389` | Same protocol/port; real hostname instead of the container name |
+| `LDAP_BIND_DN` | `cn=admin,dc=carsu,dc=edu,dc=ph` | MIS's real bind/service-account DN | MIS provides the actual reader account |
+| `LDAP_SEARCH_BASE` | `ou=users,dc=carsu,dc=edu,dc=ph` | `dc=carsu,dc=edu,dc=ph` (or the users OU) | The real tree may nest users (e.g. `ou=Employees,ou=Users`) |
+| `LDAP_TLS_REJECT_UNAUTHORIZED` | `false` | moot on plain `ldap://` (set `true` if LDAPS is later enabled) | No TLS on port 389 |
+
+`LDAP_SEARCH_FILTER=(uid={{username}})` is the same in both — this directory identifies users by
+`uid`. `LDAP_AUTO_PROVISION` (default `false`) is the JIT auto-create toggle — see
+[[T-LDAP-JIT]] and the "Account provisioning" section below.
+
+---
+
+## Deriving the exact `.env` values from a working `ldapsearch` (do this first)
+
+Before editing `.env`, confirm the values against the live directory with `ldapsearch` (install
+`ldap-utils` if needed). Run this on the deployment server, substituting a real username:
+
+```bash
+ldapsearch -x \
+  -H ldap://<ldap-host>:389 \
+  -D "<bind-dn>" \
+  -w "<bind-password>" \
+  -b "dc=carsu,dc=edu,dc=ph" \
+  "(uid=<a-real-username>)"
+```
+
+A `result: 0 Success` with one entry proves the server, bind account, base, and filter are all
+correct. Then copy the **exact** working values into `pmo-backend/.env`:
+
+| `ldapsearch` flag | `.env` key |
+|---|---|
+| `-H ldap://host:389` | `LDAP_URL` |
+| `-D "<bind-dn>"` | `LDAP_BIND_DN` |
+| `-w "<bind-password>"` | `LDAP_BIND_PASSWORD` |
+| `-b "<base>"` | `LDAP_SEARCH_BASE` |
+| the attribute you searched (`uid`) | `LDAP_SEARCH_FILTER=(uid={{username}})` |
+
+Then **recreate** the backend so it reloads `.env` (a plain restart does NOT reload env vars):
+
+```bash
+docker compose up -d backend      # NOT `docker compose restart backend`
+```
+
+The backend now logs `LDAP_STARTUP_OK` on a good bind, or `LDAP_STARTUP_FAIL: <reason>` at boot if
+anything is still wrong — and per-login failures log a specific reason (`LDAP_AUTH_ERROR` /
+`LDAP_GUARD_FAILURE`) instead of an opaque 401.
 
 ---
 
@@ -135,8 +185,8 @@ LDAP_TLS_REJECT_UNAUTHORIZED=true
 | Auth method | Login form input | What to type |
 |-------------|-----------------|--------------|
 | Local | identifier + password | `pmoadmin` + local password |
-| LDAP (test) | username + password | `meoangelo.alcantara@carsu.edu.ph` + `testldap123` |
-| LDAP (MIS/AD) | username + password | `meoangelo.alcantara` (Windows username) + AD password |
+| LDAP (test) | username + password | `meoangelo.alcantara` (uid) + `testldap123` |
+| LDAP (MIS/OpenLDAP) | username + password | the directory **uid** (e.g. `hbcaringal`) + directory password |
 
 > **Corrected (T-HOME-CMS-6, 2026-07-08):** the frontend has NO login-mode
 > selector. Every browser login posts to the single unified
@@ -187,20 +237,45 @@ curl -s -X POST http://localhost:3000/api/auth/login \
 
 ---
 
-## Account pre-provisioning (REQUIRED before any LDAP user can log in)
+## Account provisioning — two modes (choose per deployment)
 
-There is **no auto-provisioning on first LDAP login.** After LDAP accepts the
-credentials, the backend looks up a local `users` row by email and **fails
-closed** (`NO_LOCAL_ACCOUNT`) if none exists. For every CSU account MIS grants
-access to, someone must — before that person's first login:
+How a first-time LDAP user gets a local account depends on the
+`LDAP_AUTO_PROVISION` flag in `pmo-backend/.env` (T-LDAP-JIT).
+
+### Mode A — Auto-provisioning ON (`LDAP_AUTO_PROVISION=true`)
+
+A valid LDAP/AD user who authenticates successfully but has **no** local account
+is **auto-created on first login** with **dashboard-only access (default-DENY)**.
+They can sign in immediately and land on the dashboard, but see and do nothing
+until an admin grants module access. Safety properties:
+
+- Only emails ending in `@carsu.edu.ph` auto-provision (domain gate).
+- Auto-created accounts get **no role and no module access** — an admin still
+  grants access afterward via the Users admin page / access-request flow. So
+  "any valid AD account can sign in" is not a risk: they get a powerless account.
+- Works on **both** login paths (the unified `/api/auth/login` the browser uses,
+  and the `/api/auth/ldap` diagnostic).
+
+This is the mode that lets CSU users log in **without** anyone pre-creating them.
+
+### Mode B — Auto-provisioning OFF (`LDAP_AUTO_PROVISION=false` or unset — DEFAULT)
+
+The original **fail-closed** behavior: after LDAP accepts the credentials, the
+backend looks up a local `users` row by email and rejects (`NO_LOCAL_ACCOUNT`)
+if none exists. For every CSU account, someone must — before that person's first
+login:
 
 1. Create the local `users` row (email matching the directory's mail/UPN
-   attribute, name, campus) with **`password_hash` left NULL/empty** — this is
-   what makes the unified login route the account to LDAP.
-2. Assign a role + module access the normal way (Users admin page /
-   access-request flow).
+   attribute, name, campus) with **`password_hash` left NULL/empty**.
+2. Assign a role + module access the normal way.
 
-Rules of thumb:
+### Rollback / kill switch
+
+`LDAP_AUTO_PROVISION` is the production kill switch. If auto-provisioning
+misbehaves, set it to `false` and redeploy the backend (`docker compose up -d
+backend`) — this instantly reverts to Mode B with no code change.
+
+### Rules of thumb (apply to both modes)
 
 - **LDAP-designated accounts must never be given a local password.** Setting
   one silently converts the account to local-only authentication — the
@@ -208,8 +283,8 @@ Rules of thumb:
 - **Break-glass accounts (e.g. `pmoadmin`) keep a local password on purpose**
   and authenticate locally even when LDAP is live. Do not "test LDAP" with
   them — use a genuinely LDAP-only account.
-- Go-live checklist item: agree with MIS **who** creates the local rows and
-  **when**, relative to the directory cutover.
+- Go-live checklist item: decide with MIS which mode to run, and (for Mode B)
+  **who** creates the local rows and **when**, relative to the directory cutover.
 
 ---
 
