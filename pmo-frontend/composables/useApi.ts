@@ -8,6 +8,18 @@ export function useApi() {
   const loading = ref(false)
   const error = ref<ApiError | null>(null)
 
+  // T-JWT-EXPIRY: global 401 handler. When a request that DID carry a token is rejected as
+  // unauthorized (expired/invalid token), clear it and redirect to /login — replacing the broken
+  // "Viewer/blank-name" limbo with a clean re-login. Guarded on `hadToken` so a failed login
+  // (no token) and public calls are unaffected, and on the current path to avoid a redirect loop.
+  function handleUnauthorized(status: number, hadToken: boolean): void {
+    if (status !== 401 || !hadToken || !import.meta.client) return
+    localStorage.removeItem('access_token')
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+  }
+
   async function request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -33,6 +45,7 @@ export function useApi() {
 
       // Handle error responses first
       if (!response.ok) {
+        handleUnauthorized(response.status, !!token)
         // Check content type for error responses
         const contentType = response.headers.get('content-type') || ''
         if (!contentType.includes('application/json')) {
@@ -117,6 +130,7 @@ export function useApi() {
         },
       })
       if (!response.ok) {
+        handleUnauthorized(response.status, !!token)
         const contentType = response.headers.get('content-type') || ''
         const errorData = contentType.includes('application/json')
           ? await response.json().catch(() => ({}))
@@ -146,6 +160,7 @@ export function useApi() {
       headers: { ...(token && { Authorization: `Bearer ${token}` }) },
     })
     if (!response.ok) {
+      handleUnauthorized(response.status, !!token)
       const contentType = response.headers.get('content-type') || ''
       const errorData = contentType.includes('application/json')
         ? await response.json().catch(() => ({}))

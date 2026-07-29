@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StorageService, StoredFile } from './storage/storage.service';
 import { UploadResponseDto } from './dto';
+import { numberFromConfig } from '../common/config.util';
 
 @Injectable()
 export class UploadsService {
@@ -13,7 +14,9 @@ export class UploadsService {
     private storageService: StorageService,
     private configService: ConfigService,
   ) {
-    this.maxFileSize = this.configService.get<number>(
+    // T-JWT-EXPIRY (same string-vs-number pattern): coerce to a real number.
+    this.maxFileSize = numberFromConfig(
+      this.configService,
       'MAX_FILE_SIZE',
       10 * 1024 * 1024,
     );
