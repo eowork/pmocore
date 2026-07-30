@@ -24,7 +24,7 @@ services:
     # The DATABASE_* values below override that file so the backend talks to the
     # "postgres" service instead of localhost.
     env_file:
-      - ./pmo-backend/.env
+      - .env
     environment:
       # Force production in the container — overrides NODE_ENV=development from the
       # dev .env (env_file). Dev mode would select TsMorphMetadataProvider, which
@@ -55,7 +55,7 @@ services:
       context: ./pmo-frontend
     restart: unless-stopped
     env_file:
-      - ./pmo-frontend/.env
+      - .env
     environment:
       # Browser-facing API URL — must be reachable from the user's browser
       # (the app is an SPA, so requests are made client-side, not container-to-container).
