@@ -6,6 +6,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-pmo_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      TZ: 'Asia/Manila'
     volumes:
       # PG18+ images store data in a version subdir and expect the mount at
       # /var/lib/postgresql (NOT /data) — see docker-library/postgres#1259.
@@ -26,6 +27,7 @@ services:
     env_file:
       - .backend.env
     environment:
+      TZ: 'Asia/Manila'
       # Force production in the container — overrides NODE_ENV=development from the
       # dev .env (env_file). Dev mode would select TsMorphMetadataProvider, which
       # reads ./src/*.entity.ts (absent from the compiled image) and crashes startup.
@@ -55,7 +57,7 @@ services:
       context: ./pmo-frontend
     restart: unless-stopped
     env_file:
-      - .env
+      - frontend.env
     environment:
       # Browser-facing API URL — must be reachable from the user's browser
       # (the app is an SPA, so requests are made client-side, not container-to-container).
