@@ -24,18 +24,18 @@ services:
     # The DATABASE_* values below override that file so the backend talks to the
     # "postgres" service instead of localhost.
     env_file:
-      - .env
+      - .backend.env
     environment:
       # Force production in the container — overrides NODE_ENV=development from the
       # dev .env (env_file). Dev mode would select TsMorphMetadataProvider, which
       # reads ./src/*.entity.ts (absent from the compiled image) and crashes startup.
-      NODE_ENV: production
-      DATABASE_HOST: postgres
-      DATABASE_PORT: 5432
-      DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
-      DATABASE_USER: ${POSTGRES_USER:-postgres}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-      PORT: 3000
+      # NODE_ENV: production
+      # DATABASE_HOST: postgres
+      # DATABASE_PORT: 5432
+      # DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
+      # DATABASE_USER: ${POSTGRES_USER:-postgres}
+      # DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      # PORT: 3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,20 +74,20 @@ services:
   # Then add LDAP_* vars to pmo-backend/.env and run:
   #   docker compose up -d backend   (recreates backend with LDAP env active)
   # See handover/ldap-test/MIS_SWAP.md for the full procedure and MIS swap guide.
-  openldap:
-    profiles: ["ldap-test"]
-    image: osixia/openldap:1.5.0
-    command: ["--copy-service"]
-    environment:
-      LDAP_ORGANISATION: CSU CORE
-      LDAP_DOMAIN: carsu.edu.ph
-      LDAP_ADMIN_PASSWORD: testldapadmin
-      LDAP_TLS: "false"
-    volumes:
-      # SYS-AUDIT-02 (HA-1): path updated after ldap-test/ moved under handover/.
-      - ./handover/ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
-    ports:
-      - "1389:389"
+  # openldap:
+  #   profiles: ["ldap-test"]
+  #   image: osixia/openldap:1.5.0
+  #   command: ["--copy-service"]
+  #   environment:
+  #     LDAP_ORGANISATION: CSU CORE
+  #     LDAP_DOMAIN: carsu.edu.ph
+  #     LDAP_ADMIN_PASSWORD: testldapadmin
+  #     LDAP_TLS: "false"
+  #   volumes:
+  #     # SYS-AUDIT-02 (HA-1): path updated after ldap-test/ moved under handover/.
+  #     - ./handover/ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
+  #   ports:
+  #     - "1389:389"
 
 volumes:
   pgdata:
