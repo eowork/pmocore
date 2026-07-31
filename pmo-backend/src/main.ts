@@ -42,8 +42,13 @@ async function bootstrap() {
 
   // Restrict CORS to the known frontend origin. FRONTEND_URL defaults to localhost:3001
   // so dev behavior is unchanged. Set FRONTEND_URL in .env for production deployments.
+  const rawOrigins = configService.get<string>('FRONTEND_URL', 'http://localhost:3001');
+
+  // Convert string into an array: ['http://localhost:3001', 'http://core.carsu.edu.ph', ...]
+  const allowedOrigins = rawOrigins.split(',').map((url) => url.trim());
+
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3001'),
+    origin: allowedOrigins,
   });
 
   // Global validation pipe
