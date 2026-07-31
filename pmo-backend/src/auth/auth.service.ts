@@ -99,6 +99,8 @@ export class AuthService implements OnModuleInit {
         return null;
       }
       const provisioned = await this.findOrCreateLdapUser(ldapProfile);
+
+      console.log('3', provisioned)
       if (!provisioned || !provisioned.isActive) {
         return null;
       }
