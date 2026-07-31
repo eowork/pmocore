@@ -92,6 +92,9 @@ export class AuthService implements OnModuleInit {
       // bind, auto-provision (flag-gated) a dashboard-only account and continue. This is
       // what lets a valid CARSU user log in without being pre-created in the database.
       const ldapProfile = await this.attemptLdapAuth(identifier, password);
+
+      console.log('2', ldapProfile);
+
       if (!ldapProfile) {
         return null;
       }
@@ -295,6 +298,8 @@ export class AuthService implements OnModuleInit {
     console.log(process.env)
 
     const user = await this.validateUser(dto.identifier, dto.password);
+
+    console.log('1', user);
 
     if (!user) {
       throw new UnauthorizedException('INVALID_CREDENTIALS');
