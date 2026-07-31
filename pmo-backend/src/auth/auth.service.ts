@@ -291,6 +291,9 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('ACCOUNT_INACTIVE');
     }
 
+    // testing only
+    console.log(process.env)
+
     const user = await this.validateUser(dto.identifier, dto.password);
 
     if (!user) {
