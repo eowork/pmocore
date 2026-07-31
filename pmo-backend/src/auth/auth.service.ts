@@ -93,14 +93,11 @@ export class AuthService implements OnModuleInit {
       // what lets a valid CARSU user log in without being pre-created in the database.
       const ldapProfile = await this.attemptLdapAuth(identifier, password);
 
-      console.log('2', ldapProfile);
-
       if (!ldapProfile) {
         return null;
       }
       const provisioned = await this.findOrCreateLdapUser(ldapProfile);
 
-      console.log('3', provisioned)
       if (!provisioned || !provisioned.isActive) {
         return null;
       }
@@ -296,12 +293,7 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('ACCOUNT_INACTIVE');
     }
 
-    // testing only
-    console.log(process.env)
-
     const user = await this.validateUser(dto.identifier, dto.password);
-
-    console.log('1', user);
 
     if (!user) {
       throw new UnauthorizedException('INVALID_CREDENTIALS');
