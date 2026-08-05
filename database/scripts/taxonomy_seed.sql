@@ -10,7 +10,7 @@
 --
 -- Idempotent: inserts only when no active taxonomy rows exist.
 -- Safe to run against the running container:
---   docker compose exec -T postgres psql -U postgres -d pmo_dashboard < database/scripts/taxonomy_seed.sql
+--   docker compose --env-file ./pmo-backend/.env exec -T postgres psql -U postgres -d pmo_dashboard < database/scripts/taxonomy_seed.sql
 -- ============================================================
 
 INSERT INTO pillar_indicator_taxonomy

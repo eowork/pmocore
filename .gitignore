@@ -5,15 +5,27 @@ dist/
 build/
 nul
 
-.codex/
-.idea/
-.mcp.json
-.vscode/
-
-
-
 # Temporary Claude/AI session files
-tmpclaude-*-cwd
+**/tmpclaude-*-cwd
 .claude/
+.codex/
 .trae/
-run_truncate.bat
+
+# MCP configuration files (may contain API keys)
+.vscode/mcp.json
+.mcp.json
+.idea/
+
+# Runtime / operational artifacts (not source code)
+database/backups/
+database/staging/
+pmo-backend/uploads/
+prototype/
+# SYS-AUDIT-01: root-level backup archives (DB dumps + uploads, real PII/credentials) —
+# distinct path from database/backups/ above, was previously unprotected.
+/backups/
+
+# Local-only documentation (research, planning, internal notes — not shared via Git)
+docs/
+# Real-data migration dumps (PII/bcrypt) — transferred out-of-band, never committed
+database/migration-data/

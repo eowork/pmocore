@@ -184,7 +184,7 @@ This section explains every major technology in PMO CORE. Each explanation follo
 
 **Why PMO CORE uses it:** All deployment operations — starting Docker, running backup scripts, connecting to the database — are done in the WSL Ubuntu terminal. The project files live on the Windows `D:\` drive but are accessed in WSL at `/mnt/d/`.
 
-**A practical example:** When you type `docker compose up -d` in the Ubuntu terminal, Linux is actually executing that command. The Docker daemon runs in Linux. The result is visible from Windows because WSL2 bridges the two.
+**A practical example:** When you type `docker compose --env-file ./pmo-backend/.env up -d` in the Ubuntu terminal, Linux is actually executing that command. The Docker daemon runs in Linux. The result is visible from Windows because WSL2 bridges the two.
 
 **What would happen without it:** On Windows, you would need Docker Desktop with its own complexity, and bash scripts would not run without modification.
 
@@ -196,7 +196,7 @@ This section explains every major technology in PMO CORE. Each explanation follo
 
 **The problem it solves:** "It works on my machine" is the most common phrase in software development. Docker eliminates this problem by ensuring that the exact same environment that works on your laptop runs identically on the production server.
 
-**Why PMO CORE uses it:** PMO CORE has three components (database, backend, frontend) that each have their own dependencies and versions. Without Docker, installing and configuring all of these correctly on a new server is a multi-hour, error-prone process. With Docker, it is one command: `docker compose up -d`.
+**Why PMO CORE uses it:** PMO CORE has three components (database, backend, frontend) that each have their own dependencies and versions. Without Docker, installing and configuring all of these correctly on a new server is a multi-hour, error-prone process. With Docker, it is one command: `docker compose --env-file ./pmo-backend/.env up -d`.
 
 **Analogy:** Think of Docker containers like shipping containers on a cargo ship. Before standardized shipping containers, every type of cargo required different loading equipment, different ships, and different handling. Standardized containers meant any cargo could go on any ship. Docker containers work the same way — any application can run on any server that has Docker installed.
 
@@ -233,7 +233,7 @@ pmo-dash-frontend-1    ← the Nuxt SPA server
 - `pmo-dash-backend` — built from `pmo-backend/Dockerfile` (your custom NestJS image)
 - `pmo-dash-frontend` — built from `pmo-frontend/Dockerfile` (your custom Nuxt image)
 
-**Why this matters for deployment:** When you run `docker compose up -d --build`, Docker rebuilds your custom images from source. This bakes your latest code changes into the image. The old container is replaced by a new one. This is how you deploy updates.
+**Why this matters for deployment:** When you run `docker compose --env-file ./pmo-backend/.env up -d --build`, Docker rebuilds your custom images from source. This bakes your latest code changes into the image. The old container is replaced by a new one. This is how you deploy updates.
 
 ---
 
@@ -265,11 +265,11 @@ pmo-dash-frontend-1    ← the Nuxt SPA server
 **The key commands you use daily:**
 
 ```bash
-docker compose up -d              # Start all services in the background
-docker compose up -d --build backend  # Rebuild and restart the backend
-docker compose ps                 # Check status of all containers
-docker compose logs -f backend    # Follow live backend logs
-docker compose stop               # Stop all containers (data preserved)
+docker compose --env-file ./pmo-backend/.env up -d              # Start all services in the background
+docker compose --env-file ./pmo-backend/.env up -d --build backend  # Rebuild and restart the backend
+docker compose --env-file ./pmo-backend/.env ps                 # Check status of all containers
+docker compose --env-file ./pmo-backend/.env logs -f backend    # Follow live backend logs
+docker compose --env-file ./pmo-backend/.env stop               # Stop all containers (data preserved)
 ```
 
 **What the `docker-compose.yml` file does:** It is the single source of truth for how the entire PMO CORE infrastructure is configured. If you gave this file to any other developer with Docker installed, they could run the complete system without knowing anything else about the project.
@@ -288,7 +288,7 @@ docker compose stop               # Stop all containers (data preserved)
 
 **How to access the database when needed:**
 ```bash
-docker compose exec postgres psql -U postgres -d pmo_dashboard
+docker compose --env-file ./pmo-backend/.env exec postgres psql -U postgres -d pmo_dashboard
 ```
 This opens a database console inside the container — no network port required.
 
@@ -507,9 +507,13 @@ Hardcoding these values in source code would mean the same password ends up in y
 **PMO CORE's environment variable structure:**
 
 ```
-Root .env              ← Docker Compose reads this (POSTGRES_PASSWORD, ports)
-pmo-backend/.env       ← Backend reads this (DATABASE_*, JWT, LDAP, OAuth)
-pmo-frontend/.env      ← Frontend reads this (API URLs)
+pmo-backend/.env       ← Backend reads this (DATABASE_*, JWT, LDAP, OAuth) —
+                          AND Docker Compose reads it too, via `--env-file
+                          ./pmo-backend/.env`, for DATABASE_NAME/DATABASE_USER/
+                          DATABASE_PASSWORD and optionally BACKEND_PORT/FRONTEND_PORT.
+                          Single source of truth for DB credentials — there is no
+                          separate root .env anymore.
+pmo-frontend/.env       ← Frontend reads this (API URLs)
 ```
 
 **The `.env.example` files** are templates committed to the repository. They show what variables are needed but contain placeholder values (`CHANGE_BEFORE_DEPLOY`). On a new server, you copy the example file, fill in the real values, and never commit the real `.env`.
@@ -522,9 +526,9 @@ pmo-frontend/.env      ← Frontend reads this (API URLs)
 
 **What logging is:** Recording what the application does as it runs. Good logs let you reconstruct exactly what happened when something fails.
 
-**Current state in PMO CORE:** The backend uses NestJS's built-in Logger and a custom `LoggingInterceptor` that records every HTTP request with method, path, status code, and duration. Logs are viewable via `docker compose logs -f backend`.
+**Current state in PMO CORE:** The backend uses NestJS's built-in Logger and a custom `LoggingInterceptor` that records every HTTP request with method, path, status code, and duration. Logs are viewable via `docker compose --env-file ./pmo-backend/.env logs -f backend`.
 
-**What is not yet implemented:** A dedicated monitoring system (like Prometheus, Grafana, or Datadog) that sends alerts when the system is down or degrading. This is a P2 item for after deployment. For an initial university deployment, checking `docker compose ps` and the backend health endpoint is sufficient monitoring.
+**What is not yet implemented:** A dedicated monitoring system (like Prometheus, Grafana, or Datadog) that sends alerts when the system is down or degrading. This is a P2 item for after deployment. For an initial university deployment, checking `docker compose --env-file ./pmo-backend/.env ps` and the backend health endpoint is sufficient monitoring.
 
 ---
 
@@ -679,7 +683,7 @@ The defining characteristic of this stage: **only you could run it**, because it
 
 ## Stage 2 — Containerization (Complete)
 
-You wrapped the entire application in Docker. Now anyone with Docker installed could run `docker compose up -d` and get a working system — regardless of what operating system or configuration their machine has.
+You wrapped the entire application in Docker. Now anyone with Docker installed could run `docker compose --env-file ./pmo-backend/.env up -d` and get a working system — regardless of what operating system or configuration their machine has.
 
 This was the first major step toward reproducibility. The code left your machine and could run somewhere else.
 
@@ -692,7 +696,7 @@ The hardening work completed:
 - **Swagger disabled in production** — API documentation is not exposed publicly
 - **Database port not published** — PostgreSQL is only reachable internally
 - **Upload protection** — documents require authentication; images are public
-- **Strong secrets required** — Docker Compose fails to start if `POSTGRES_PASSWORD` is not set
+- **Strong secrets required** — Docker Compose fails to start if `DATABASE_PASSWORD` (in `pmo-backend/.env`) is not set; that value is what gets passed into the Postgres container as `POSTGRES_PASSWORD`
 - **File size limits unified** — all upload endpoints agree on 10 MB maximum
 - **Backup and restore** — daily automated backup with verified restore procedure
 - **LDAP proven** — institutional authentication tested against a simulated directory
@@ -705,7 +709,7 @@ Key steps:
 1. MIS provisions a server (Linux, Docker installed)
 2. Repository is cloned to the server
 3. `.env` files are created with real secrets
-4. `docker compose up -d` starts the stack
+4. `docker compose --env-file ./pmo-backend/.env up -d` starts the stack
 5. Existing data is restored from the handover backup
 6. MIS sets up nginx + SSL for HTTPS access
 7. LDAP is pointed to the real Active Directory
@@ -963,7 +967,7 @@ For the successor who takes over this system:
 
 **Week 1:** Deploy successfully. Verify all modules work. Confirm backup cron is scheduled. Run a test restore.
 
-**Month 1:** Monitor daily. Check `docker compose ps` each morning. Check backup logs weekly. Ask MIS for the LDAP and TLS configuration and complete those integrations.
+**Month 1:** Monitor daily. Check `docker compose --env-file ./pmo-backend/.env ps` each morning. Check backup logs weekly. Ask MIS for the LDAP and TLS configuration and complete those integrations.
 
 **Ongoing:** Do not run `docker compose down -v`. Ever. That flag is documented in the runbook specifically because it looks harmless and is extremely destructive.
 

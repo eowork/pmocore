@@ -57,14 +57,14 @@ if [[ "$CONFIRM" != "YES" ]]; then
 fi
 
 # --- Pre-flight ---
-if ! docker compose -f "$PROJECT_DIR/docker-compose.yml" ps --services --filter "status=running" 2>/dev/null | grep -q postgres; then
+if ! docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/pmo-backend/.env" ps --services --filter "status=running" 2>/dev/null | grep -q postgres; then
   echo "[ERROR] postgres container is not running. Start the stack first."
   exit 1
 fi
 
 # --- Stop backend to prevent writes during restore ---
 echo "[1/4] Stopping backend container..."
-docker compose -f "$PROJECT_DIR/docker-compose.yml" stop backend
+docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/pmo-backend/.env" stop backend
 echo "      Backend stopped."
 
 # --- Database restore ---
@@ -90,7 +90,7 @@ echo "      Database restored."
 
 # --- Restart backend before uploads restore (docker cp requires running container) ---
 echo "[3/4] Restoring uploaded files..."
-docker compose -f "$PROJECT_DIR/docker-compose.yml" start backend
+docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/pmo-backend/.env" start backend
 echo "      Waiting for backend to start..."
 sleep 8
 docker cp "$BACKUP_DIR/uploads.tar.gz" "$BACKEND_CONTAINER:/tmp/uploads.tar.gz"
@@ -100,7 +100,7 @@ echo "      Uploads restored."
 # --- Wait for health ---
 echo "[4/4] Waiting for backend health..."
 for i in $(seq 1 12); do
-  if docker compose -f "$PROJECT_DIR/docker-compose.yml" ps | grep backend | grep -q "healthy"; then
+  if docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/pmo-backend/.env" ps | grep backend | grep -q "healthy"; then
     break
   fi
   sleep 5
