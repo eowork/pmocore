@@ -2,10 +2,12 @@ services:
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
-    env_file:
-      - ./pmo-backend/.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pmo_dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     ports:
-      - "5434:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       # PG18+ images store data in a version subdir and expect the mount at
       # /var/lib/postgresql (NOT /data) — see docker-library/postgres#1259.
@@ -20,10 +22,9 @@ services:
     build:
       context: ./pmo-backend
     restart: unless-stopped
-    # Loads JWT/OAuth/LDAP secrets AND DATABASE_NAME/USER/PASSWORD from
-    # pmo-backend/.env. The environment: block below only overrides what
-    # must differ for the container (host/port/mode) — everything else
-    # comes straight from that file, single source of truth.
+    # Loads JWT/OAuth/LDAP secrets etc. from the existing local pmo-backend/.env.
+    # The DATABASE_* values below override that file so the backend talks to the
+    # "postgres" service instead of localhost.
     env_file:
       - ./pmo-backend/.env
     environment:
@@ -32,7 +33,10 @@ services:
       # reads ./src/*.entity.ts (absent from the compiled image) and crashes startup.
       NODE_ENV: production
       DATABASE_HOST: postgres
-      DATABASE_PORT: 5432
+      DATABASE_PORT: ${POSTGRES_PORT:-5432}
+      DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       PORT: 3000
     depends_on:
       postgres:
@@ -68,9 +72,9 @@ services:
 
   # T5a — Self-hosted LDAP test directory (proves auth before MIS cutover)
   # NOT started by default. Start explicitly with:
-  #   docker compose --env-file ./pmo-backend/.env --profile ldap-test up -d
+  #   docker compose --profile ldap-test up -d
   # Then add LDAP_* vars to pmo-backend/.env and run:
-  #   docker compose --env-file ./pmo-backend/.env up -d backend   (recreates backend with LDAP env active)
+  #   docker compose up -d backend   (recreates backend with LDAP env active)
   # See handover/ldap-test/MIS_SWAP.md for the full procedure and MIS swap guide.
   openldap:
     profiles: ["ldap-test"]

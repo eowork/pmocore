@@ -56,9 +56,37 @@ Or if deploying from a ZIP handover package, extract to a known path and adjust 
 
 ## Step 2 — Configure Environment Files
 
-Only one `.env` file is required: `pmo-backend/.env`. It is not committed to the repo — create it from the provided example. This single file is the source of truth for both the backend application **and** Docker Compose — `docker-compose.yml` interpolates `DATABASE_NAME`/`DATABASE_USER`/`DATABASE_PASSWORD` directly from it, so there is no separate root `.env` to create anymore.
+Two `.env` files are required. Neither is committed to the repo — create both from the provided examples.
 
-### Backend `.env` (also read by Docker Compose)
+### 2a — Root `.env` (Docker Compose secrets)
+
+```bash
+cp /path/to/pmo-dash/.env.example /path/to/pmo-dash/.env
+nano /path/to/pmo-dash/.env
+```
+
+Fill in:
+
+```env
+POSTGRES_DB=pmo_dashboard
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<generate below>
+
+POSTGRES_PORT=5432
+BACKEND_PORT=3000
+FRONTEND_PORT=3001
+```
+
+Generate `POSTGRES_PASSWORD`:
+
+```bash
+openssl rand -hex 20
+# Example output: a3f9c2e817b4d056f1209e3c7a8b4d1f2c09e3a1
+```
+
+Docker Compose reads this file automatically (it lives next to `docker-compose.yml`) — no `--env-file` flag is needed for any `docker compose` command in this guide.
+
+### 2b — Backend `.env`
 
 ```bash
 cp /path/to/pmo-dash/pmo-backend/.env.example /path/to/pmo-dash/pmo-backend/.env
@@ -72,7 +100,7 @@ DATABASE_HOST=postgres
 DATABASE_PORT=5432
 DATABASE_NAME=pmo_dashboard
 DATABASE_USER=postgres
-DATABASE_PASSWORD=<generate below>
+DATABASE_PASSWORD=<same as POSTGRES_PASSWORD above>
 
 PORT=3000
 NODE_ENV=development
@@ -86,14 +114,7 @@ SEED_PMOADMIN_PASSWORD=<choose a strong password>
 SEED_ADMIN_PASSWORD=<choose a strong password>
 ```
 
-> `BACKEND_PORT` and `FRONTEND_PORT` are optional — they only affect the host-side port mapping that Docker Compose uses, and default to `3000`/`3001` if left unset. Add them to this same `pmo-backend/.env` file (not a separate one) only if you need different host ports.
-
-Generate `DATABASE_PASSWORD`:
-
-```bash
-openssl rand -hex 20
-# Example output: a3f9c2e817b4d056f1209e3c7a8b4d1f2c09e3a1
-```
+> `DATABASE_PASSWORD` here and `POSTGRES_PASSWORD` in the root `.env` are two separate variables in two separate files and are **not** kept in sync automatically — you must set them to the same value by hand. If they drift apart, the backend container will fail to authenticate against Postgres (see Troubleshooting below).
 
 Generate `AUTH_JWT_SECRET`:
 
@@ -103,8 +124,6 @@ openssl rand -base64 48
 
 > `SEED_PMOADMIN_PASSWORD` becomes the password for the `pmoadmin` SuperAdmin account on first deploy. Write it down — there is no recovery email on a fresh database.
 
-> **Every `docker compose` command from here on needs `--env-file`.** Because Compose now reads `DATABASE_NAME`/`DATABASE_USER`/`DATABASE_PASSWORD` from `pmo-backend/.env` instead of a root `.env`, every invocation that parses `docker-compose.yml` — `up`, `ps`, `logs`, `exec`, `stop`, `restart`, `start`, `down`, `build`, etc. — must include `--env-file ./pmo-backend/.env` (path relative to wherever you run the command; use an absolute path if not running from the repo root). Without it, Compose fails immediately with `DATABASE_PASSWORD must be set in pmo-backend/.env`. The one exception is `docker compose version`, which doesn't read the project file at all. The commands in this guide below already include the flag.
-
 ---
 
 ## Step 3 — First Deploy
@@ -113,7 +132,7 @@ Navigate to the project directory (WSL path) and start the stack:
 
 ```bash
 cd /path/to/pmo-dash
-docker compose --env-file ./pmo-backend/.env up -d
+docker compose up -d
 ```
 
 The first run builds both images from source. Expect 3–5 minutes. Progress prints to the terminal.
@@ -121,7 +140,7 @@ The first run builds both images from source. Expect 3–5 minutes. Progress pri
 Watch for completion:
 
 ```bash
-docker compose --env-file ./pmo-backend/.env ps
+docker compose ps
 ```
 
 Expected output when ready:
@@ -196,7 +215,7 @@ If uploaded files (project photos, documents) were provided separately:
 docker cp /path/to/uploads/. pmo-dash-backend-1:/app/uploads/
 
 # Verify
-docker compose --env-file ./pmo-backend/.env exec backend sh -c "ls /app/uploads/ | wc -l"
+docker compose exec backend sh -c "ls /app/uploads/ | wc -l"
 # Expected: number of files provided
 ```
 
@@ -223,17 +242,17 @@ Backups run daily at 2:00 AM. Output logs to `/var/log/pmo-backup.log`.
 ### Backend keeps restarting
 
 ```bash
-docker compose --env-file ./pmo-backend/.env logs backend --tail=30
+docker compose logs backend --tail=30
 ```
 
 **Common causes:**
 
 | Error in logs | Cause | Fix |
 |---|---|---|
-| `password authentication failed for user "postgres"` | `DATABASE_PASSWORD` in `pmo-backend/.env` was changed after the Postgres volume was already initialized (Postgres only applies `POSTGRES_PASSWORD` the first time an empty volume is created) | Reset the password inside the running Postgres container to match `pmo-backend/.env`, or wipe the `pgdata` volume and let it reinitialize (see `RUNBOOK.md`) |
-| `DATABASE_PASSWORD must be set in pmo-backend/.env` | The `docker compose` command was run without `--env-file ./pmo-backend/.env`, or `pmo-backend/.env` is missing `DATABASE_PASSWORD` | Re-run with `--env-file ./pmo-backend/.env` and confirm `DATABASE_PASSWORD` is set in `pmo-backend/.env` |
-| `Cannot find module` or build error | Image built before code was ready | Run `docker compose --env-file ./pmo-backend/.env up -d --build backend` |
-| `ECONNREFUSED` to postgres | Postgres not yet healthy when backend started | Wait 30 seconds and run `docker compose --env-file ./pmo-backend/.env up -d backend` again |
+| `password authentication failed for user "postgres"` | `DATABASE_PASSWORD` in `pmo-backend/.env` does not match `POSTGRES_PASSWORD` in root `.env` | Set both to the same value |
+| `POSTGRES_PASSWORD must be set in .env` | Root `.env` missing `POSTGRES_PASSWORD` | Add `POSTGRES_PASSWORD=<value>` to root `.env` |
+| `Cannot find module` or build error | Image built before code was ready | Run `docker compose up -d --build backend` |
+| `ECONNREFUSED` to postgres | Postgres not yet healthy when backend started | Wait 30 seconds and run `docker compose up -d backend` again |
 
 ### Port already in use
 
@@ -243,7 +262,7 @@ netstat -ano | findstr :3000    # Windows PowerShell
 ss -tlnp | grep 3000            # WSL Ubuntu
 ```
 
-Kill the conflicting process or set `BACKEND_PORT` / `FRONTEND_PORT` in `pmo-backend/.env` (these are optional and default to `3000`/`3001` if unset).
+Kill the conflicting process or change `BACKEND_PORT` / `FRONTEND_PORT` in root `.env`.
 
 ### WSL2 port binding error (127.0.0.1)
 
@@ -255,10 +274,10 @@ Reset via the database:
 
 ```bash
 # Generate new bcrypt hash for your chosen password
-docker compose --env-file ./pmo-backend/.env exec -T backend node -e "const bcrypt = require('bcrypt'); bcrypt.hash('your-new-password', 10).then(h => console.log(h));"
+docker compose exec -T backend node -e "const bcrypt = require('bcrypt'); bcrypt.hash('your-new-password', 10).then(h => console.log(h));"
 
 # Apply hash to DB
-docker compose --env-file ./pmo-backend/.env exec -T postgres psql -U postgres -d pmo_dashboard -c \
+docker compose exec -T postgres psql -U postgres -d pmo_dashboard -c \
   "UPDATE users SET password_hash = '\$2b\$10\$REPLACE_WITH_HASH' WHERE username = 'pmoadmin';"
 ```
 
@@ -268,14 +287,13 @@ docker compose --env-file ./pmo-backend/.env exec -T postgres psql -U postgres -
 
 | Variable | File | Required | Purpose |
 |---|---|---|---|
-| `DATABASE_NAME` | `pmo-backend/.env` | No (defaults to `pmo_dashboard`) | Postgres database name — also used by Docker Compose |
-| `DATABASE_USER` | `pmo-backend/.env` | No (defaults to `postgres`) | Postgres superuser name — also used by Docker Compose |
-| `DATABASE_PASSWORD` | `pmo-backend/.env` | Yes | Postgres superuser password — required by Docker Compose too, no default |
+| `POSTGRES_PASSWORD` | root `.env` | Yes | PostgreSQL superuser password |
+| `DATABASE_PASSWORD` | `pmo-backend/.env` | Yes | Must match `POSTGRES_PASSWORD` |
 | `AUTH_JWT_SECRET` | `pmo-backend/.env` | Yes | Signs all JWT tokens — min 32 chars |
 | `FRONTEND_URL` | `pmo-backend/.env` | Yes | CORS origin — set to the URL users browse to |
 | `SEED_PMOADMIN_PASSWORD` | `pmo-backend/.env` | First deploy only | SuperAdmin initial password |
 | `SEED_ADMIN_PASSWORD` | `pmo-backend/.env` | First deploy only | Admin initial password |
-| `BACKEND_PORT` / `FRONTEND_PORT` | `pmo-backend/.env` | Optional (default `3000`/`3001`) | Host-side port mapping, read by Docker Compose |
+| `BACKEND_PORT` / `FRONTEND_PORT` | root `.env` | Optional (default `3000`/`3001`) | Host-side port mapping, read by Docker Compose |
 | `GOOGLE_CLIENT_ID/SECRET` | `pmo-backend/.env` | Optional | Enable Google OAuth login |
 | `LDAP_URL` | `pmo-backend/.env` | Optional | Enable LDAP/AD login (see MIS_CHECKLIST.md) |
 
@@ -294,4 +312,4 @@ PostgreSQL container (port 5432, internal only)
     ↓  pgdata Docker volume (persists across restarts)
 ```
 
-> The PostgreSQL port is NOT published to the host. Access the database only via `docker compose --env-file ./pmo-backend/.env exec postgres psql`.
+> The PostgreSQL port is NOT published to the host. Access the database only via `docker compose exec postgres psql`.
