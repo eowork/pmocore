@@ -27,8 +27,7 @@ Prepare these items on a USB drive or send them to the dry-run laptop before you
 
 | Item | Where to find it | How to transfer |
 |---|---|---|
-| Root `.env` file | `D:\Programming\pmo-dash\.env` on dev machine | Copy to USB |
-| Backend `.env` file | `D:\Programming\pmo-dash\pmo-backend\.env` | Copy to USB |
+| Backend `.env` file | `D:\Programming\pmo-dash\pmo-backend\.env` — single source of truth for DB credentials, also read by `docker compose` | Copy to USB |
 | Frontend `.env` file | `D:\Programming\pmo-dash\pmo-frontend\.env` | Copy to USB |
 | `pmoadmin` password | Value of `SEED_PMOADMIN_PASSWORD` in backend `.env` | Write it down separately — do not rely on memory |
 | GitHub access | Repo is public — no credentials needed | None |
@@ -174,12 +173,9 @@ sudo mkdir -p /mnt/e
 sudo mount -t drvfs E: /mnt/e
 ```
 
-Find your USB drive letter in Windows File Explorer (e.g., `E:\`), then copy all three `.env` files:
+Find your USB drive letter in Windows File Explorer (e.g., `E:\`), then copy both `.env` files:
 
 ```bash
-# Copy root .env
-cp "/mnt/e/master-files/root-files/.env" ~/pmo-dash/.env
-
 # Copy backend .env
 cp "/mnt/e/master-files/pmo-backend/.env" ~/pmo-dash/pmo-backend/.env
 
@@ -189,14 +185,15 @@ cp "/mnt/e/master-files/pmo-frontend/.env" ~/pmo-dash/pmo-frontend/.env
 
 > Adjust the path after `/mnt/e/` to match the folder structure on your USB.
 > If any path has spaces (e.g., a folder named "Meo Angelo Alcantara"), wrap the entire path in double quotes.
+> There is no root `.env` file to copy — it was retired. `pmo-backend/.env` is now the single
+> source of truth for DB credentials and is what `docker compose` itself reads (see Step 2C).
 
-**Verify all three files are in place:**
+**Verify both files are in place:**
 
 ```bash
-ls -la ~/pmo-dash/.env
 ls -la ~/pmo-dash/pmo-backend/.env
 ls -la ~/pmo-dash/pmo-frontend/.env
-# All three should show file sizes > 0
+# Both should show file sizes > 0
 ```
 
 **Check required variables are set in backend `.env`:**
@@ -219,15 +216,20 @@ nano ~/pmo-dash/pmo-backend/.env
 ### Step 2C — Verify docker-compose.yml Postgres Password Requirement
 
 ```bash
-grep "POSTGRES_PASSWORD" ~/pmo-dash/docker-compose.yml
+grep "DATABASE_PASSWORD" ~/pmo-dash/docker-compose.yml
 ```
 
-If it shows `${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}`, the stack will refuse to start without the password — this is correct security behavior.
+If it shows `${DATABASE_PASSWORD:?DATABASE_PASSWORD must be set in pmo-backend/.env}`, the stack will refuse to start without the password — this is correct security behavior.
 
 ```bash
-grep "POSTGRES_PASSWORD" ~/pmo-dash/.env
-# Should show: POSTGRES_PASSWORD=<some-value>
+grep "DATABASE_PASSWORD" ~/pmo-dash/pmo-backend/.env
+# Should show: DATABASE_PASSWORD=<some-value>
 ```
+
+> **Every `docker compose` command from here on must include `--env-file ./pmo-backend/.env`.**
+> `docker-compose.yml` no longer reads a root `.env` — it interpolates `DATABASE_NAME`,
+> `DATABASE_USER`, and `DATABASE_PASSWORD` straight from `pmo-backend/.env`. Omit the flag
+> and Compose fails immediately with the error above, before any container starts.
 
 ---
 
@@ -237,7 +239,7 @@ grep "POSTGRES_PASSWORD" ~/pmo-dash/.env
 
 ```bash
 cd ~/pmo-dash
-docker compose up -d
+docker compose --env-file ./pmo-backend/.env up -d
 ```
 
 The **first run builds both images from source.** This takes 3–8 minutes depending on internet speed and CPU. You will see build progress in the terminal.
@@ -247,7 +249,7 @@ Do not interrupt it.
 ### Step 3B — Watch for Healthy Status
 
 ```bash
-docker compose ps
+docker compose --env-file ./pmo-backend/.env ps
 ```
 
 Run this every 30 seconds until all containers show healthy. Expected final state:
@@ -333,7 +335,7 @@ Open `http://localhost:3001` in a browser on the dry-run laptop. Work through ea
 | 17 | Manual backup runs | `bash ~/pmo-dash/backup.sh` | "Backup complete" with DB size and uploads size | |
 | 18 | Backup folder created | `ls ~/pmo-dash/backups/` | Timestamped folder with db.dump + uploads.tar.gz | |
 | 19 | Restore works | `bash ~/pmo-dash/restore.sh <timestamp>` → type YES | "Restore complete" + backend returns healthy | |
-| 20 | Stack still healthy after restore | `docker compose ps` | All containers running and healthy | |
+| 20 | Stack still healthy after restore | `docker compose --env-file ./pmo-backend/.env ps` | All containers running and healthy | |
 
 ---
 
@@ -378,17 +380,17 @@ This confirms the stack survives a machine restart — critical for a server tha
 
 ```bash
 # Simulate reboot: stop all containers
-docker compose stop
+docker compose --env-file ./pmo-backend/.env stop
 
 # Verify containers are stopped
-docker compose ps
+docker compose --env-file ./pmo-backend/.env ps
 # All should show "Exited"
 
 # Bring everything back up
-docker compose up -d
+docker compose --env-file ./pmo-backend/.env up -d
 
 # Wait 30 seconds, then verify
-docker compose ps
+docker compose --env-file ./pmo-backend/.env ps
 # All should return to healthy
 ```
 
@@ -398,7 +400,7 @@ docker compose ps
 
 ### PASS — All of the following are true:
 
-- [x] Stack boots from scratch with `docker compose up -d`
+- [x] Stack boots from scratch with `docker compose --env-file ./pmo-backend/.env up -d`
 - [x] All 3 containers reach healthy/running state
 - [x] `GET /health` returns `{"status":"ok"}`
 - [x] Login with pmoadmin credentials works
@@ -421,7 +423,7 @@ docker compose ps
 
 ### FAIL — Any of the following is true:
 
-- Backend container keeps restarting after `docker compose up -d`
+- Backend container keeps restarting after `docker compose --env-file ./pmo-backend/.env up -d`
 - Cannot log in with the correct pmoadmin password
 - Any critical module (COI, UO, Users) fails to load
 - Backup or restore script errors out
@@ -454,15 +456,15 @@ This record becomes input for updating `handover/DEPLOYMENT.md` before the real 
 ### Backend keeps restarting
 
 ```bash
-docker compose logs backend --tail=30
+docker compose --env-file ./pmo-backend/.env logs backend --tail=30
 ```
 
 | Error message | Cause | Fix |
 |---|---|---|
-| `password authentication failed` | `DATABASE_PASSWORD` in `pmo-backend/.env` does not match `POSTGRES_PASSWORD` in root `.env` | Edit both files to match |
-| `POSTGRES_PASSWORD must be set` | Root `.env` is missing or `POSTGRES_PASSWORD` is empty | Add the line to root `.env` |
-| `ECONNREFUSED` | Postgres not yet ready when backend started | Run `docker compose up -d backend` again after 30 seconds |
-| `Cannot find module` | Image build failed | Run `docker compose up -d --build backend` |
+| `password authentication failed` | `DATABASE_PASSWORD` in `pmo-backend/.env` was changed after Postgres was first initialized — the password gets baked into the Postgres data volume on first run and does not update automatically afterward | Either revert `DATABASE_PASSWORD` in `pmo-backend/.env` to the original value, or wipe the volume with `docker compose --env-file ./pmo-backend/.env down -v` and let Postgres reinitialize with the current value |
+| `DATABASE_PASSWORD must be set in pmo-backend/.env` | `pmo-backend/.env` is missing, `DATABASE_PASSWORD` is empty, or the `docker compose` command was run without `--env-file ./pmo-backend/.env` | Add the line to `pmo-backend/.env`, and make sure every `docker compose` invocation includes `--env-file ./pmo-backend/.env` |
+| `ECONNREFUSED` | Postgres not yet ready when backend started | Run `docker compose --env-file ./pmo-backend/.env up -d backend` again after 30 seconds |
+| `Cannot find module` | Image build failed | Run `docker compose --env-file ./pmo-backend/.env up -d --build backend` |
 
 ### Docker build fails (no internet / slow)
 
@@ -495,7 +497,7 @@ ss -tlnp | grep -E "3000|3001"
 kill -9 <PID>
 ```
 
-Or change the ports in root `.env` (`BACKEND_PORT`, `FRONTEND_PORT`) and restart the stack.
+Or set `BACKEND_PORT` / `FRONTEND_PORT` in `pmo-backend/.env` (commented out by default — see `.env.example`) and restart the stack with `docker compose --env-file ./pmo-backend/.env up -d`.
 
 ### USB drive not visible in WSL
 
@@ -515,10 +517,10 @@ sudo mount -t drvfs E: /mnt/e
 
 ```bash
 # Generate a new bcrypt hash
-docker compose exec -T backend node -e "const bcrypt = require('bcrypt'); bcrypt.hash('newpassword123', 10).then(h => console.log(h));"
+docker compose --env-file ./pmo-backend/.env exec -T backend node -e "const bcrypt = require('bcrypt'); bcrypt.hash('newpassword123', 10).then(h => console.log(h));"
 
 # Apply the hash
-docker compose exec -T postgres psql -U postgres -d pmo_dashboard -c \
+docker compose --env-file ./pmo-backend/.env exec -T postgres psql -U postgres -d pmo_dashboard -c \
   "UPDATE users SET password_hash = '\$2b\$10\$PASTE_HASH_HERE' WHERE username = 'pmoadmin';"
 ```
 

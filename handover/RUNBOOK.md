@@ -17,48 +17,48 @@ cd /path/to/pmo-dash
 ### Start the stack
 
 ```bash
-docker compose up -d
+docker compose --env-file ./pmo-backend/.env up -d
 ```
 
 Wait for all containers to be healthy:
 
 ```bash
-docker compose ps
+docker compose --env-file ./pmo-backend/.env ps
 # All three should show "healthy" or "Up"
 ```
 
 ### Stop the stack (data is preserved)
 
 ```bash
-docker compose stop
+docker compose --env-file ./pmo-backend/.env stop
 ```
 
-> This stops containers but does NOT delete any data. `docker compose up -d` starts them again.
+> This stops containers but does NOT delete any data. `docker compose --env-file ./pmo-backend/.env up -d` starts them again.
 
 ### Restart a single service
 
 ```bash
-docker compose restart backend
-docker compose restart frontend
+docker compose --env-file ./pmo-backend/.env restart backend
+docker compose --env-file ./pmo-backend/.env restart frontend
 ```
 
 ### Check status
 
 ```bash
-docker compose ps
+docker compose --env-file ./pmo-backend/.env ps
 ```
 
 ### View logs
 
 ```bash
 # Follow live backend logs
-docker compose logs -f backend
+docker compose --env-file ./pmo-backend/.env logs -f backend
 
 # Last 50 lines from all services
-docker compose logs --tail=50
+docker compose --env-file ./pmo-backend/.env logs --tail=50
 
 # Specific service, last 100 lines
-docker compose logs --tail=100 postgres
+docker compose --env-file ./pmo-backend/.env logs --tail=100 postgres
 ```
 
 ---
@@ -124,7 +124,7 @@ tail -30 /var/log/pmo-backup.log
 The stack must be running before restoring:
 
 ```bash
-docker compose up -d
+docker compose --env-file ./pmo-backend/.env up -d
 ```
 
 Run the restore script with the backup timestamp:
@@ -158,7 +158,7 @@ When a new version is deployed from the repository:
 ```bash
 cd /path/to/pmo-dash
 git pull origin pmo-deploy
-docker compose up -d --build backend frontend
+docker compose --env-file ./pmo-backend/.env up -d --build backend frontend
 ```
 
 PostgreSQL is unaffected — only the application images are rebuilt.
@@ -179,7 +179,7 @@ From the Users module (SuperAdmin only):
 ### Unlock a locked account (too many failed logins)
 
 ```bash
-docker compose exec -T postgres psql -U postgres -d pmo_dashboard -c \
+docker compose --env-file ./pmo-backend/.env exec -T postgres psql -U postgres -d pmo_dashboard -c \
   "UPDATE users SET account_locked_until = NULL, failed_login_attempts = 0
    WHERE email = 'user@example.com' AND deleted_at IS NULL;"
 ```
@@ -188,12 +188,12 @@ docker compose exec -T postgres psql -U postgres -d pmo_dashboard -c \
 
 ```bash
 # Step 1: Generate bcrypt hash for the new password
-docker compose exec -T backend node -e \
+docker compose --env-file ./pmo-backend/.env exec -T backend node -e \
   "const bcrypt = require('bcrypt'); bcrypt.hash('newpassword123', 10).then(h => console.log(h));"
 # Copy the output (starts with $2b$10$...)
 
 # Step 2: Apply to the user
-docker compose exec -T postgres psql -U postgres -d pmo_dashboard -c \
+docker compose --env-file ./pmo-backend/.env exec -T postgres psql -U postgres -d pmo_dashboard -c \
   "UPDATE users SET password_hash = '\$2b\$10\$REPLACE_HASH_HERE'
    WHERE email = 'user@example.com' AND deleted_at IS NULL;"
 ```
@@ -209,7 +209,7 @@ Same as above — use `WHERE username = 'pmoadmin'` instead of email.
 Direct database access (read-only queries, diagnostics):
 
 ```bash
-docker compose exec postgres psql -U postgres -d pmo_dashboard
+docker compose --env-file ./pmo-backend/.env exec postgres psql -U postgres -d pmo_dashboard
 ```
 
 Useful queries:
@@ -263,7 +263,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
 
 | Instead of | Use |
 |---|---|
-| `docker compose down -v` | `docker compose stop` (data preserved) |
+| `docker compose down -v` | `docker compose --env-file ./pmo-backend/.env stop` (data preserved) |
 | Deleting volumes | `bash restore.sh <timestamp>` (safe restore) |
 
 ---
@@ -273,24 +273,24 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3001
 ### Backend crash loop
 
 ```bash
-docker compose logs backend --tail=30
+docker compose --env-file ./pmo-backend/.env logs backend --tail=30
 ```
 
 | Error | Fix |
 |---|---|
 | `password authentication failed` | `DATABASE_PASSWORD` in `pmo-backend/.env` doesn't match postgres | 
-| `Fatal: POSTGRES_PASSWORD must be set` | Add `POSTGRES_PASSWORD` to root `.env` |
-| `ECONNREFUSED` | Postgres not ready — wait and run `docker compose up -d backend` |
+| `Fatal: POSTGRES_PASSWORD must be set` | Add `DATABASE_PASSWORD` to `pmo-backend/.env` (docker-compose.yml derives the container's `POSTGRES_PASSWORD` from it) |
+| `ECONNREFUSED` | Postgres not ready — wait and run `docker compose --env-file ./pmo-backend/.env up -d backend` |
 
 ### Frontend shows blank page or "Cannot connect to API"
 
 ```bash
 # Check if backend is healthy
-docker compose ps | grep backend
+docker compose --env-file ./pmo-backend/.env ps | grep backend
 # Must show (healthy), not Restarting
 
 # Check NUXT_PUBLIC_API_BASE in frontend container
-docker compose exec frontend printenv NUXT_PUBLIC_API_BASE
+docker compose --env-file ./pmo-backend/.env exec frontend printenv NUXT_PUBLIC_API_BASE
 # Expected: http://localhost:3000
 ```
 
@@ -311,7 +311,7 @@ If disk is low, archive old backup folders to external storage and delete from t
 Docker Desktop should auto-start with Windows. If not:
 1. Open Docker Desktop from the Start menu
 2. Wait for the whale icon in the system tray to show "Docker Desktop is running"
-3. Then in WSL Ubuntu: `docker compose up -d`
+3. Then in WSL Ubuntu: `docker compose --env-file ./pmo-backend/.env up -d`
 
 ---
 
@@ -346,7 +346,7 @@ Fill in these contacts before go-live. Keep a printed copy near the server.
 
 **Step 1 — Assess**
 ```bash
-docker compose ps
+docker compose --env-file ./pmo-backend/.env ps
 # Are all containers running and healthy?
 ```
 
@@ -357,7 +357,7 @@ curl http://localhost:3000/health
 
 **Step 2 — Attempt recovery**
 ```bash
-docker compose up -d
+docker compose --env-file ./pmo-backend/.env up -d
 # Restart any stopped containers
 ```
 
@@ -416,7 +416,7 @@ If `status` is `"degraded"` or `"error"`, check container logs immediately.
 If you suspect unauthorized access (unfamiliar user accounts, unexpected data changes):
 
 1. Check activity logs in the PMO CORE admin panel (SuperAdmin → Activity Log)
-2. Check backend logs: `docker compose logs backend --tail=200 | grep -i "401\|403\|login"`
+2. Check backend logs: `docker compose --env-file ./pmo-backend/.env logs backend --tail=200 | grep -i "401\|403\|login"`
 3. If a user account was compromised: deactivate it via User Management immediately
 4. If a JWT secret compromise is suspected: rotate `AUTH_JWT_SECRET` in `pmo-backend/.env` and restart backend — this invalidates ALL active sessions (all users must re-login)
 5. Notify MIS Director and document the incident

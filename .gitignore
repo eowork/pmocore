@@ -14,6 +14,7 @@ nul
 # MCP configuration files (may contain API keys)
 .vscode/mcp.json
 .mcp.json
+.idea/
 
 # Runtime / operational artifacts (not source code)
 database/backups/

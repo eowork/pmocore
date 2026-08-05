@@ -10,7 +10,7 @@ the database is created.
 Just build and start the stack as `DEPLOYMENT.md` describes:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file ./pmo-backend/.env up -d --build
 ```
 
 On a fresh, empty database, `pmo-backend/seed.js` runs automatically and creates:

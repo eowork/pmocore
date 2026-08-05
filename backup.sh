@@ -23,7 +23,7 @@ echo " PMO CORE Backup — $TIMESTAMP"
 echo "======================================"
 
 # --- Pre-flight checks ---
-if ! docker compose -f "$PROJECT_DIR/docker-compose.yml" ps --services --filter "status=running" 2>/dev/null | grep -q postgres; then
+if ! docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/pmo-backend/.env" ps --services --filter "status=running" 2>/dev/null | grep -q postgres; then
   echo "[ERROR] postgres container is not running. Start the stack first."
   exit 1
 fi
@@ -58,7 +58,7 @@ Uploads   : /app/uploads (tar.gz)
 DB size   : $DB_SIZE
 Files size: $UP_SIZE
 Created by: $(whoami)@$(hostname)
-Stack     : $(docker compose -f "$PROJECT_DIR/docker-compose.yml" ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || echo "unknown")
+Stack     : $(docker compose -f "$PROJECT_DIR/docker-compose.yml" --env-file "$PROJECT_DIR/pmo-backend/.env" ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || echo "unknown")
 EOF
 
 echo ""
