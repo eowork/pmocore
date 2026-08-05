@@ -59,7 +59,7 @@ Expected output includes `TcpTestSucceeded : True`. If False, check Wi-Fi connec
 | Free disk space | 10 GB minimum | |
 | Windows build | 19041 or higher | |
 | Internet | Active and stable | |
-| USB drive with `.env` files | From dev machine | |
+| USB drive with `.env` files (root `.env`, `pmo-backend/.env`, `pmo-frontend/.env`) | From dev machine | |
 | `pmoadmin` password | Written down | |
 
 **Only proceed when all boxes are checked.**
@@ -604,7 +604,7 @@ This section prepares you for what the first boot looks like. Reading it before 
 On a completely fresh machine with no Docker cache, the command:
 
 ```bash
-docker compose --env-file ./pmo-backend/.env up -d
+docker compose up -d
 ```
 
 …will download approximately **450–500 MB** and build the application images. This takes time. It is normal. Do not interrupt it.
@@ -654,15 +654,15 @@ When you see `Running 3/3` with all three containers showing a checkmark — the
 
 | What you see | What it means | Fix |
 |---|---|---|
-| Build stops at `npm ci` for more than 10 minutes with no progress | Network timeout during npm install | Press `Ctrl+C`, run `docker compose --env-file ./pmo-backend/.env up -d --build` again |
-| `ERROR [backend X/Y]` in red | A build step failed | Check internet, then run `docker compose --env-file ./pmo-backend/.env up -d --build` |
+| Build stops at `npm ci` for more than 10 minutes with no progress | Network timeout during npm install | Press `Ctrl+C`, run `docker compose up -d --build` again |
+| `ERROR [backend X/Y]` in red | A build step failed | Check internet, then run `docker compose up -d --build` |
 | `no space left on device` | Less than 5 GB free disk space | Delete large files from Windows, then retry |
 | `docker: cannot connect to the Docker daemon` | Docker Desktop is not running | Open Docker Desktop from Start menu, wait for "running" |
 
 ### After the Build — Checking Container Health
 
 ```bash
-docker compose --env-file ./pmo-backend/.env ps
+docker compose ps
 ```
 
 Expected output:
@@ -673,7 +673,7 @@ pmo-dash-backend-1    pmo-dash-backend   Up 25 seconds (healthy)
 pmo-dash-frontend-1   pmo-dash-frontend  Up 20 seconds
 ```
 
-The backend must show `(healthy)` before the application is usable. If it shows `(health: starting)`, wait another 30 seconds and run `docker compose --env-file ./pmo-backend/.env ps` again.
+The backend must show `(healthy)` before the application is usable. If it shows `(health: starting)`, wait another 30 seconds and run `docker compose ps` again.
 
 If it shows `Restarting` — see the Troubleshooting section below.
 
@@ -711,20 +711,20 @@ Command 'docker' not found
 ### Backend Container Keeps Restarting
 
 ```bash
-docker compose --env-file ./pmo-backend/.env ps
+docker compose ps
 # Shows: pmo-dash-backend-1   Restarting
 ```
 
 Check the logs:
 ```bash
-docker compose --env-file ./pmo-backend/.env logs backend --tail=20
+docker compose logs backend --tail=20
 ```
 
 | Error in logs | Cause | Fix |
 |---|---|---|
-| `password authentication failed for user "postgres"` | The Postgres data volume was initialized with a different password than the current `DATABASE_PASSWORD` value in `pmo-backend/.env` | Set `DATABASE_PASSWORD` in `pmo-backend/.env` back to the value Postgres was first created with, or remove the `pgdata` volume to reinitialize (this destroys existing data) |
-| `DATABASE_PASSWORD must be set in pmo-backend/.env` | `pmo-backend/.env` is missing, `DATABASE_PASSWORD` is empty, or `docker compose` was run without `--env-file ./pmo-backend/.env` | Ensure `pmo-backend/.env` exists with `DATABASE_PASSWORD=<value>` set, and always include `--env-file ./pmo-backend/.env` when running `docker compose` |
-| `ECONNREFUSED 127.0.0.1:5432` | Postgres not ready when backend started | Run `docker compose --env-file ./pmo-backend/.env up -d backend` again after 30 seconds |
+| `password authentication failed for user "postgres"` | `DATABASE_PASSWORD` in `pmo-backend/.env` does not match `POSTGRES_PASSWORD` in root `.env` | Edit both files to use the same value |
+| `POSTGRES_PASSWORD must be set` | Root `.env` is missing or the variable is empty | Open root `.env` and ensure `POSTGRES_PASSWORD=<value>` is present |
+| `ECONNREFUSED 127.0.0.1:5432` | Postgres not ready when backend started | Run `docker compose up -d backend` again after 30 seconds |
 
 ---
 
@@ -758,10 +758,10 @@ Bind for 0.0.0.0:3001 failed: port is already allocated
 # Find what is using port 3001
 ss -tlnp | grep 3001
 
-# Or change the port in pmo-backend/.env
-nano ~/pmo-dash/pmo-backend/.env
-# Uncomment/edit: FRONTEND_PORT=3001 to FRONTEND_PORT=3002
-# Then restart: docker compose --env-file ./pmo-backend/.env up -d
+# Or change the port in root .env
+nano ~/pmo-dash/.env
+# Edit FRONTEND_PORT=3001 to FRONTEND_PORT=3002
+# Then restart: docker compose up -d
 ```
 
 ---
@@ -775,8 +775,8 @@ npm ERR! network timeout
 
 **Fix:** Retry the build — this is usually a temporary network issue:
 ```bash
-docker compose --env-file ./pmo-backend/.env down
-docker compose --env-file ./pmo-backend/.env up -d --build
+docker compose down
+docker compose up -d --build
 ```
 
 ---
@@ -790,7 +790,7 @@ Docker Desktop sometimes loses connection to WSL2 after sleep.
 2. Wait 10 seconds
 3. Open Docker Desktop from Start menu
 4. Wait for "Docker Desktop is running" in tray
-5. Then run `docker compose --env-file ./pmo-backend/.env up -d` in Ubuntu terminal
+5. Then run `docker compose up -d` in Ubuntu terminal
 
 ---
 
@@ -803,10 +803,10 @@ Keep this visible during the dry run:
   PMO CORE — Quick Reference
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  START STACK:     docker compose --env-file ./pmo-backend/.env up -d
-  STOP STACK:      docker compose --env-file ./pmo-backend/.env stop  (data safe)
-  CHECK STATUS:    docker compose --env-file ./pmo-backend/.env ps
-  VIEW LOGS:       docker compose --env-file ./pmo-backend/.env logs -f backend
+  START STACK:     docker compose up -d
+  STOP STACK:      docker compose stop  (data safe)
+  CHECK STATUS:    docker compose ps
+  VIEW LOGS:       docker compose logs -f backend
   HEALTH CHECK:    curl http://localhost:3000/health
 
   FRONTEND:        http://localhost:3001
@@ -815,7 +815,7 @@ Keep this visible during the dry run:
   BACKUP:          bash ~/pmo-dash/backup.sh
   RESTORE:         bash ~/pmo-dash/restore.sh <timestamp>
 
-  NEVER RUN:       docker compose --env-file ./pmo-backend/.env down -v   ← DELETES ALL DATA
+  NEVER RUN:       docker compose down -v   ← DELETES ALL DATA
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

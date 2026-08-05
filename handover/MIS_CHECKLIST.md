@@ -93,7 +93,7 @@ LDAP_TLS_REJECT_UNAUTHORIZED=true
 ### Step 2 — Restart backend to activate LDAP strategy
 
 ```bash
-docker compose --env-file ./pmo-backend/.env up -d backend
+docker compose up -d backend
 ```
 
 ### Step 3 — Test with a real carsu.edu.ph account
@@ -170,7 +170,7 @@ NUXT_PUBLIC_API_BASE=https://core.carsu.edu.ph
 Rebuild frontend so the new API base is baked in:
 
 ```bash
-docker compose --env-file ./pmo-backend/.env up -d --build frontend
+docker compose up -d --build frontend
 ```
 
 ---

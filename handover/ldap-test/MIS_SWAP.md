@@ -213,10 +213,10 @@ nano /mnt/d/Programming/pmo-dash/pmo-backend/.env
 
 # 2. Recreate backend container (picks up new env vars)
 cd /mnt/d/Programming/pmo-dash
-docker compose --env-file ./pmo-backend/.env up -d backend
+docker compose up -d backend
 
 # 3. Verify LDAP strategy registered (look for LdapStrategy in logs)
-docker compose --env-file ./pmo-backend/.env logs backend | grep -i ldap
+docker compose logs backend | grep -i ldap
 
 # 4a. Isolate LDAP connectivity (diagnostic endpoint — bypasses local-hash logic)
 curl -s -X POST http://localhost:3000/api/auth/ldap \
