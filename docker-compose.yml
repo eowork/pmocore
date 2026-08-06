@@ -37,6 +37,8 @@ services:
       DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
       DATABASE_USER: ${POSTGRES_USER:-postgres}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      SEED_PMOADMIN_PASSWORD: ${SEED_PMOADMIN_PASSWORD:?SEED_PMOADMIN_PASSWORD must be set in .env}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
       PORT: 3000
     depends_on:
       postgres:

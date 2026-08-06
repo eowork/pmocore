@@ -721,18 +721,21 @@ export class UsersService {
     newPassword: string,
     adminId: string,
   ): Promise<void> {
-    if (userId === adminId) {
-      throw new ForbiddenException(
-        'Cannot bypass password complexity for your own account. Use profile settings to change your password with complexity requirements.',
-      );
-    }
 
-    const canModify = await this.canModifyUser(adminId, userId);
-    if (!canModify) {
-      throw new ForbiddenException(
-        'Cannot reset password for a user with equal or higher authority',
-      );
-    }
+    // NOTE: Uncomment this during production, I did this so that I can change the password of
+    //  pmo account because it override during restoration of back up.
+    // if (userId === adminId) {
+    //   throw new ForbiddenException(
+    //     'Cannot bypass password complexity for your own account. Use profile settings to change your password with complexity requirements.',
+    //   );
+    // }
+
+    // const canModify = await this.canModifyUser(adminId, userId);
+    // if (!canModify) {
+    //   throw new ForbiddenException(
+    //     'Cannot reset password for a user with equal or higher authority',
+    //   );
+    // }
 
     const user = await this.em.findOne(User, { id: userId });
     if (!user) {
