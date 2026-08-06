@@ -18,11 +18,17 @@ async function checkSchema() {
     WHERE table_name = 'roles'
     ORDER BY ordinal_position
   `);
-  roles.rows.forEach(c => console.log(`  - ${c.column_name} (${c.data_type})`));
+  roles.rows.forEach((c) =>
+    console.log(`  - ${c.column_name} (${c.data_type})`),
+  );
 
   const rolesData = await pool.query('SELECT * FROM roles LIMIT 10');
   console.log('\nSample roles:');
-  rolesData.rows.forEach(r => console.log(`  - ${r.id}: ${r.name} (${r.description || 'no description'})`));
+  rolesData.rows.forEach((r) =>
+    console.log(
+      `  - ${r.id}: ${r.name} (${r.description || 'no description'})`,
+    ),
+  );
 
   // Check user_roles table
   console.log('\n=== USER_ROLES TABLE ===');
@@ -32,7 +38,9 @@ async function checkSchema() {
     WHERE table_name = 'user_roles'
     ORDER BY ordinal_position
   `);
-  userRoles.rows.forEach(c => console.log(`  - ${c.column_name} (${c.data_type})`));
+  userRoles.rows.forEach((c) =>
+    console.log(`  - ${c.column_name} (${c.data_type})`),
+  );
 
   await pool.end();
 }
