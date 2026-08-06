@@ -66,10 +66,23 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Admin-only account creation (CSU institutional users)', description: 'Creates an account with NO module access (dashboard-only) until an administrator grants module permissions. Replaces public self-registration.' })
-  @ApiResponse({ status: 201, description: 'Account created — dashboard-only until access is granted' })
-  @ApiResponse({ status: 400, description: 'Validation error or passwords do not match' })
-  @ApiResponse({ status: 403, description: 'Forbidden — administrator role required' })
+  @ApiOperation({
+    summary: 'Admin-only account creation (CSU institutional users)',
+    description:
+      'Creates an account with NO module access (dashboard-only) until an administrator grants module permissions. Replaces public self-registration.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Account created — dashboard-only until access is granted',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error or passwords do not match',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — administrator role required',
+  })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
@@ -155,7 +168,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({
     status: 400,
-    description: 'Validation error, wrong current password, or SSO-only account',
+    description:
+      'Validation error, wrong current password, or SSO-only account',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 429, description: 'Too many attempts' })
