@@ -1,5 +1,10 @@
 import { Type } from 'class-transformer';
-import { IsArray, ArrayMaxSize, ValidateNested, ArrayMinSize } from 'class-validator';
+import {
+  IsArray,
+  ArrayMaxSize,
+  ValidateNested,
+  ArrayMinSize,
+} from 'class-validator';
 import { CreateTimelineEntryDto } from './create-timeline-entry.dto';
 
 export class BatchCreateTimelineEntryDto {
