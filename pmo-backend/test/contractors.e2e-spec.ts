@@ -15,7 +15,9 @@ describe('ContractorsController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
 
     // Login to get auth token (requires valid test user in DB)
@@ -49,8 +51,7 @@ describe('ContractorsController (e2e)', () => {
 
   describe('CRUD Cycle', () => {
     it('should require authentication for GET /contractors', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/contractors');
+      const response = await request(app.getHttpServer()).get('/contractors');
 
       expect(response.status).toBe(401);
     });

@@ -27,7 +27,9 @@ export class Migration20260522020000_CreateConstructionProgressReports extends M
         updated_by UUID
       )
     `);
-    this.addSql(`CREATE INDEX IF NOT EXISTS idx_cpr_project_date ON construction_progress_reports(project_id, report_date DESC)`);
+    this.addSql(
+      `CREATE INDEX IF NOT EXISTS idx_cpr_project_date ON construction_progress_reports(project_id, report_date DESC)`,
+    );
   }
 
   async down(): Promise<void> {

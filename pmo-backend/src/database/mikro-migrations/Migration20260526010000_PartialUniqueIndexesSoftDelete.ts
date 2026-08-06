@@ -7,9 +7,15 @@ export class Migration20260526010000_PartialUniqueIndexesSoftDelete extends Migr
     // allowing re-registration of a previously-deleted email/username.
 
     // Drop full-table unique constraints that include soft-deleted rows
-    await this.execute(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key`);
-    await this.execute(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_unique`);
-    await this.execute(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_google_id_key`);
+    await this.execute(
+      `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key`,
+    );
+    await this.execute(
+      `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_unique`,
+    );
+    await this.execute(
+      `ALTER TABLE users DROP CONSTRAINT IF EXISTS users_google_id_key`,
+    );
 
     // Partial unique index: email uniqueness enforced only for active (non-deleted) users
     await this.execute(`
@@ -38,8 +44,14 @@ export class Migration20260526010000_PartialUniqueIndexesSoftDelete extends Migr
     await this.execute(`DROP INDEX IF EXISTS users_username_active_unique`);
     await this.execute(`DROP INDEX IF EXISTS users_google_id_active_unique`);
 
-    await this.execute(`ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email)`);
-    await this.execute(`ALTER TABLE users ADD CONSTRAINT users_username_unique UNIQUE (username)`);
-    await this.execute(`ALTER TABLE users ADD CONSTRAINT users_google_id_key UNIQUE (google_id)`);
+    await this.execute(
+      `ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email)`,
+    );
+    await this.execute(
+      `ALTER TABLE users ADD CONSTRAINT users_username_unique UNIQUE (username)`,
+    );
+    await this.execute(
+      `ALTER TABLE users ADD CONSTRAINT users_google_id_key UNIQUE (google_id)`,
+    );
   }
 }

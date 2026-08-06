@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { EntityManager } from '@mikro-orm/core';
@@ -107,7 +113,12 @@ export class AuthService {
         `LOGIN_FAILURE: user_id=${user.id}, reason=INVALID_PASSWORD`,
       );
       void this.activityLog.logAction(
-        { sub: user.id, email: user.email ?? '', roles: [], is_superadmin: false },
+        {
+          sub: user.id,
+          email: user.email ?? '',
+          roles: [],
+          is_superadmin: false,
+        },
         ActivityAction.FAILED_LOGIN,
         'auth',
         user.id,
@@ -192,8 +203,13 @@ export class AuthService {
     try {
       await this.em.persistAndFlush(user);
     } catch (err: any) {
-      if (err?.code === '23505' || (err?.message && (err.message as string).includes('unique constraint'))) {
-        throw new ConflictException('An account with this email already exists');
+      if (
+        err?.code === '23505' ||
+        (err?.message && (err.message as string).includes('unique constraint'))
+      ) {
+        throw new ConflictException(
+          'An account with this email already exists',
+        );
       }
       throw err;
     }
@@ -201,19 +217,31 @@ export class AuthService {
     // (default-DENY) until an administrator grants a role + module access via Access Control.
     // (Superseded the ZG-A auto-Staff grant, which combined with default-ALLOW let any
     // registrant self-provision full Staff access.)
-    this.logger.log(`ADMIN_ACCOUNT_CREATE: email=${email}, username=${username}, status=ACTIVE, access=DASHBOARD_ONLY`);
-    return { message: 'Account created. The user has dashboard-only access until an administrator grants module permissions.' };
+    this.logger.log(
+      `ADMIN_ACCOUNT_CREATE: email=${email}, username=${username}, status=ACTIVE, access=DASHBOARD_ONLY`,
+    );
+    return {
+      message:
+        'Account created. The user has dashboard-only access until an administrator grants module permissions.',
+    };
   }
 
   async login(dto: LoginDto) {
     // ZA-1: Pre-check activation status — ACCOUNT_INACTIVE is distinct from INVALID_CREDENTIALS.
     const account = await this.em.findOne(
       User,
-      { $or: [{ email: { $ilike: dto.identifier } }, { username: { $ilike: dto.identifier } }] },
+      {
+        $or: [
+          { email: { $ilike: dto.identifier } },
+          { username: { $ilike: dto.identifier } },
+        ],
+      },
       { filters: false },
     );
     if (account && !account.isActive) {
-      this.logger.warn(`LOGIN_FAILURE: user_id=${account.id}, reason=ACCOUNT_INACTIVE`);
+      this.logger.warn(
+        `LOGIN_FAILURE: user_id=${account.id}, reason=ACCOUNT_INACTIVE`,
+      );
       throw new UnauthorizedException('ACCOUNT_INACTIVE');
     }
 
@@ -484,7 +512,11 @@ export class AuthService {
   // NNN-G: authenticated self-service password change (distinct from public reset flow)
   async changePassword(
     userId: string,
-    dto: { currentPassword: string; newPassword: string; confirmPassword: string },
+    dto: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    },
   ): Promise<{ message: string }> {
     if (!dto.currentPassword || !dto.newPassword || !dto.confirmPassword) {
       throw new BadRequestException('All password fields are required');
@@ -564,7 +596,9 @@ export class AuthService {
     if (dto.position !== undefined || dto.office !== undefined) {
       user.metadata = {
         ...(user.metadata || {}),
-        ...(dto.position !== undefined ? { position: dto.position?.trim() } : {}),
+        ...(dto.position !== undefined
+          ? { position: dto.position?.trim() }
+          : {}),
         ...(dto.office !== undefined ? { office: dto.office?.trim() } : {}),
       };
     }
@@ -573,7 +607,12 @@ export class AuthService {
     }
     await this.em.flush();
     this.logger.log(`PROFILE_UPDATE: user_id=${userId}`);
-    const actor = { sub: userId, email: user.email ?? '', roles: [], is_superadmin: false };
+    const actor = {
+      sub: userId,
+      email: user.email ?? '',
+      roles: [],
+      is_superadmin: false,
+    };
     void this.activityLog.logAction(
       actor,
       ActivityAction.PROFILE_UPDATE,
@@ -617,12 +656,22 @@ export class AuthService {
       // best-effort so the activity log has a valid actor; skip the audit if no account matches.
       const requester = await this.em.findOne(
         User,
-        { $or: [{ email: { $ilike: identifier } }, { username: { $ilike: identifier } }] },
+        {
+          $or: [
+            { email: { $ilike: identifier } },
+            { username: { $ilike: identifier } },
+          ],
+        },
         { filters: false },
       );
       if (requester) {
         void this.activityLog.logAction(
-          { sub: requester.id, email: requester.email ?? identifier, roles: [], is_superadmin: false },
+          {
+            sub: requester.id,
+            email: requester.email ?? identifier,
+            roles: [],
+            is_superadmin: false,
+          },
           ActivityAction.PASSWORD_RESET_REQUESTED,
           'password_reset',
           entity.id,
@@ -642,7 +691,10 @@ export class AuthService {
   // T-UNI: Programmatic LDAP auth for the unified login endpoint.
   // Called when an account has no local passwordHash (LDAP or SSO-only accounts).
   // Returns false immediately if LDAP_URL is not configured — no network call, no hang.
-  private async attemptLdapAuth(username: string, password: string): Promise<boolean> {
+  private async attemptLdapAuth(
+    username: string,
+    password: string,
+  ): Promise<boolean> {
     const ldapUrl = process.env.LDAP_URL || '';
     if (!ldapUrl) return false;
 
@@ -655,7 +707,8 @@ export class AuthService {
       searchBase: process.env.LDAP_SEARCH_BASE || '',
       searchFilter: process.env.LDAP_SEARCH_FILTER || '(mail={{username}})',
       tlsOptions: {
-        rejectUnauthorized: (process.env.LDAP_TLS_REJECT_UNAUTHORIZED ?? 'true') === 'true',
+        rejectUnauthorized:
+          (process.env.LDAP_TLS_REJECT_UNAUTHORIZED ?? 'true') === 'true',
       },
     });
 

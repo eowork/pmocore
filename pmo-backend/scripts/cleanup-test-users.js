@@ -31,8 +31,10 @@ async function cleanup() {
     }
 
     console.log(`Found ${before.rows.length} test users:\n`);
-    before.rows.forEach(u => {
-      console.log(`  - ${u.username} (${u.first_name} ${u.last_name}, ${u.campus}, rank ${u.rank_level})`);
+    before.rows.forEach((u) => {
+      console.log(
+        `  - ${u.username} (${u.first_name} ${u.last_name}, ${u.campus}, rank ${u.rank_level})`,
+      );
     });
 
     // Delete user_roles first (foreign key constraint)
@@ -47,7 +49,9 @@ async function cleanup() {
       DELETE FROM record_assignments
       WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'bq_%')
     `);
-    console.log(`✓ Deleted ${assignmentsDeleted.rowCount} record_assignments entries`);
+    console.log(
+      `✓ Deleted ${assignmentsDeleted.rowCount} record_assignments entries`,
+    );
 
     // Delete users
     const usersDeleted = await pool.query(`
@@ -56,7 +60,6 @@ async function cleanup() {
     console.log(`✓ Deleted ${usersDeleted.rowCount} users\n`);
 
     console.log('=== CLEANUP COMPLETE ===\n');
-
   } catch (error) {
     console.error('✗ Cleanup failed:', error.message);
     process.exit(1);

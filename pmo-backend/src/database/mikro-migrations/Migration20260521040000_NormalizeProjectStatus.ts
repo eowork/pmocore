@@ -18,8 +18,12 @@ export class Migration20260521040000_NormalizeProjectStatus extends Migration {
   }
 
   async up(): Promise<void> {
-    this.addSql(`ALTER TYPE project_status_enum ADD VALUE IF NOT EXISTS 'PROPOSAL'`);
-    this.addSql(`ALTER TYPE project_status_enum ADD VALUE IF NOT EXISTS 'COMPLETE'`);
+    this.addSql(
+      `ALTER TYPE project_status_enum ADD VALUE IF NOT EXISTS 'PROPOSAL'`,
+    );
+    this.addSql(
+      `ALTER TYPE project_status_enum ADD VALUE IF NOT EXISTS 'COMPLETE'`,
+    );
   }
 
   async down(): Promise<void> {

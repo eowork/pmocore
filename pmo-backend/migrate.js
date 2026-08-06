@@ -21,7 +21,7 @@ async function main() {
 
   // Detect fresh database: projects table is the canonical indicator
   const rows = await conn.execute(
-    "SELECT to_regclass('public.projects') AS tbl"
+    "SELECT to_regclass('public.projects') AS tbl",
   );
   const isFresh = rows[0]?.tbl === null;
 
@@ -53,18 +53,19 @@ async function main() {
     for (const m of pending) {
       await conn.execute(
         'INSERT INTO mikro_orm_migrations (name, executed_at) VALUES (?, NOW())',
-        [m.name]
+        [m.name],
       );
     }
     console.log(`[migrate] Done — ${pending.length} migrations marked applied`);
 
     if (process.env.SEED_SKIP === 'true') {
-      console.log('[migrate] SEED_SKIP=true — skipping base seed (data-clone mode)');
+      console.log(
+        '[migrate] SEED_SKIP=true — skipping base seed (data-clone mode)',
+      );
     } else {
       // Fresh empty schema — seed roles, a SuperAdmin, and reference data
       await seedFreshDatabase(orm);
     }
-
   } else {
     console.log('[migrate] Existing database — running pending migrations');
     const migrator = orm.getMigrator();
@@ -75,7 +76,7 @@ async function main() {
   await orm.close(true);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('[migrate] Fatal:', err.message || err);
   process.exit(1);
 });

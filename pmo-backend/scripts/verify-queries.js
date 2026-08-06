@@ -69,7 +69,9 @@ async function verifyQueries() {
   await pool.end();
 
   if (allPassed) {
-    console.log('\n✓ All queries passed - record_assignments table working correctly');
+    console.log(
+      '\n✓ All queries passed - record_assignments table working correctly',
+    );
     process.exit(0);
   } else {
     console.log('\n✗ Some queries failed');
