@@ -53,16 +53,25 @@ export class ConstructionProgressReport {
   mitigationActions?: string;
 
   @Property({ columnType: 'jsonb', nullable: true })
-  narrativeList: Array<{ text: string; createdAt: string; author?: string }> = [];
+  narrativeList: Array<{ text: string; createdAt: string; author?: string }> =
+    [];
 
   @Property({ columnType: 'jsonb', nullable: true })
   remarksList: Array<{ text: string; createdAt: string; author?: string }> = [];
 
   @Property({ columnType: 'jsonb', nullable: true })
-  issuesEncounteredList: Array<{ text: string; createdAt: string; author?: string }> = [];
+  issuesEncounteredList: Array<{
+    text: string;
+    createdAt: string;
+    author?: string;
+  }> = [];
 
   @Property({ columnType: 'jsonb', nullable: true })
-  mitigationActionsList: Array<{ text: string; createdAt: string; author?: string }> = [];
+  mitigationActionsList: Array<{
+    text: string;
+    createdAt: string;
+    author?: string;
+  }> = [];
 
   @Property({ nullable: true, columnType: 'uuid' })
   movDocumentId?: string;
@@ -76,7 +85,11 @@ export class ConstructionProgressReport {
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();
 
-  @Property({ defaultRaw: 'NOW()', onUpdate: () => new Date(), columnType: 'timestamptz' })
+  @Property({
+    defaultRaw: 'NOW()',
+    onUpdate: () => new Date(),
+    columnType: 'timestamptz',
+  })
   updatedAt: Date = new Date();
 
   @Property({ nullable: true, columnType: 'uuid' })
