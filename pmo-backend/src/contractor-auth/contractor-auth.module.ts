@@ -21,7 +21,7 @@ import { ProjectContractorAssignment } from './entities/project-contractor-assig
       useFactory: (cs: ConfigService) => ({
         secret: cs.get<string>('AUTH_JWT_SECRET'),
         signOptions: {
-          expiresIn: cs.get<number>('AUTH_JWT_EXPIRES_IN', 604800),
+          expiresIn: Number(cs.get('AUTH_JWT_EXPIRES_IN', 604800)),
         }, // 7d fallback
       }),
     }),
