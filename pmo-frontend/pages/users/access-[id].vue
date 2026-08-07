@@ -295,11 +295,14 @@ async function fetchPillarAssignments() {
 
 async function handlePillarToggle(pillarType: string, checked: boolean | unknown[]) {
   const isChecked = Array.isArray(checked) ? checked.includes(pillarType) : !!checked
+  const pillarLabel = PILLAR_OPTIONS.find(p => p.value === pillarType)?.label || pillarType
   try {
     if (isChecked) {
       await api.post(`/api/users/${userId}/pillar-assignments`, { pillar_type: pillarType })
+      toast.success(`${pillarLabel} access granted`)
     } else {
       await api.del(`/api/users/${userId}/pillar-assignments/${pillarType}`)
+      toast.success(`${pillarLabel} access revoked`)
     }
   } catch (err: any) {
     toast.error(err.message || 'Failed to update pillar access')
