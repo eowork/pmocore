@@ -1226,14 +1226,13 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
         <v-btn-toggle
           v-model="viewMode"
           variant="outlined"
-          divided
           mandatory
           color="primary"
-          class="flex-shrink-2 mb-1 pa-0"
+          class="flex-shrink-2 mb-1 pa-0 ga-1"
         >
-          <v-btn value="list" size="small" prepend-icon="mdi-format-list-bulleted" class="px-2 ">List</v-btn>
-          <v-btn value="card" size="small" prepend-icon="mdi-view-grid-outline" class="px-2 ">Card</v-btn>
-          <v-btn value="table" size="small" prepend-icon="mdi-table" class="px-2 ">Table</v-btn>
+          <v-btn value="list" size="small" prepend-icon="mdi-format-list-bulleted" rounded class="px-2">List</v-btn>
+          <v-btn value="card" size="small" prepend-icon="mdi-view-grid-outline" rounded class="px-2">Card</v-btn>
+          <v-btn value="table" size="small" prepend-icon="mdi-table" rounded class="px-2">Table</v-btn>
         </v-btn-toggle>
       </div>
       <div class="text-caption text-grey-darken-1">
