@@ -27,7 +27,11 @@ async function bootstrap() {
     if (!UPLOADS_IMAGE_EXT.test(req.path)) {
       return res
         .status(403)
-        .json({ statusCode: 403, message: 'Forbidden: documents are served via the authenticated download endpoint.' });
+        .json({
+          statusCode: 403,
+          message:
+            'Forbidden: documents are served via the authenticated download endpoint.',
+        });
     }
     next();
   });

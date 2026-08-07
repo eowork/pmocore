@@ -11,7 +11,12 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AccessRequestsService } from './access-requests.service';
 import { CreateAccessRequestDto, DecideAccessRequestDto } from './dto';
@@ -33,9 +38,17 @@ export class AccessRequestsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @ApiOperation({ summary: 'Request access to a module (any authenticated user)' })
-  @ApiResponse({ status: 201, description: 'Request submitted — pending administrator approval' })
-  @ApiResponse({ status: 409, description: 'A pending request already exists for this module' })
+  @ApiOperation({
+    summary: 'Request access to a module (any authenticated user)',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Request submitted — pending administrator approval',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'A pending request already exists for this module',
+  })
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateAccessRequestDto) {
     return this.service.create(user.sub, dto);
   }
@@ -48,14 +61,18 @@ export class AccessRequestsController {
 
   @Get('pending-count')
   @Roles('Admin')
-  @ApiOperation({ summary: 'Count of pending access requests (Admin) — for the nav badge' })
+  @ApiOperation({
+    summary: 'Count of pending access requests (Admin) — for the nav badge',
+  })
   pendingCount() {
     return this.service.countPending();
   }
 
   @Get()
   @Roles('Admin')
-  @ApiOperation({ summary: 'List access requests with status/search/date filters (Admin)' })
+  @ApiOperation({
+    summary: 'List access requests with status/search/date filters (Admin)',
+  })
   list(
     @Query('status') status?: string,
     @Query('q') q?: string,
@@ -76,7 +93,12 @@ export class AccessRequestsController {
   @ApiOperation({ summary: 'Bulk approve/deny access requests (Admin)' })
   bulkDecide(
     @Body()
-    body: { ids: string[]; decision: 'APPROVE' | 'DENY'; granted_level?: string; decision_note?: string },
+    body: {
+      ids: string[];
+      decision: 'APPROVE' | 'DENY';
+      granted_level?: string;
+      decision_note?: string;
+    },
     @CurrentUser() admin: JwtPayload,
   ) {
     return this.service.bulkDecide(body.ids || [], body, admin);
@@ -86,7 +108,10 @@ export class AccessRequestsController {
   @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Bulk archive decided access requests (Admin)' })
-  bulkArchive(@Body() body: { ids: string[] }, @CurrentUser() admin: JwtPayload) {
+  bulkArchive(
+    @Body() body: { ids: string[] },
+    @CurrentUser() admin: JwtPayload,
+  ) {
     return this.service.bulkArchive(body.ids || [], admin);
   }
 
@@ -100,7 +125,10 @@ export class AccessRequestsController {
   })
   @ApiResponse({ status: 200, description: 'Decision recorded' })
   @ApiResponse({ status: 400, description: 'Request already decided' })
-  @ApiResponse({ status: 403, description: 'Cannot grant to a user with equal/higher authority' })
+  @ApiResponse({
+    status: 403,
+    description: 'Cannot grant to a user with equal/higher authority',
+  })
   decide(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DecideAccessRequestDto,
@@ -115,7 +143,8 @@ export class AccessRequestsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Revoke an approved request (Admin)',
-    description: 'Removes the granted module override and marks the request REVOKED (history retained).',
+    description:
+      'Removes the granted module override and marks the request REVOKED (history retained).',
   })
   revoke(
     @Param('id', ParseUUIDPipe) id: string,

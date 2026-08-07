@@ -27,7 +27,9 @@ export class ContractorAuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(dto: ContractorRegisterDto): Promise<{ access_token: string; user: Partial<User> }> {
+  async register(
+    dto: ContractorRegisterDto,
+  ): Promise<{ access_token: string; user: Partial<User> }> {
     const email = dto.email.toLowerCase();
 
     // Duplicate check against unified users table
@@ -64,7 +66,11 @@ export class ContractorAuthService {
     await this.em.persistAndFlush(user);
 
     // Assign Contractor role
-    const contractorRole = await this.em.findOne(Role, { name: 'Contractor' }, { filters: false });
+    const contractorRole = await this.em.findOne(
+      Role,
+      { name: 'Contractor' },
+      { filters: false },
+    );
     if (contractorRole) {
       const ur = this.em.create(UserRole, {
         userId: user.id,
@@ -73,24 +79,36 @@ export class ContractorAuthService {
       });
       await this.em.persistAndFlush(ur);
     } else {
-      this.logger.warn(`CONTRACTOR_ROLE_MISSING: Contractor role not found; role not assigned for user ${user.id}`);
+      this.logger.warn(
+        `CONTRACTOR_ROLE_MISSING: Contractor role not found; role not assigned for user ${user.id}`,
+      );
     }
 
     if (dto.inviteToken) {
       await this.acceptInvite(dto.inviteToken, user.id).catch(() => {
-        this.logger.warn(`Invite token accept failed during register for user ${user.id}`);
+        this.logger.warn(
+          `Invite token accept failed during register for user ${user.id}`,
+        );
       });
     }
 
     const token = this.signToken(user);
-    this.logger.log(`CONTRACTOR_REGISTERED: id=${user.id}, email=${user.email}`);
+    this.logger.log(
+      `CONTRACTOR_REGISTERED: id=${user.id}, email=${user.email}`,
+    );
     return { access_token: token, user: this.sanitizeUser(user) };
   }
 
-  async login(dto: ContractorLoginDto): Promise<{ access_token: string; contractor: Partial<ContractorUser> }> {
-    const contractor = await this.em.findOne(ContractorUser, { email: dto.email.toLowerCase() });
-    if (!contractor || !contractor.passwordHash) throw new UnauthorizedException('Invalid credentials');
-    if (!contractor.isActive) throw new UnauthorizedException('Account is deactivated');
+  async login(
+    dto: ContractorLoginDto,
+  ): Promise<{ access_token: string; contractor: Partial<ContractorUser> }> {
+    const contractor = await this.em.findOne(ContractorUser, {
+      email: dto.email.toLowerCase(),
+    });
+    if (!contractor || !contractor.passwordHash)
+      throw new UnauthorizedException('Invalid credentials');
+    if (!contractor.isActive)
+      throw new UnauthorizedException('Account is deactivated');
 
     const valid = await bcrypt.compare(dto.password, contractor.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
@@ -99,7 +117,12 @@ export class ContractorAuthService {
     await this.em.flush();
 
     // Legacy contractor_users login — kept for backward compat; new users authenticate via /api/auth/login
-    const token = this.jwtService.sign({ sub: contractor.id, email: contractor.email, roles: ['Contractor'], is_superadmin: false });
+    const token = this.jwtService.sign({
+      sub: contractor.id,
+      email: contractor.email,
+      roles: ['Contractor'],
+      is_superadmin: false,
+    });
     this.logger.log(`CONTRACTOR_LOGIN_LEGACY: id=${contractor.id}`);
     const { passwordHash: _pw, ...rest } = contractor as any;
     return { access_token: token, contractor: rest };
@@ -123,7 +146,9 @@ export class ContractorAuthService {
     });
     await this.em.persistAndFlush(invite);
 
-    this.logger.log(`CONTRACTOR_INVITE_GENERATED: project=${projectId}, by=${createdById}`);
+    this.logger.log(
+      `CONTRACTOR_INVITE_GENERATED: project=${projectId}, by=${createdById}`,
+    );
     return {
       token: tokenHex,
       inviteUrl: `/contractor/accept-invite?token=${tokenHex}`,
@@ -132,20 +157,35 @@ export class ContractorAuthService {
   }
 
   async listInvites(projectId: string): Promise<ContractorInviteToken[]> {
-    return this.em.find(ContractorInviteToken, { projectId }, { orderBy: { createdAt: 'DESC' } });
+    return this.em.find(
+      ContractorInviteToken,
+      { projectId },
+      { orderBy: { createdAt: 'DESC' } },
+    );
   }
 
   async revokeInvite(projectId: string, inviteId: string): Promise<void> {
-    const invite = await this.em.findOne(ContractorInviteToken, { id: inviteId, projectId });
+    const invite = await this.em.findOne(ContractorInviteToken, {
+      id: inviteId,
+      projectId,
+    });
     if (!invite) throw new NotFoundException('Invite not found');
-    if (invite.status !== 'PENDING') throw new BadRequestException('Only PENDING invites can be revoked');
+    if (invite.status !== 'PENDING')
+      throw new BadRequestException('Only PENDING invites can be revoked');
     invite.status = 'REVOKED';
     await this.em.flush();
   }
 
-  async acceptInvite(token: string, userId: string): Promise<ProjectContractorAssignment> {
-    const invite = await this.em.findOne(ContractorInviteToken, { token, status: 'PENDING' });
-    if (!invite) throw new BadRequestException('Invalid or already-used invite token');
+  async acceptInvite(
+    token: string,
+    userId: string,
+  ): Promise<ProjectContractorAssignment> {
+    const invite = await this.em.findOne(ContractorInviteToken, {
+      token,
+      status: 'PENDING',
+    });
+    if (!invite)
+      throw new BadRequestException('Invalid or already-used invite token');
     if (invite.expiresAt < new Date()) {
       invite.status = 'EXPIRED';
       await this.em.flush();
@@ -157,7 +197,8 @@ export class ContractorAuthService {
       userId,
       removedAt: null,
     });
-    if (existing) throw new ConflictException('Already assigned to this project');
+    if (existing)
+      throw new ConflictException('Already assigned to this project');
 
     invite.status = 'ACCEPTED';
     invite.acceptedAt = new Date();
@@ -171,7 +212,9 @@ export class ContractorAuthService {
     });
 
     await this.em.persistAndFlush(assignment);
-    this.logger.log(`CONTRACTOR_INVITE_ACCEPTED: project=${invite.projectId}, user=${userId}`);
+    this.logger.log(
+      `CONTRACTOR_INVITE_ACCEPTED: project=${invite.projectId}, user=${userId}`,
+    );
     return assignment;
   }
 
@@ -193,7 +236,10 @@ export class ContractorAuthService {
     return rows;
   }
 
-  async removeContractor(projectId: string, assignmentId: string): Promise<void> {
+  async removeContractor(
+    projectId: string,
+    assignmentId: string,
+  ): Promise<void> {
     const assignment = await this.em.findOne(ProjectContractorAssignment, {
       id: assignmentId,
       projectId,
@@ -205,16 +251,29 @@ export class ContractorAuthService {
   }
 
   async deleteInvite(projectId: string, inviteId: string): Promise<void> {
-    const invite = await this.em.findOne(ContractorInviteToken, { id: inviteId, projectId });
+    const invite = await this.em.findOne(ContractorInviteToken, {
+      id: inviteId,
+      projectId,
+    });
     if (!invite) throw new NotFoundException('Invite not found');
-    if (invite.status === 'PENDING') throw new BadRequestException('Revoke the invite before deleting it');
+    if (invite.status === 'PENDING')
+      throw new BadRequestException('Revoke the invite before deleting it');
     await this.em.removeAndFlush(invite);
-    this.logger.log(`CONTRACTOR_INVITE_DELETED: invite=${inviteId}, project=${projectId}`);
+    this.logger.log(
+      `CONTRACTOR_INVITE_DELETED: invite=${inviteId}, project=${projectId}`,
+    );
   }
 
   async validateInvite(token: string): Promise<{
-    inviteId: string; projectId: string; projectTitle: string; projectCampus: string
-    projectStatus: string; targetEmail: string | null; expiresAt: Date; createdByName: string; status: string
+    inviteId: string;
+    projectId: string;
+    projectTitle: string;
+    projectCampus: string;
+    projectStatus: string;
+    targetEmail: string | null;
+    expiresAt: Date;
+    createdByName: string;
+    status: string;
   }> {
     const conn = this.em.getConnection();
     const rows = await conn.execute<any[]>(
@@ -229,11 +288,16 @@ export class ContractorAuthService {
       [token],
     );
 
-    if (!rows.length) throw new NotFoundException('Invite token not found or invalid');
+    if (!rows.length)
+      throw new NotFoundException('Invite token not found or invalid');
 
     const row = rows[0];
-    if (row.status === 'ACCEPTED') throw new BadRequestException('This invite has already been used');
-    if (row.status === 'REVOKED') throw new BadRequestException('This invite has been revoked by the administrator');
+    if (row.status === 'ACCEPTED')
+      throw new BadRequestException('This invite has already been used');
+    if (row.status === 'REVOKED')
+      throw new BadRequestException(
+        'This invite has been revoked by the administrator',
+      );
     if (row.status === 'EXPIRED' || new Date(row.expires_at) < new Date()) {
       throw new BadRequestException('This invite has expired');
     }

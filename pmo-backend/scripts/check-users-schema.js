@@ -18,7 +18,7 @@ async function checkSchema() {
   `);
 
   console.log('Users table columns:');
-  result.rows.forEach(c => {
+  result.rows.forEach((c) => {
     console.log(`  - ${c.column_name} (${c.data_type})`);
   });
 

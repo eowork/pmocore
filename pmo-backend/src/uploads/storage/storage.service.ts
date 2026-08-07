@@ -70,7 +70,9 @@ export class StorageService {
 
     // KY-A2: prefix with /uploads so the path is server-root-relative and
     // resolvable by the static asset middleware without conflicting with frontend routes.
-    const relativePath = path.relative(this.uploadDir, filePath).replace(/\\/g, '/');
+    const relativePath = path
+      .relative(this.uploadDir, filePath)
+      .replace(/\\/g, '/');
     return {
       id,
       originalName: file.originalname,
@@ -103,12 +105,16 @@ export class StorageService {
   }
 
   getFilePath(relativePath: string): string {
-    const rel = relativePath.startsWith('/uploads/') ? relativePath.slice('/uploads/'.length) : relativePath;
+    const rel = relativePath.startsWith('/uploads/')
+      ? relativePath.slice('/uploads/'.length)
+      : relativePath;
     return path.join(this.uploadDir, rel);
   }
 
   fileExists(relativePath: string): boolean {
-    const rel = relativePath.startsWith('/uploads/') ? relativePath.slice('/uploads/'.length) : relativePath;
+    const rel = relativePath.startsWith('/uploads/')
+      ? relativePath.slice('/uploads/'.length)
+      : relativePath;
     return fs.existsSync(path.join(this.uploadDir, rel));
   }
 }

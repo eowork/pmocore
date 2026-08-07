@@ -29,6 +29,8 @@ export class Migration20260708000000_AddHomepageThemeAndSectionsConfig extends M
   }
 
   async down(): Promise<void> {
-    this.addSql(`DELETE FROM homepage_settings WHERE setting_key IN ('homepage_theme', 'homepage_sections_config')`);
+    this.addSql(
+      `DELETE FROM homepage_settings WHERE setting_key IN ('homepage_theme', 'homepage_sections_config')`,
+    );
   }
 }

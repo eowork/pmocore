@@ -17,7 +17,7 @@ async function checkConstraint() {
   `);
 
   console.log('Rank level constraints:');
-  result.rows.forEach(c => {
+  result.rows.forEach((c) => {
     console.log(`  ${c.conname}: ${c.definition}`);
   });
 

@@ -22,12 +22,30 @@ async function seedFreshDatabase(orm) {
   // email, so its first sign-in lands on this pre-seeded SuperAdmin row.
   // Passwords are env-overridable.
   const SUPERADMINS = [
-    { username: 'pmoadmin', email: 'pmoadmin@carsu.edu.ph', firstName: 'PMO', lastName: 'Admin',
-      password: process.env.SEED_PMOADMIN_PASSWORD || 'pmocore' },
-    { username: 'admin', email: 'admin@carsu.edu.ph', firstName: 'Super', lastName: 'Admin',
-      password: process.env.SEED_ADMIN_PASSWORD || process.env.SEED_SUPERADMIN_PASSWORD || 'pmoadmincore' },
-    { username: 'pmu', email: 'pmu@carsu.edu.ph', firstName: 'PMU', lastName: 'Admin',
-      password: null }, // Google OAuth only — no local password
+    {
+      username: 'pmoadmin',
+      email: 'pmoadmin@carsu.edu.ph',
+      firstName: 'PMO',
+      lastName: 'Admin',
+      password: process.env.SEED_PMOADMIN_PASSWORD || 'pmocore',
+    },
+    {
+      username: 'admin',
+      email: 'admin@carsu.edu.ph',
+      firstName: 'Super',
+      lastName: 'Admin',
+      password:
+        process.env.SEED_ADMIN_PASSWORD ||
+        process.env.SEED_SUPERADMIN_PASSWORD ||
+        'pmoadmincore',
+    },
+    {
+      username: 'pmu',
+      email: 'pmu@carsu.edu.ph',
+      firstName: 'PMU',
+      lastName: 'Admin',
+      password: null,
+    }, // Google OAuth only — no local password
   ];
 
   console.log('[seed] Seeding base roles...');
@@ -41,7 +59,9 @@ async function seedFreshDatabase(orm) {
   `);
 
   for (const su of SUPERADMINS) {
-    console.log(`[seed] Seeding SuperAdmin ${su.username} (${su.email}, ${su.password ? 'local' : 'Google OAuth'})...`);
+    console.log(
+      `[seed] Seeding SuperAdmin ${su.username} (${su.email}, ${su.password ? 'local' : 'Google OAuth'})...`,
+    );
     // Google users have no local password (password_hash = '' per google.strategy).
     const hash = su.password ? await bcrypt.hash(su.password, 10) : '';
 
@@ -269,7 +289,9 @@ d. whose research work resulted in an extension program', 'AE-OC-01', '', 1, 'OU
     WHERE NOT EXISTS (SELECT 1 FROM pillar_indicator_taxonomy WHERE is_active = true);
   `);
 
-  console.log(`[seed] Done. SuperAdmins: ${SUPERADMINS.map((s) => s.username).join(', ')} (pmu = Google OAuth).`);
+  console.log(
+    `[seed] Done. SuperAdmins: ${SUPERADMINS.map((s) => s.username).join(', ')} (pmu = Google OAuth).`,
+  );
 }
 
 module.exports = { seedFreshDatabase };

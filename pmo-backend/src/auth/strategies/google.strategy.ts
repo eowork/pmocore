@@ -72,10 +72,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       // immutable thereafter. Suffix on the rare collision to satisfy the unique constraint.
       const localPart = email.split('@')[0].toLowerCase();
       let username = localPart;
-      const taken = await this.em.getConnection().execute(
-        `SELECT 1 FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1`,
-        [username],
-      );
+      const taken = await this.em
+        .getConnection()
+        .execute(
+          `SELECT 1 FROM users WHERE LOWER(username) = LOWER(?) LIMIT 1`,
+          [username],
+        );
       if (taken.length > 0) {
         username = `${localPart}.${Date.now().toString().slice(-4)}`;
       }
@@ -89,7 +91,10 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         isActive: true,
         status: 'ACTIVE',
         passwordHash: '',
-        metadata: { registrationSource: 'google-oauth', registeredAt: new Date().toISOString() },
+        metadata: {
+          registrationSource: 'google-oauth',
+          registeredAt: new Date().toISOString(),
+        },
       });
       try {
         // PHASE BBBC (Track 5): NO auto-role. OAuth users land dashboard-only (default-DENY),
@@ -98,16 +103,25 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       } catch (err: any) {
         if (err?.code === '23505') {
           // Race condition: email registered between lookup and insert — fetch and continue
-          const existing = await this.em.getConnection().execute(
-            `SELECT id, email, is_active, google_id FROM users WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL LIMIT 1`,
-            [email],
-          );
+          const existing = await this.em
+            .getConnection()
+            .execute(
+              `SELECT id, email, is_active, google_id FROM users WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL LIMIT 1`,
+              [email],
+            );
           if (existing.length > 0) return done(null, existing[0]);
         }
         return done(err as Error, false);
       }
-      this.logger.log(`GOOGLE_AUTO_CREATED: user_id=${newUser.id}, email=${email}`);
-      return done(null, { id: newUser.id, email: newUser.email, is_active: true, google_id: newUser.googleId });
+      this.logger.log(
+        `GOOGLE_AUTO_CREATED: user_id=${newUser.id}, email=${email}`,
+      );
+      return done(null, {
+        id: newUser.id,
+        email: newUser.email,
+        is_active: true,
+        google_id: newUser.googleId,
+      });
     }
 
     const user = result[0];
@@ -123,10 +137,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
 
     // Link google_id if not yet linked (Directive 203)
     if (!user.google_id) {
-      await this.em.getConnection().execute(
-        `UPDATE users SET google_id = ?, updated_at = NOW() WHERE id = ?`,
-        [profile.id, user.id],
-      );
+      await this.em
+        .getConnection()
+        .execute(
+          `UPDATE users SET google_id = ?, updated_at = NOW() WHERE id = ?`,
+          [profile.id, user.id],
+        );
     }
 
     return done(null, user);

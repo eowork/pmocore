@@ -23,7 +23,7 @@ const BASE_URL = process.env.API_URL || 'http://localhost:3000';
 const results = {
   passed: [],
   failed: [],
-  skipped: []
+  skipped: [],
 };
 
 // Helper to make HTTP requests
@@ -40,23 +40,23 @@ function request(method, path, data, token) {
       method: method,
       headers: {
         'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      }
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
     };
 
     const req = lib.request(options, (res) => {
       let body = '';
-      res.on('data', chunk => body += chunk);
+      res.on('data', (chunk) => (body += chunk));
       res.on('end', () => {
         try {
           resolve({
             status: res.statusCode,
-            data: body ? JSON.parse(body) : null
+            data: body ? JSON.parse(body) : null,
           });
         } catch (e) {
           resolve({
             status: res.statusCode,
-            data: body
+            data: body,
           });
         }
       });
@@ -73,7 +73,10 @@ function request(method, path, data, token) {
 
 // Login helper
 async function login(identifier, password) {
-  const res = await request('POST', '/api/auth/login', { identifier, password });
+  const res = await request('POST', '/api/auth/login', {
+    identifier,
+    password,
+  });
   if (res.status === 200 || res.status === 201) {
     return res.data.access_token || res.data.token;
   }
@@ -131,7 +134,12 @@ async function runTests() {
   // Step 2: Get a university operation to test with
   console.log('\nStep 2: Finding test operation...\n');
 
-  const opsRes = await request('GET', '/api/university-operations?limit=1', null, adminToken);
+  const opsRes = await request(
+    'GET',
+    '/api/university-operations?limit=1',
+    null,
+    adminToken,
+  );
   if (opsRes.status !== 200 || !opsRes.data?.data?.length) {
     console.log('  ✗ No university operations found. Create one first.');
     return;
@@ -149,32 +157,51 @@ async function runTests() {
 
   // CM1: Admin can create indicator on any operation
   await runTest('CM1: Admin creates indicator', async () => {
-    const res = await request('POST', `/api/university-operations/${operation.id}/indicators`, {
-      particular: 'Admin Test Indicator',
-      fiscal_year: 2025,
-      target_q1: 100
-    }, adminToken);
+    const res = await request(
+      'POST',
+      `/api/university-operations/${operation.id}/indicators`,
+      {
+        particular: 'Admin Test Indicator',
+        fiscal_year: 2025,
+        target_q1: 100,
+      },
+      adminToken,
+    );
 
     if (res.status !== 201) {
-      throw new Error(`Expected 201, got ${res.status}: ${JSON.stringify(res.data)}`);
+      throw new Error(
+        `Expected 201, got ${res.status}: ${JSON.stringify(res.data)}`,
+      );
     }
   });
 
   // CM4: Non-owner Staff cannot modify indicator (if staffToken exists)
   if (staffToken) {
-    await runTest('CM4: Non-owner Staff blocked from creating indicator', async () => {
-      const res = await request('POST', `/api/university-operations/${operation.id}/indicators`, {
-        particular: 'Staff Unauthorized Test',
-        fiscal_year: 2025,
-        target_q1: 50
-      }, staffToken);
+    await runTest(
+      'CM4: Non-owner Staff blocked from creating indicator',
+      async () => {
+        const res = await request(
+          'POST',
+          `/api/university-operations/${operation.id}/indicators`,
+          {
+            particular: 'Staff Unauthorized Test',
+            fiscal_year: 2025,
+            target_q1: 50,
+          },
+          staffToken,
+        );
 
-      if (res.status !== 403) {
-        throw new Error(`Expected 403 Forbidden, got ${res.status}. Authorization gap detected!`);
-      }
-    });
+        if (res.status !== 403) {
+          throw new Error(
+            `Expected 403 Forbidden, got ${res.status}. Authorization gap detected!`,
+          );
+        }
+      },
+    );
   } else {
-    results.skipped.push('CM4: Non-owner Staff blocked (no staff user available)');
+    results.skipped.push(
+      'CM4: Non-owner Staff blocked (no staff user available)',
+    );
   }
 
   console.log('\n───────────────────────────────────────────────────────');
@@ -183,15 +210,22 @@ async function runTests() {
 
   // CN1: Admin can create financial on any operation
   await runTest('CN1: Admin creates financial', async () => {
-    const res = await request('POST', `/api/university-operations/${operation.id}/financials`, {
-      operations_programs: 'Admin Test Financial',
-      fiscal_year: 2025,
-      fund_type: 'RAF_PROGRAMS',
-      allotment: 1000000
-    }, adminToken);
+    const res = await request(
+      'POST',
+      `/api/university-operations/${operation.id}/financials`,
+      {
+        operations_programs: 'Admin Test Financial',
+        fiscal_year: 2025,
+        fund_type: 'RAF_PROGRAMS',
+        allotment: 1000000,
+      },
+      adminToken,
+    );
 
     if (res.status !== 201) {
-      throw new Error(`Expected 201, got ${res.status}: ${JSON.stringify(res.data)}`);
+      throw new Error(
+        `Expected 201, got ${res.status}: ${JSON.stringify(res.data)}`,
+      );
     }
 
     // Verify computed fields are returned
@@ -202,20 +236,32 @@ async function runTests() {
 
   // CN3: Non-owner Staff cannot modify financial
   if (staffToken) {
-    await runTest('CN3: Non-owner Staff blocked from creating financial', async () => {
-      const res = await request('POST', `/api/university-operations/${operation.id}/financials`, {
-        operations_programs: 'Staff Unauthorized Test',
-        fiscal_year: 2025,
-        fund_type: 'RAF_PROGRAMS',
-        allotment: 500000
-      }, staffToken);
+    await runTest(
+      'CN3: Non-owner Staff blocked from creating financial',
+      async () => {
+        const res = await request(
+          'POST',
+          `/api/university-operations/${operation.id}/financials`,
+          {
+            operations_programs: 'Staff Unauthorized Test',
+            fiscal_year: 2025,
+            fund_type: 'RAF_PROGRAMS',
+            allotment: 500000,
+          },
+          staffToken,
+        );
 
-      if (res.status !== 403) {
-        throw new Error(`Expected 403 Forbidden, got ${res.status}. Authorization gap detected!`);
-      }
-    });
+        if (res.status !== 403) {
+          throw new Error(
+            `Expected 403 Forbidden, got ${res.status}. Authorization gap detected!`,
+          );
+        }
+      },
+    );
   } else {
-    results.skipped.push('CN3: Non-owner Staff blocked (no staff user available)');
+    results.skipped.push(
+      'CN3: Non-owner Staff blocked (no staff user available)',
+    );
   }
 
   console.log('\n───────────────────────────────────────────────────────');
@@ -224,35 +270,59 @@ async function runTests() {
 
   // Check if we can test publication lock
   if (operation.publication_status === 'PUBLISHED') {
-    await runTest('CO1: PUBLISHED operation rejects indicator creation', async () => {
-      const res = await request('POST', `/api/university-operations/${operation.id}/indicators`, {
-        particular: 'Should Be Rejected',
-        fiscal_year: 2025,
-        target_q1: 100
-      }, adminToken);
+    await runTest(
+      'CO1: PUBLISHED operation rejects indicator creation',
+      async () => {
+        const res = await request(
+          'POST',
+          `/api/university-operations/${operation.id}/indicators`,
+          {
+            particular: 'Should Be Rejected',
+            fiscal_year: 2025,
+            target_q1: 100,
+          },
+          adminToken,
+        );
 
-      if (res.status !== 403) {
-        throw new Error(`Expected 403 for PUBLISHED operation, got ${res.status}`);
-      }
-    });
+        if (res.status !== 403) {
+          throw new Error(
+            `Expected 403 for PUBLISHED operation, got ${res.status}`,
+          );
+        }
+      },
+    );
 
-    await runTest('CO2: PUBLISHED operation rejects financial creation', async () => {
-      const res = await request('POST', `/api/university-operations/${operation.id}/financials`, {
-        operations_programs: 'Should Be Rejected',
-        fiscal_year: 2025,
-        fund_type: 'RAF_PROGRAMS',
-        allotment: 100000
-      }, adminToken);
+    await runTest(
+      'CO2: PUBLISHED operation rejects financial creation',
+      async () => {
+        const res = await request(
+          'POST',
+          `/api/university-operations/${operation.id}/financials`,
+          {
+            operations_programs: 'Should Be Rejected',
+            fiscal_year: 2025,
+            fund_type: 'RAF_PROGRAMS',
+            allotment: 100000,
+          },
+          adminToken,
+        );
 
-      if (res.status !== 403) {
-        throw new Error(`Expected 403 for PUBLISHED operation, got ${res.status}`);
-      }
-    });
+        if (res.status !== 403) {
+          throw new Error(
+            `Expected 403 for PUBLISHED operation, got ${res.status}`,
+          );
+        }
+      },
+    );
   } else {
     console.log('  ⚠ Operation is not PUBLISHED - skipping CO tests');
     console.log('    To test CO1/CO2, publish an operation first.\n');
-    results.skipped.push('CO1: PUBLISHED blocks indicator (operation not PUBLISHED)');
-    results.skipped.push('CO2: PUBLISHED blocks financial (operation not PUBLISHED)');
+    results.skipped.push(
+      'CO1: PUBLISHED blocks indicator (operation not PUBLISHED)',
+    );
+    results.skipped.push(
+      'CO2: PUBLISHED blocks financial (operation not PUBLISHED)',
+    );
   }
 
   console.log('\n───────────────────────────────────────────────────────');
@@ -260,15 +330,20 @@ async function runTests() {
   console.log('───────────────────────────────────────────────────────\n');
 
   await runTest('CP1: Financial returns computed variance', async () => {
-    const res = await request('POST', `/api/university-operations/${operation.id}/financials`, {
-      operations_programs: 'Compute Test',
-      fiscal_year: 2025,
-      fund_type: 'RAF_PROGRAMS',
-      target: 1000000,
-      obligation: 750000,
-      allotment: 1000000,
-      disbursement: 500000
-    }, adminToken);
+    const res = await request(
+      'POST',
+      `/api/university-operations/${operation.id}/financials`,
+      {
+        operations_programs: 'Compute Test',
+        fiscal_year: 2025,
+        fund_type: 'RAF_PROGRAMS',
+        target: 1000000,
+        obligation: 750000,
+        allotment: 1000000,
+        disbursement: 500000,
+      },
+      adminToken,
+    );
 
     if (res.status !== 201) {
       throw new Error(`Expected 201, got ${res.status}`);
@@ -283,7 +358,9 @@ async function runTests() {
 
     // Check utilization_rate: (obligation / allotment) * 100 = 75%
     if (Math.abs(data.utilization_rate - 75) > 0.1) {
-      throw new Error(`Expected utilization_rate≈75, got ${data.utilization_rate}`);
+      throw new Error(
+        `Expected utilization_rate≈75, got ${data.utilization_rate}`,
+      );
     }
 
     // Check balance: allotment - disbursement = 1000000 - 500000 = 500000
@@ -293,7 +370,9 @@ async function runTests() {
 
     // Check disbursement_rate: (disbursement / obligation) * 100 = 66.67%
     if (Math.abs(data.disbursement_rate - 66.67) > 0.1) {
-      throw new Error(`Expected disbursement_rate≈66.67, got ${data.disbursement_rate}`);
+      throw new Error(
+        `Expected disbursement_rate≈66.67, got ${data.disbursement_rate}`,
+      );
     }
   });
 
@@ -308,12 +387,12 @@ async function runTests() {
 
   if (results.failed.length > 0) {
     console.log('\n  Failed tests:');
-    results.failed.forEach(f => console.log(`    - ${f.name}: ${f.error}`));
+    results.failed.forEach((f) => console.log(`    - ${f.name}: ${f.error}`));
   }
 
   if (results.skipped.length > 0) {
     console.log('\n  Skipped tests:');
-    results.skipped.forEach(s => console.log(`    - ${s}`));
+    results.skipped.forEach((s) => console.log(`    - ${s}`));
   }
 
   console.log('\n═══════════════════════════════════════════════════════\n');
@@ -322,7 +401,7 @@ async function runTests() {
 }
 
 // Run tests
-runTests().catch(err => {
+runTests().catch((err) => {
   console.error('Test suite error:', err);
   process.exit(1);
 });

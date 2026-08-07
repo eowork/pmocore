@@ -7,7 +7,6 @@ import { ContractorAuthController } from './contractor-auth.controller';
 import { ContractorUser } from './entities/contractor-user.entity';
 import { ContractorInviteToken } from './entities/contractor-invite-token.entity';
 import { ProjectContractorAssignment } from './entities/project-contractor-assignment.entity';
-import { numberFromConfig } from '../common/config.util';
 
 @Module({
   imports: [
@@ -17,8 +16,7 @@ import { numberFromConfig } from '../common/config.util';
       inject: [ConfigService],
       useFactory: (cs: ConfigService) => ({
         secret: cs.get<string>('AUTH_JWT_SECRET'),
-        // T-JWT-EXPIRY: coerce to a real number (a raw .env string is read as ms, not seconds).
-        signOptions: { expiresIn: numberFromConfig(cs, 'AUTH_JWT_EXPIRES_IN', 604800) }, // 7d fallback
+        signOptions: { expiresIn: cs.get<number>('AUTH_JWT_EXPIRES_IN', 604800) }, // 7d fallback
       }),
     }),
   ],
