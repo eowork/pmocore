@@ -1,0 +1,85 @@
+# Standalone dev stack — hot reload for backend + frontend.
+# Independent from docker-compose.yml (not an override): run one or the other.
+#
+#   Switch to dev:  docker compose down && docker compose -f docker-compose.dev.yml up -d --build
+#   Switch to prod: docker compose -f docker-compose.dev.yml down && docker compose up -d --build
+#
+# Same project directory -> same volume names (pgdata, backend_uploads) in both
+# files, so postgres data/uploads persist across switches.
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pmo_dashboard}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./pmo-backend
+    restart: unless-stopped
+    env_file:
+      - ./pmo-backend/.env
+    environment:
+      NODE_ENV: development
+      DATABASE_HOST: postgres
+      DATABASE_PORT: ${POSTGRES_PORT:-5432}
+      DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      SEED_PMOADMIN_PASSWORD: ${SEED_PMOADMIN_PASSWORD:?SEED_PMOADMIN_PASSWORD must be set in .env}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
+      PORT: 3000
+    command: ["npm", "run", "start:dev"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      - ./pmo-backend:/app
+      - /app/node_modules
+      - /app/dist
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./pmo-frontend
+      target: build
+    restart: unless-stopped
+    env_file:
+      - ./pmo-frontend/.env
+    environment:
+      NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
+      NODE_ENV: development
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: 3001
+    command: ["sh", "-c", "npm run dev -- --host 0.0.0.0"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3001}:3001"
+    volumes:
+      - ./pmo-frontend:/app
+      - /app/node_modules
+
+volumes:
+  pgdata:
+  backend_uploads:
