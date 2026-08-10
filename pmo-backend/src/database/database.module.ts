@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { DatabaseService } from './database.service';
 import { DATABASE_POOL } from './database.constants';
+import { numberFromConfig } from '../common/config.util';
 
 const databasePoolFactory = {
   provide: DATABASE_POOL,
@@ -11,7 +12,7 @@ const databasePoolFactory = {
 
     const pool = new Pool({
       host: configService.get<string>('DATABASE_HOST', 'localhost'),
-      port: configService.get<number>('DATABASE_PORT', 5432),
+      port: numberFromConfig(configService, 'DATABASE_PORT', 5432),
       database: configService.get<string>('DATABASE_NAME', 'pmo_dashboard'),
       user: configService.get<string>('DATABASE_USER', 'postgres'),
       password: configService.get<string>('DATABASE_PASSWORD', 'postgres'),

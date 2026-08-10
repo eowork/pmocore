@@ -2,8 +2,7 @@ import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import Strategy = require('passport-ldapauth');
-import { EntityManager } from '@mikro-orm/core';
-import { User } from '../../database/entities';
+import { AuthService } from '../auth.service';
 
 @Injectable()
 export class LdapStrategy extends PassportStrategy(Strategy, 'ldap') {
@@ -11,7 +10,7 @@ export class LdapStrategy extends PassportStrategy(Strategy, 'ldap') {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly em: EntityManager,
+    private readonly authService: AuthService,
   ) {
     super({
       server: {
@@ -20,8 +19,9 @@ export class LdapStrategy extends PassportStrategy(Strategy, 'ldap') {
         bindCredentials: configService.get<string>('LDAP_BIND_PASSWORD', ''),
         searchBase: configService.get<string>('LDAP_SEARCH_BASE', ''),
         searchFilter: configService.get<string>(
+          // T-LDAP-ROOT (RF-7): default to uid — the real CSU directory is OpenLDAP/POSIX.
           'LDAP_SEARCH_FILTER',
-          '(mail={{username}})',
+          '(uid={{username}})',
         ),
         tlsOptions: {
           rejectUnauthorized:
@@ -43,13 +43,15 @@ export class LdapStrategy extends PassportStrategy(Strategy, 'ldap') {
       throw new UnauthorizedException('No email attribute in LDAP profile');
     }
 
-    const user = await this.em.findOne(
-      User,
-      { email: { $ilike: email } },
-      { filters: false },
-    );
+    // T-LDAP-JIT: resolve or auto-provision (flag-gated) via the shared helper so this
+    // path behaves identically to the unified /api/auth/login path.
+    const user = await this.authService.findOrCreateLdapUser({
+      email,
+      firstName: ldapUser.givenName,
+      lastName: ldapUser.sn,
+    });
 
-    if (!user || user.deletedAt) {
+    if (!user) {
       this.logger.warn(
         `LDAP_LOGIN_FAILURE: email=${email}, reason=NO_LOCAL_ACCOUNT`,
       );

@@ -24,7 +24,7 @@ import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from './dto';
 import { Public, CurrentUser, Roles } from './decorators';
-import { JwtAuthGuard, RolesGuard } from './guards';
+import { JwtAuthGuard, RolesGuard, LdapAuthGuard } from './guards';
 import { OAuthFailureFilter } from './filters/oauth-failure.filter';
 import { JwtPayload } from '../common/interfaces';
 
@@ -240,7 +240,8 @@ export class AuthController {
   // Phase HY: OpenLDAP login — credentials in body (username + password)
   @Public()
   @Post('ldap')
-  @UseGuards(AuthGuard('ldap'))
+  // T-LDAP-ROOT (RF-5): custom guard logs the specific failure reason before the 401.
+  @UseGuards(LdapAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute — mirrors /auth/login
   @ApiOperation({
