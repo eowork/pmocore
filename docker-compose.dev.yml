@@ -1,3 +1,11 @@
+# Standalone dev stack — hot reload for backend + frontend.
+# Independent from docker-compose.yml (not an override): run one or the other.
+#
+#   Switch to dev:  docker compose down && docker compose -f docker-compose.dev.yml up -d --build
+#   Switch to prod: docker compose -f docker-compose.dev.yml down && docker compose up -d --build
+#
+# Same project directory -> same volume names (pgdata, backend_uploads) in both
+# files, so postgres data/uploads persist across switches.
 services:
   postgres:
     image: postgres:18-alpine
@@ -9,8 +17,6 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      # PG18+ images store data in a version subdir and expect the mount at
-      # /var/lib/postgresql (NOT /data) — see docker-library/postgres#1259.
       - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
@@ -22,16 +28,10 @@ services:
     build:
       context: ./pmo-backend
     restart: unless-stopped
-    # Loads JWT/OAuth/LDAP secrets etc. from the existing local pmo-backend/.env.
-    # The DATABASE_* values below override that file so the backend talks to the
-    # "postgres" service instead of localhost.
     env_file:
       - ./pmo-backend/.env
     environment:
-      # Force production in the container — overrides NODE_ENV=development from the
-      # dev .env (env_file). Dev mode would select TsMorphMetadataProvider, which
-      # reads ./src/*.entity.ts (absent from the compiled image) and crashes startup.
-      NODE_ENV: production
+      NODE_ENV: development
       DATABASE_HOST: postgres
       DATABASE_PORT: ${POSTGRES_PORT:-5432}
       DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
@@ -40,12 +40,16 @@ services:
       SEED_PMOADMIN_PASSWORD: ${SEED_PMOADMIN_PASSWORD:?SEED_PMOADMIN_PASSWORD must be set in .env}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
       PORT: 3000
+    command: ["npm", "run", "start:dev"]
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     volumes:
+      - ./pmo-backend:/app
+      - /app/node_modules
+      - /app/dist
       - backend_uploads:/app/uploads
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
@@ -57,41 +61,24 @@ services:
   frontend:
     build:
       context: ./pmo-frontend
+      target: build
     restart: unless-stopped
     env_file:
       - ./pmo-frontend/.env
     environment:
-      # Browser-facing API URL — must be reachable from the user's browser
-      # (the app is an SPA, so requests are made client-side, not container-to-container).
       NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
+      NODE_ENV: development
       NITRO_HOST: 0.0.0.0
-      NITRO_PORT: 3000
+      NITRO_PORT: 3001
+    command: ["sh", "-c", "npm run dev -- --host 0.0.0.0"]
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-3001}:3000"
-
-  # T5a — Self-hosted LDAP test directory (proves auth before MIS cutover)
-  # NOT started by default. Start explicitly with:
-  #   docker compose --profile ldap-test up -d
-  # Then add LDAP_* vars to pmo-backend/.env and run:
-  #   docker compose up -d backend   (recreates backend with LDAP env active)
-  # See handover/ldap-test/MIS_SWAP.md for the full procedure and MIS swap guide.
-  openldap:
-    profiles: ["ldap-test"]
-    image: osixia/openldap:1.5.0
-    command: ["--copy-service"]
-    environment:
-      LDAP_ORGANISATION: CSU CORE
-      LDAP_DOMAIN: carsu.edu.ph
-      LDAP_ADMIN_PASSWORD: testldapadmin
-      LDAP_TLS: "false"
+      - "${FRONTEND_PORT:-3001}:3001"
     volumes:
-      # SYS-AUDIT-02 (HA-1): path updated after ldap-test/ moved under handover/.
-      - ./handover/ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
-    ports:
-      - "1389:389"
+      - ./pmo-frontend:/app
+      - /app/node_modules
 
 volumes:
   pgdata:

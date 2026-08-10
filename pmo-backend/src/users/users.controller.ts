@@ -399,7 +399,7 @@ export class UsersController {
 
   @Delete(':id/pillar-assignments/:pillarType')
   @Roles('Admin')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke pillar access from user (Admin only)' })
   revokePillar(
     @Param('id', ParseUUIDPipe) id: string,
