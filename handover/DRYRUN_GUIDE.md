@@ -1,4 +1,4 @@
-# CSU CORE Dashboard — Clean-Room Dry Run Guide
+﻿# CSU CORE Dashboard — Clean-Room Dry Run Guide
 
 > **Purpose:** Prove that a stranger with only this documentation and the repository can deploy and operate PMO CORE from scratch — with zero help from the original developer.
 > **Device:** Any Windows 11 laptop (Intel or AMD Ryzen — no difference in procedure)
@@ -189,6 +189,9 @@ cp "/mnt/e/master-files/pmo-frontend/.env" ~/pmo-dash/pmo-frontend/.env
 
 > Adjust the path after `/mnt/e/` to match the folder structure on your USB.
 > If any path has spaces (e.g., a folder named "Meo Angelo Alcantara"), wrap the entire path in double quotes.
+> Root `.env` and `pmo-backend/.env` both hold DB credentials (`POSTGRES_PASSWORD` and
+> `DATABASE_PASSWORD` respectively) — they're two separate files and must be kept in sync
+> manually (see Step 2C).
 
 **Verify all three files are in place:**
 
@@ -228,6 +231,12 @@ If it shows `${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}`, the s
 grep "POSTGRES_PASSWORD" ~/pmo-dash/.env
 # Should show: POSTGRES_PASSWORD=<some-value>
 ```
+
+> **Keep this in sync with `pmo-backend/.env`:** root `.env`'s `POSTGRES_PASSWORD` and
+> `pmo-backend/.env`'s `DATABASE_PASSWORD` must be the same value — Compose uses the former
+> to initialize Postgres, while the backend app uses the latter to connect to it. Docker
+> Compose auto-loads root `.env` by default, so no `--env-file` flag is needed for any
+> `docker compose` command in this guide.
 
 ---
 
@@ -459,7 +468,7 @@ docker compose logs backend --tail=30
 
 | Error message | Cause | Fix |
 |---|---|---|
-| `password authentication failed` | `DATABASE_PASSWORD` in `pmo-backend/.env` does not match `POSTGRES_PASSWORD` in root `.env` | Edit both files to match |
+| `password authentication failed` | `POSTGRES_PASSWORD` in root `.env` does not match `DATABASE_PASSWORD` in `pmo-backend/.env` — the two files are kept in sync manually and have drifted apart | Edit both files so the two values match, then restart the stack |
 | `POSTGRES_PASSWORD must be set` | Root `.env` is missing or `POSTGRES_PASSWORD` is empty | Add the line to root `.env` |
 | `ECONNREFUSED` | Postgres not yet ready when backend started | Run `docker compose up -d backend` again after 30 seconds |
 | `Cannot find module` | Image build failed | Run `docker compose up -d --build backend` |

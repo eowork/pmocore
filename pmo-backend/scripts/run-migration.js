@@ -20,7 +20,11 @@ async function runMigration(migrationFile) {
     password: process.env.DATABASE_PASSWORD || 'postgres',
   });
 
-  const migrationPath = path.join(__dirname, '../../database/migrations', migrationFile);
+  const migrationPath = path.join(
+    __dirname,
+    '../../database/migrations',
+    migrationFile,
+  );
 
   if (!fs.existsSync(migrationPath)) {
     console.error(`Migration file not found: ${migrationPath}`);
@@ -47,9 +51,10 @@ async function runMigration(migrationFile) {
     if (parseInt(result.rows[0].count) > 0) {
       console.log('Verification: record_assignments table EXISTS');
     } else {
-      console.log('Warning: record_assignments table NOT FOUND after migration');
+      console.log(
+        'Warning: record_assignments table NOT FOUND after migration',
+      );
     }
-
   } catch (error) {
     console.error('Migration failed:', error.message);
     process.exit(1);
@@ -61,7 +66,9 @@ async function runMigration(migrationFile) {
 const migrationFile = process.argv[2];
 if (!migrationFile) {
   console.log('Usage: node scripts/run-migration.js <migration-file>');
-  console.log('Example: node scripts/run-migration.js 012_add_record_assignments_table.sql');
+  console.log(
+    'Example: node scripts/run-migration.js 012_add_record_assignments_table.sql',
+  );
   process.exit(1);
 }
 

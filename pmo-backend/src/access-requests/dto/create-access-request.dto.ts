@@ -1,4 +1,10 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   ACCESS_LEVEL_VALUES,
@@ -16,7 +22,10 @@ export class CreateAccessRequestDto {
   @IsNotEmpty()
   requested_level!: string;
 
-  @ApiProperty({ required: false, example: 'I handle infrastructure project encoding for my office.' })
+  @ApiProperty({
+    required: false,
+    example: 'I handle infrastructure project encoding for my office.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(1000)

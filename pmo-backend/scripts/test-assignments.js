@@ -42,37 +42,47 @@ async function testAssignments() {
     }
 
     const testProjectId = projectResult.rows[0].id;
-    const testUsers = userResult.rows.map(r => r.id);
+    const testUsers = userResult.rows.map((r) => r.id);
     console.log(`Test project: ${testProjectId}`);
     console.log(`Test users: ${testUsers.join(', ')}\n`);
 
     // Test 1: Clear existing assignments
     console.log('Test 1: Clear existing assignments');
-    await pool.query(`
+    await pool.query(
+      `
       DELETE FROM record_assignments
       WHERE module = 'CONSTRUCTION' AND record_id = $1
-    `, [testProjectId]);
+    `,
+      [testProjectId],
+    );
     console.log('  ✓ Cleared\n');
 
     // Test 2: Insert multiple assignments
     console.log('Test 2: Insert 2 assignments');
     for (const userId of testUsers.slice(0, 2)) {
-      await pool.query(`
+      await pool.query(
+        `
         INSERT INTO record_assignments (module, record_id, user_id)
         VALUES ('CONSTRUCTION', $1, $2)
         ON CONFLICT (module, record_id, user_id) DO NOTHING
-      `, [testProjectId, userId]);
+      `,
+        [testProjectId, userId],
+      );
     }
 
-    let count = await pool.query(`
+    let count = await pool.query(
+      `
       SELECT COUNT(*) as count FROM record_assignments
       WHERE module = 'CONSTRUCTION' AND record_id = $1
-    `, [testProjectId]);
+    `,
+      [testProjectId],
+    );
     console.log(`  ✓ Inserted - Count: ${count.rows[0].count}\n`);
 
     // Test 3: Query assigned_users via json_agg
     console.log('Test 3: Query assigned_users array');
-    const assignedResult = await pool.query(`
+    const assignedResult = await pool.query(
+      `
       SELECT COALESCE(json_agg(json_build_object(
         'id', u.id,
         'name', u.first_name || ' ' || u.last_name
@@ -80,37 +90,52 @@ async function testAssignments() {
       FROM record_assignments ra
       JOIN users u ON ra.user_id = u.id
       WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = $1
-    `, [testProjectId]);
-    console.log(`  ✓ assigned_users: ${JSON.stringify(assignedResult.rows[0].assigned_users)}\n`);
+    `,
+      [testProjectId],
+    );
+    console.log(
+      `  ✓ assigned_users: ${JSON.stringify(assignedResult.rows[0].assigned_users)}\n`,
+    );
 
     // Test 4: Remove one assignment
     console.log('Test 4: Remove 1 assignment');
-    await pool.query(`
+    await pool.query(
+      `
       DELETE FROM record_assignments
       WHERE module = 'CONSTRUCTION' AND record_id = $1 AND user_id = $2
-    `, [testProjectId, testUsers[0]]);
+    `,
+      [testProjectId, testUsers[0]],
+    );
 
-    count = await pool.query(`
+    count = await pool.query(
+      `
       SELECT COUNT(*) as count FROM record_assignments
       WHERE module = 'CONSTRUCTION' AND record_id = $1
-    `, [testProjectId]);
+    `,
+      [testProjectId],
+    );
     console.log(`  ✓ Removed - Count: ${count.rows[0].count}\n`);
 
     // Test 5: Clear all assignments
     console.log('Test 5: Clear all assignments');
-    await pool.query(`
+    await pool.query(
+      `
       DELETE FROM record_assignments
       WHERE module = 'CONSTRUCTION' AND record_id = $1
-    `, [testProjectId]);
+    `,
+      [testProjectId],
+    );
 
-    count = await pool.query(`
+    count = await pool.query(
+      `
       SELECT COUNT(*) as count FROM record_assignments
       WHERE module = 'CONSTRUCTION' AND record_id = $1
-    `, [testProjectId]);
+    `,
+      [testProjectId],
+    );
     console.log(`  ✓ Cleared - Count: ${count.rows[0].count}\n`);
 
     console.log('=== All Assignment Tests PASSED ===');
-
   } catch (error) {
     console.error('Test failed:', error.message);
     process.exit(1);

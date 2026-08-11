@@ -63,7 +63,8 @@ export class ConstructionProjectsController {
   @Get()
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
   @ApiOperation({
-    summary: 'List all construction projects (non-Admin only see PUBLISHED; Contractors see only assigned)',
+    summary:
+      'List all construction projects (non-Admin only see PUBLISHED; Contractors see only assigned)',
   })
   findAll(
     @Query() query: QueryConstructionProjectDto,
@@ -74,14 +75,20 @@ export class ConstructionProjectsController {
 
   @Get('analytics/summary')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
-  @ApiOperation({ summary: 'COI analytics summary — counts by status, campus, publication_status' })
+  @ApiOperation({
+    summary:
+      'COI analytics summary — counts by status, campus, publication_status',
+  })
   getAnalyticsSummary() {
     return this.service.getAnalyticsSummary();
   }
 
   @Get('analytics/financial-summary')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
-  @ApiOperation({ summary: 'COI financial analytics — aggregated appropriation, obligation, disbursement' })
+  @ApiOperation({
+    summary:
+      'COI financial analytics — aggregated appropriation, obligation, disbursement',
+  })
   getFinancialSummary() {
     return this.service.getFinancialSummary();
   }
@@ -119,7 +126,9 @@ export class ConstructionProjectsController {
   // ZX-3: Flat templateUrl status map (static; must precede :id)
   @Get('document-types/template-status')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
-  @ApiOperation({ summary: 'Flat map of typeCode → templateUrl for all active types' })
+  @ApiOperation({
+    summary: 'Flat map of typeCode → templateUrl for all active types',
+  })
   getDocumentTypeTemplateStatus() {
     return this.service.getDocumentTypeTemplateStatus();
   }
@@ -128,7 +137,8 @@ export class ConstructionProjectsController {
   @Get('my-permissions')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
   @ApiOperation({
-    summary: 'Get the current user project-level permission map (projectId → permissions)',
+    summary:
+      'Get the current user project-level permission map (projectId → permissions)',
   })
   getMyPermissions(@CurrentUser() user: JwtPayload) {
     return this.service.getMyProjectPermissions(user.sub);
@@ -305,7 +315,9 @@ export class ConstructionProjectsController {
   @Post(':id/timeline-entries/batch')
   @Roles('Admin', 'Staff')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Batch create timeline entries (Admin/Staff, max 50)' })
+  @ApiOperation({
+    summary: 'Batch create timeline entries (Admin/Staff, max 50)',
+  })
   batchCreateTimelineEntries(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: BatchCreateTimelineEntryDto,
@@ -368,7 +380,8 @@ export class ConstructionProjectsController {
   })
   listMovEntries(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('relatedEntityType') relatedEntityType?: 'MILESTONE' | 'TIMELINE_ENTRY',
+    @Query('relatedEntityType')
+    relatedEntityType?: 'MILESTONE' | 'TIMELINE_ENTRY',
     @Query('relatedEntityId') relatedEntityId?: string,
   ) {
     return this.service.listMovEntries(id, relatedEntityType, relatedEntityId);
@@ -402,7 +415,9 @@ export class ConstructionProjectsController {
   @Post(':id/mov-entries/:movEntryId/upload-file')
   @Roles('Admin', 'Staff')
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }),
+  )
   @ApiOperation({ summary: 'Upload file evidence to a MOV entry (≤15 MB)' })
   uploadMovFile(
     @Param('id', ParseUUIDPipe) id: string,
@@ -449,21 +464,32 @@ export class ConstructionProjectsController {
 
   @Patch(':id/document-remarks')
   @Roles('Admin', 'Staff')
-  @ApiOperation({ summary: 'Update per-group document checklist remarks (KV-D2)' })
+  @ApiOperation({
+    summary: 'Update per-group document checklist remarks (KV-D2)',
+  })
   updateDocumentRemarks(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { groupCode: string; remarks: unknown },
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.updateDocumentRemarks(id, body.groupCode, body.remarks, user.sub, user);
+    return this.service.updateDocumentRemarks(
+      id,
+      body.groupCode,
+      body.remarks,
+      user.sub,
+      user,
+    );
   }
 
   @Patch(':id/custom-key-sections')
   @Roles('Admin', 'Staff')
-  @ApiOperation({ summary: 'Replace per-project custom Key Document sections (AAA-F-3)' })
+  @ApiOperation({
+    summary: 'Replace per-project custom Key Document sections (AAA-F-3)',
+  })
   updateCustomKeySections(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { sections: Array<{ id: string; label: string; typeCode: string }> },
+    @Body()
+    body: { sections: Array<{ id: string; label: string; typeCode: string }> },
     @CurrentUser() user: JwtPayload,
   ) {
     return this.service.updateCustomKeySections(id, body.sections ?? [], user);
@@ -471,13 +497,20 @@ export class ConstructionProjectsController {
 
   @Patch(':id/custom-supporting-sections')
   @Roles('Admin', 'Staff')
-  @ApiOperation({ summary: 'Replace per-project custom Supporting Document folders (SSS-B)' })
+  @ApiOperation({
+    summary: 'Replace per-project custom Supporting Document folders (SSS-B)',
+  })
   updateCustomSupportingSections(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { sections: Array<{ id: string; label: string; typeCode: string }> },
+    @Body()
+    body: { sections: Array<{ id: string; label: string; typeCode: string }> },
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.updateCustomSupportingSections(id, body.sections ?? [], user);
+    return this.service.updateCustomSupportingSections(
+      id,
+      body.sections ?? [],
+      user,
+    );
   }
 
   // --- KD-E: Project Diary ---
@@ -526,7 +559,6 @@ export class ConstructionProjectsController {
   }
 
   // NI (2026-05-21): /financials routes REMOVED — superseded by /progress-reports.
-
 
   // --- Revision Orders (Phase ND) ---
 
@@ -768,7 +800,9 @@ export class ConstructionProjectsController {
   @Delete(':id/documents/:docId')
   @Roles('Admin')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Soft-delete a document (Admin only); physical file preserved' })
+  @ApiOperation({
+    summary: 'Soft-delete a document (Admin only); physical file preserved',
+  })
   async removeDocument(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('docId', ParseUUIDPipe) docId: string,
@@ -780,7 +814,9 @@ export class ConstructionProjectsController {
   // CCC-A: Stream a stored document with its original filename + DOWNLOAD audit
   @Get(':id/documents/:docId/download')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
-  @ApiOperation({ summary: 'Stream a stored document with original filename + DOWNLOAD audit' })
+  @ApiOperation({
+    summary: 'Stream a stored document with original filename + DOWNLOAD audit',
+  })
   downloadDocument(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('docId', ParseUUIDPipe) docId: string,
@@ -805,8 +841,12 @@ export class ConstructionProjectsController {
   @Post(':id/document-checklist/:itemId/submissions')
   @Roles('Admin', 'Staff')
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
-  @ApiOperation({ summary: 'Submit a new document version for a checklist item (Admin/Staff)' })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Submit a new document version for a checklist item (Admin/Staff)',
+  })
   submitDocumentVersion(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('itemId', ParseUUIDPipe) itemId: string,
@@ -821,8 +861,12 @@ export class ConstructionProjectsController {
   @Post('document-types/:typeId/template')
   @Roles('Admin', 'SuperAdmin')
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
-  @ApiOperation({ summary: 'Upload blank form template for a document type (Admin only)' })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }),
+  )
+  @ApiOperation({
+    summary: 'Upload blank form template for a document type (Admin only)',
+  })
   uploadDocumentTypeTemplate(
     @Param('typeId', ParseUUIDPipe) typeId: string,
     @UploadedFile() file: Express.Multer.File,
