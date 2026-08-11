@@ -3,6 +3,15 @@ import { type CsuPersonnelRow, type ContractorPersonnelRow, type OthersPersonnel
 import CiPersonnelAccessCard from '~/components/coi/CiPersonnelAccessCard.vue'
 import CiAttachmentHub from '~/components/coi/CiAttachmentHub.vue'
 import CiScrollToTopFab from '~/components/coi/CiScrollToTopFab.vue'
+import { useMachine } from '@xstate/vue'
+import { fromPromise } from 'xstate'
+import {
+  projectMachine,
+  PROJECT_TAB_ORDER,
+  type ProjectTabId,
+  type SubmitResult,
+  type TabValidity,
+} from '~/machines/project.machine'
 definePageMeta({
   middleware: ['auth', 'permission'],
 })
@@ -18,7 +27,7 @@ const api = useApi()
 const toast = useToast()
 
 const loading = ref(false)
-const submitting = ref(false)
+// `submitting` is derived from the wizard machine below — see snapshot.matches('submitting').
 
 // Phase AO: Staff users for assignment dropdown
 const staffUsers = ref<{ id: string; first_name: string; last_name: string }[]>([])
@@ -232,10 +241,9 @@ async function fetchLookups() {
   }
 }
 
-// Tab navigation state â€" LX-A: added `others` tab to sync with edit-[id].vue
-const activeTab = ref('basic')
-// MI: Added `progress` tab between schedule and personnel; LX-A: added `others`
-const tabOrder = ['basic', 'schedule', 'progress', 'personnel', 'documents', 'others'] as const
+// Tab navigation is owned by the XState wizard machine (see machines/project.machine.ts).
+// `tabOrder` is re-exported from there so the sequence has a single source of truth.
+const tabOrder = PROJECT_TAB_ORDER
 
 // JO-D: Pending uploads (staged in browser memory until project is created)
 interface PendingDoc { file: File; documentType: string; description: string }
@@ -322,8 +330,14 @@ function addPendingLink() {
 
 // JO-B: Engagement-based completion (checkmark = user filled at least one field in tab)
 // KG-A: 4-tab structure; funding_source_id now required in basic
+// FIX: gate on primary_funding_source, NOT funding_source_id. The AAAK two-level
+// funding refactor replaced the funding_source_id picker with the controlled
+// `primary_funding_source` select (CiBasicInfoForm.vue), leaving funding_source_id
+// with no input anywhere in the create flow — so this condition could never become
+// true and the Next button was permanently dead. funding_source_id remains in the
+// payload for back-compat (see coiFormState.ts: "legacy (optional)").
 const tabCompletion = computed(() => ({
-  basic: !!(form.value.project_code && form.value.title && form.value.campus && form.value.status && form.value.funding_source_id),
+  basic: !!(form.value.project_code && form.value.title && form.value.campus && form.value.status && form.value.primary_funding_source),
   schedule: !!(
     form.value.start_date ||
     form.value.target_completion_date ||
@@ -350,9 +364,9 @@ const tabCompletion = computed(() => ({
 }))
 
 // JO-B: Required-field validity for navigation gating (separate from engagement)
-// KG-A: funding_source_id moves into basic required
-const tabRequired = computed(() => ({
-  basic: !!(form.value.project_code && form.value.title && form.value.campus && form.value.status && form.value.funding_source_id),
+// FIX: see tabCompletion above — must match the field the UI actually binds.
+const tabRequired = computed<TabValidity>(() => ({
+  basic: !!(form.value.project_code && form.value.title && form.value.campus && form.value.status && form.value.primary_funding_source),
   schedule: true,
   progress: true,
   personnel: true,
@@ -360,30 +374,103 @@ const tabRequired = computed(() => ({
   others: true,
 }))
 
-// JN-B: Step progress indicators
-const currentStepIndex = computed(() =>
-  tabOrder.indexOf(activeTab.value as typeof tabOrder[number])
+// ── XState wizard machine ────────────────────────────────────────────────────
+// The machine owns *flow* (active step, whether NEXT is allowed, submit lifecycle).
+// Field data stays in `form` so v-model, autosave and draft restore are untouched.
+// The submit side effect is injected here so the machine file has no api/toast/router deps.
+const TAB_LABELS: Record<ProjectTabId, string> = {
+  basic: 'Project Profile',
+  schedule: 'Dates & Duration',
+  progress: 'Progress Report',
+  personnel: 'Personnel',
+  documents: 'Attachments',
+  others: 'Others',
+}
+
+const { snapshot, send, actorRef } = useMachine(
+  projectMachine.provide({
+    actors: {
+      // `runSubmit` is a hoisted function declaration, so referencing it here — before
+      // its definition below — is safe; it is only ever called on the SUBMIT event.
+      submitProject: fromPromise<SubmitResult, void>(() => runSubmit()),
+    },
+  }),
 )
+
+// Bridge the machine state to the existing `activeTab` template bindings. Reads come
+// from the machine; writes (clicking a tab header) go back in as a GOTO event, so the
+// machine stays the single authority on which step is active.
+const activeTab = computed<ProjectTabId>({
+  // `submitting` and `submitted` are real machine states but not tabs — fall back to the
+  // last step so v-window keeps rendering (and the user keeps their place) instead of
+  // going blank while the request is in flight.
+  get: () => {
+    const state = snapshot.value.value as string
+    return (PROJECT_TAB_ORDER as readonly string[]).includes(state)
+      ? (state as ProjectTabId)
+      : 'others'
+  },
+  set: (tab) => send({ type: 'GOTO', tab }),
+})
+
+const submitting = computed(() => snapshot.value.matches('submitting'))
+const blockedTab = computed(() => snapshot.value.context.blockedTab)
+
+// Names the exact fields still missing, so a blocked Next says *what* to fix rather
+// than just refusing. Mirrors the tabRequired.basic condition — keep both in sync.
+const REQUIRED_BASIC_FIELDS: { key: keyof typeof form.value; label: string }[] = [
+  { key: 'title',                  label: 'Project Title' },
+  { key: 'project_code',           label: 'Project Code' },
+  { key: 'campus',                 label: 'Campus' },
+  { key: 'status',                 label: 'Project Status' },
+  { key: 'primary_funding_source', label: 'Funding Source' },
+]
+const missingBasicFields = computed(() =>
+  REQUIRED_BASIC_FIELDS.filter(f => !form.value[f.key]).map(f => f.label),
+)
+
+// Push the derived per-tab required-field validity into the machine whenever it
+// changes; the NEXT/SUBMIT guards read it from context.
+watch(
+  tabRequired,
+  (validity) => send({ type: 'SET_VALIDITY', validity }),
+  { immediate: true, deep: true },
+)
+
+// One-off UI notifications. Emitted (not stored in context) so each occurrence fires
+// exactly one toast — a watched context value would need a nonce to do the same.
+actorRef.on('blocked', ({ tab }) => {
+  toast.error(`Please complete the required fields in "${TAB_LABELS[tab]}" before continuing`)
+})
+actorRef.on('submitFailed', ({ message }) => {
+  toast.error(message)
+})
+actorRef.on('submitSucceeded', ({ result }) => {
+  if (result.failed.length > 0) {
+    toast.error(
+      `Project created. ${result.failed.length} of ${result.total} uploads failed (retry from detail page).`,
+    )
+  } else if (result.uploaded > 0) {
+    toast.success(`Project created with ${result.uploaded} attachment(s)`)
+  } else {
+    toast.success('Project created successfully')
+  }
+  // Draft is only cleared once the server has the project — a failed submit keeps it.
+  clearDraft()
+  hasUnsavedChanges.value = false
+  router.push(result.projectId ? `/coi/detail-${result.projectId}` : '/coi')
+})
+
+// JN-B: Step progress indicators
+const currentStepIndex = computed(() => tabOrder.indexOf(activeTab.value))
 const completionPercentage = computed(() => {
   const completed = Object.values(tabCompletion.value).filter(Boolean).length
   return Math.round((completed / tabOrder.length) * 100)
 })
 
-// JO-C: Guarded navigation
-function nextTab() {
-  const cur = activeTab.value as typeof tabOrder[number]
-  if (!tabRequired.value[cur]) {
-    toast.error(`Please complete required fields in "${cur}" before continuing`)
-    return
-  }
-  const idx = tabOrder.indexOf(cur)
-  if (idx < tabOrder.length - 1) activeTab.value = tabOrder[idx + 1]
-}
-
-function prevTab() {
-  const idx = tabOrder.indexOf(activeTab.value as typeof tabOrder[number])
-  if (idx > 0) activeTab.value = tabOrder[idx - 1]
-}
+// JO-C: Guarded navigation — the guard now lives in the machine, not here.
+function nextTab() { send({ type: 'NEXT' }) }
+function prevTab() { send({ type: 'PREV' }) }
 
 // Map raw API errors to user-friendly messages
 function mapApiError(err: unknown): string {
@@ -403,20 +490,17 @@ function mapApiError(err: unknown): string {
   return 'Something went wrong. Please try again or contact support.'
 }
 
-// Submit form
-async function handleSubmit() {
-  // JO-C: Full-form gate â€" jump to first invalid required tab
-  const incomplete = (Object.keys(tabRequired.value) as Array<keyof typeof tabRequired.value>)
-    .filter(k => !tabRequired.value[k])
-  if (incomplete.length > 0) {
-    activeTab.value = incomplete[0]
-    toast.error(`Required fields incomplete in: ${incomplete.join(', ')}`)
-    return
-  }
+// Submit is split in two: `handleSubmit` only fires the event — the machine owns the
+// all-tabs-valid gate and the jump-to-first-invalid-tab behaviour that used to live
+// here. `runSubmit` is the pure side effect the machine invokes, and it reports its
+// outcome by returning a SubmitResult (or throwing); toasts and navigation happen in
+// the emitted-event handlers above, so this function does no UI work.
+function handleSubmit() {
+  send({ type: 'SUBMIT' })
+}
 
-  submitting.value = true
-
-  try {
+async function runSubmit(): Promise<SubmitResult> {
+  {
     // Do NOT send project_id - backend will create base projects record and generate ID
     // MG: Objectives is now a dynamic bullet list (objectives_list); fall back
     // to legacy textarea split for back-compat.
@@ -536,25 +620,28 @@ async function handleSubmit() {
     }
 
     console.log('[COI Create] Submitting:', payload)
-    const created = await api.post<{ id?: string; project_id?: string }>('/api/construction-projects', payload)
+    // Creation failure is the machine's business: let it throw so the invoke lands in
+    // onError. mapApiError runs here so the emitted message is already user-friendly.
+    let created: { id?: string; project_id?: string }
+    try {
+      created = await api.post<{ id?: string; project_id?: string }>('/api/construction-projects', payload)
+    } catch (err: unknown) {
+      console.error('[COI Create] Failed:', err)
+      throw new Error(mapApiError(err))
+    }
     // NNN-B: resolve the new project id with a fallback; warn (don't silently succeed) if absent
     const projectId = created?.id ?? created?.project_id
     if (!projectId) {
       console.warn('[COI Create] Project created but no id returned — staged uploads skipped.', created)
-      clearDraft(); hasUnsavedChanges.value = false
-      toast.success('Project created successfully')
-      router.push('/coi')
-      return
+      return { projectId: null, uploaded: 0, failed: [], total: 0 }
     }
 
-    // JO-D Stage 2: best-effort upload of staged files
+    // JO-D Stage 2: best-effort upload of staged files. Upload failures are NOT fatal —
+    // the project exists, so this resolves successfully and reports partials instead.
     const totalAttachments =
       pendingDocs.value.length + pendingImages.value.length + pendingLinks.value.length
     if (totalAttachments === 0) {
-      clearDraft(); hasUnsavedChanges.value = false
-      toast.success('Project created successfully')
-      router.push(`/coi/detail-${projectId}`)
-      return
+      return { projectId, uploaded: 0, failed: [], total: 0 }
     }
 
     const failures: string[] = []
@@ -597,21 +684,15 @@ async function handleSubmit() {
       }
     }
 
-    if (failures.length === 0) {
-      toast.success(`Project created with ${successCount} attachment(s)`)
-    } else {
-      toast.error(
-        `Project created. ${failures.length} of ${totalAttachments} uploads failed (retry from detail page).`
-      )
+    if (failures.length > 0) {
       console.warn('[COI Create] Upload failures:', failures)
     }
-    clearDraft(); hasUnsavedChanges.value = false
-    router.push(`/coi/detail-${projectId}`)
-  } catch (err: unknown) {
-    toast.error(mapApiError(err))
-    console.error('[COI Create] Failed:', err)
-  } finally {
-    submitting.value = false
+    return {
+      projectId,
+      uploaded: successCount,
+      failed: failures,
+      total: totalAttachments,
+    }
   }
 }
 
@@ -820,6 +901,20 @@ onBeforeUnmount(() => {
           <!-- AAA-I: tab guidance banner -->
           <v-alert type="info" variant="tonal" density="compact" class="mb-3" icon="mdi-information-outline">
             Complete the project identity, location, funding, objectives, and strategic alignment. Title, Project Code, Campus, Status, and Funding Source are required to save.
+          </v-alert>
+          <!-- Names the still-missing required fields when the machine refuses NEXT,
+               instead of only flashing a toast that disappears. -->
+          <v-alert
+            v-if="blockedTab === 'basic' && missingBasicFields.length"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+            icon="mdi-alert-circle-outline"
+          >
+            <span class="font-weight-medium">Cannot continue —</span>
+            these required fields are still empty:
+            <strong>{{ missingBasicFields.join(', ') }}</strong>
           </v-alert>
           <CiBasicInfoForm
             v-model="form"
