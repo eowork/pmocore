@@ -7,6 +7,7 @@ import { ContractorAuthController } from './contractor-auth.controller';
 import { ContractorUser } from './entities/contractor-user.entity';
 import { ContractorInviteToken } from './entities/contractor-invite-token.entity';
 import { ProjectContractorAssignment } from './entities/project-contractor-assignment.entity';
+import { numberFromConfig } from '../common/config.util';
 
 @Module({
   imports: [
@@ -21,7 +22,8 @@ import { ProjectContractorAssignment } from './entities/project-contractor-assig
       useFactory: (cs: ConfigService) => ({
         secret: cs.get<string>('AUTH_JWT_SECRET'),
         signOptions: {
-          expiresIn: Number(cs.get('AUTH_JWT_EXPIRES_IN', 604800)),
+          // T-JWT-EXPIRY: same NaN guard as auth.module.ts.
+          expiresIn: numberFromConfig(cs, 'AUTH_JWT_EXPIRES_IN', 604800),
         }, // 7d fallback
       }),
     }),
