@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadsController } from './uploads.controller';
 import { UploadsService } from './uploads.service';
 import { StorageService } from './storage/storage.service';
+import { STORAGE_DRIVER_TOKEN } from './storage/storage-driver.interface';
+import { createStorageDriver } from './storage/storage-driver.factory';
 
 @Module({
   imports: [
@@ -18,7 +20,18 @@ import { StorageService } from './storage/storage.service';
     }),
   ],
   controllers: [UploadsController],
-  providers: [UploadsService, StorageService],
+  providers: [
+    UploadsService,
+    StorageService,
+    // MINIO-3: the driver is bound here and nowhere else, so STORAGE_DRIVER is
+    // the single switch for the cutover and its rollback. Neither driver class
+    // is registered as a provider — see createStorageDriver() for why.
+    {
+      provide: STORAGE_DRIVER_TOKEN,
+      inject: [ConfigService],
+      useFactory: createStorageDriver,
+    },
+  ],
   exports: [UploadsService, StorageService],
 })
 export class UploadsModule {}
