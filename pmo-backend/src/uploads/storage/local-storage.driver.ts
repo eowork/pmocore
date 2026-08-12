@@ -97,17 +97,12 @@ export class LocalStorageDriver implements StorageDriver {
   /**
    * Resolve a stored path to an absolute location on disk.
    *
-   * LOCAL-ONLY — deliberately NOT part of StorageDriver: object storage has no
-   * filesystem path. Retained because StorageService.getFilePath()/fileExists()
-   * still expose it synchronously to construction-projects.service.ts. Both go
-   * away in the next step, when streamDocument moves to getStream().
+   * MINIO-4: now private. It was public so StorageService could re-expose it as
+   * getFilePath()/fileExists() for streamDocument; that caller moved to
+   * getStream(), so the escape hatch is closed and no filesystem path leaves
+   * this class.
    */
-  getAbsolutePath(filePath: string): string {
+  private getAbsolutePath(filePath: string): string {
     return path.join(this.uploadDir, toStorageKey(filePath));
-  }
-
-  /** LOCAL-ONLY synchronous existence check. See getAbsolutePath(). */
-  existsSync(filePath: string): boolean {
-    return fs.existsSync(this.getAbsolutePath(filePath));
   }
 }

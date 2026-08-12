@@ -5,7 +5,6 @@ import {
   StoredFile,
   STORAGE_DRIVER_TOKEN,
 } from './storage-driver.interface';
-import { LocalStorageDriver } from './local-storage.driver';
 
 // Re-exported so existing importers of `./storage/storage.service` keep working
 // unchanged (uploads.service.ts, uploads/index.ts).
@@ -37,8 +36,13 @@ export class StorageService {
   }
 
   /**
-   * Storage-agnostic reads. Nothing calls these yet — they are the replacement
-   * for getFilePath()/fileExists() and get wired into streamDocument next step.
+   * Storage-agnostic reads — the whole public read surface.
+   *
+   * MINIO-4: the former getFilePath()/fileExists() pair is gone. Those leaked an
+   * absolute disk path and a synchronous boolean, neither of which object
+   * storage can honour, so they threw at runtime under STORAGE_DRIVER=minio and
+   * took every document download with them. Deleting them, rather than keeping a
+   * throwing local-only stub, is what stops the next caller reintroducing it.
    */
   async getStream(filePath: string): Promise<Readable> {
     return this.driver.getStream(filePath);
@@ -46,31 +50,5 @@ export class StorageService {
 
   async exists(filePath: string): Promise<boolean> {
     return this.driver.exists(filePath);
-  }
-
-  /**
-   * @deprecated LOCAL-DISK ONLY — returns an absolute filesystem path, which
-   * cannot exist for object storage. Superseded by getStream(). Still present
-   * because construction-projects.service.ts calls it synchronously; removed in
-   * the next step. Throws loudly rather than silently misbehaving if a non-local
-   * driver is ever bound while a caller remains.
-   */
-  getFilePath(relativePath: string): string {
-    return this.requireLocalDriver('getFilePath').getAbsolutePath(relativePath);
-  }
-
-  /** @deprecated LOCAL-DISK ONLY — superseded by exists(). See getFilePath(). */
-  fileExists(relativePath: string): boolean {
-    return this.requireLocalDriver('fileExists').existsSync(relativePath);
-  }
-
-  private requireLocalDriver(method: string): LocalStorageDriver {
-    if (!(this.driver instanceof LocalStorageDriver)) {
-      throw new Error(
-        `StorageService.${method}() is local-disk only and cannot be used with ` +
-          `the active storage driver. Migrate the caller to getStream()/exists().`,
-      );
-    }
-    return this.driver;
   }
 }
