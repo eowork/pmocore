@@ -29,7 +29,10 @@ const databasePoolFactory = {
       logger.log('Database connected successfully');
       logger.log(`Server time: ${result.rows[0].server_time}`);
     } catch (error) {
-      logger.error('Database connection failed:', error instanceof Error ? error.message : String(error));
+      logger.error(
+        'Database connection failed:',
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     }
 

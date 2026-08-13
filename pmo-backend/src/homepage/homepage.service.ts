@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import { EntityRepository, EntityManager } from '@mikro-orm/core';
 import { HomepageSetting, HomepageItem, Media } from '../database/entities';
@@ -43,7 +39,10 @@ export class HomepageService {
     userId: string,
     pageKey = 'home',
   ): Promise<HomepageSetting> {
-    const setting = await this.settingsRepo.findOne({ settingKey: key, pageKey });
+    const setting = await this.settingsRepo.findOne({
+      settingKey: key,
+      pageKey,
+    });
     if (!setting) {
       throw new NotFoundException(`Homepage setting '${key}' not found`);
     }
@@ -56,7 +55,10 @@ export class HomepageService {
 
   // ---- Items (ordered, publishable content) ----
 
-  async findAllItems(sectionKey?: string, pageKey = 'home'): Promise<HomepageItem[]> {
+  async findAllItems(
+    sectionKey?: string,
+    pageKey = 'home',
+  ): Promise<HomepageItem[]> {
     const where = sectionKey ? { sectionKey, pageKey } : { pageKey };
     return this.itemsRepo.find(where, {
       orderBy: { sectionKey: 'asc', itemOrder: 'asc', createdAt: 'asc' },
@@ -98,7 +100,9 @@ export class HomepageService {
       mediaId: dto.media_id,
       isPublished: dto.is_published ?? true,
       isPinned: dto.is_pinned ?? false,
-      scheduledStart: dto.scheduled_start ? new Date(dto.scheduled_start) : undefined,
+      scheduledStart: dto.scheduled_start
+        ? new Date(dto.scheduled_start)
+        : undefined,
       scheduledEnd: dto.scheduled_end ? new Date(dto.scheduled_end) : undefined,
       colorToken: dto.color_token || undefined,
       linkedProjectId: dto.linked_project_id || undefined,
@@ -139,26 +143,36 @@ export class HomepageService {
     if (dto.is_published !== undefined) item.isPublished = dto.is_published;
     if (dto.is_pinned !== undefined) item.isPinned = dto.is_pinned;
     // Empty string clears the color back to the default accent (TH5-11).
-    if (dto.color_token !== undefined) item.colorToken = dto.color_token || undefined;
-    if (dto.linked_project_id !== undefined) item.linkedProjectId = dto.linked_project_id || undefined;
+    if (dto.color_token !== undefined)
+      item.colorToken = dto.color_token || undefined;
+    if (dto.linked_project_id !== undefined)
+      item.linkedProjectId = dto.linked_project_id || undefined;
     if (dto.subtitle !== undefined) item.subtitle = dto.subtitle;
-    if (dto.full_description !== undefined) item.fullDescription = dto.full_description;
+    if (dto.full_description !== undefined)
+      item.fullDescription = dto.full_description;
     if (dto.author !== undefined) item.author = dto.author;
     if (dto.department !== undefined) item.department = dto.department;
     if (dto.publish_date !== undefined) {
-      item.publishDate = dto.publish_date ? new Date(dto.publish_date) : undefined;
+      item.publishDate = dto.publish_date
+        ? new Date(dto.publish_date)
+        : undefined;
     }
     if (dto.is_featured !== undefined) item.isFeatured = dto.is_featured;
     if (dto.status_text !== undefined) item.statusText = dto.status_text;
     if (dto.campus_text !== undefined) item.campusText = dto.campus_text;
     if (dto.budget_text !== undefined) item.budgetText = dto.budget_text;
-    if (dto.completion_text !== undefined) item.completionText = dto.completion_text;
+    if (dto.completion_text !== undefined)
+      item.completionText = dto.completion_text;
     // Empty string clears the bound (T-HOME-CMS-3, TH3-5).
     if (dto.scheduled_start !== undefined) {
-      item.scheduledStart = dto.scheduled_start ? new Date(dto.scheduled_start) : undefined;
+      item.scheduledStart = dto.scheduled_start
+        ? new Date(dto.scheduled_start)
+        : undefined;
     }
     if (dto.scheduled_end !== undefined) {
-      item.scheduledEnd = dto.scheduled_end ? new Date(dto.scheduled_end) : undefined;
+      item.scheduledEnd = dto.scheduled_end
+        ? new Date(dto.scheduled_end)
+        : undefined;
     }
     item.updatedBy = userId;
 
@@ -222,7 +236,9 @@ export class HomepageService {
 
     // Resolve item images to public /uploads paths + alt text (images only —
     // T2 hardening keeps non-image files behind the authenticated document API).
-    const mediaIds = items.map((i) => i.mediaId).filter((v): v is string => !!v);
+    const mediaIds = items
+      .map((i) => i.mediaId)
+      .filter((v): v is string => !!v);
     const mediaPaths = new Map<string, string>();
     const mediaAlts = new Map<string, string>();
     if (mediaIds.length) {
@@ -256,7 +272,9 @@ export class HomepageService {
         full_description: item.fullDescription ?? '',
         author: item.author ?? '',
         department: item.department ?? '',
-        publish_date: item.publishDate ? item.publishDate.toISOString().slice(0, 10) : '',
+        publish_date: item.publishDate
+          ? item.publishDate.toISOString().slice(0, 10)
+          : '',
         is_featured: item.isFeatured,
         status_text: item.statusText ?? '',
         campus_text: item.campusText ?? '',

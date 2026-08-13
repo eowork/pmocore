@@ -11,14 +11,20 @@ import { numberFromConfig } from '../common/config.util';
 
 @Module({
   imports: [
-    MikroOrmModule.forFeature([ContractorUser, ContractorInviteToken, ProjectContractorAssignment]),
+    MikroOrmModule.forFeature([
+      ContractorUser,
+      ContractorInviteToken,
+      ProjectContractorAssignment,
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (cs: ConfigService) => ({
         secret: cs.get<string>('AUTH_JWT_SECRET'),
-        // T-JWT-EXPIRY: coerce to a real number (a raw .env string is read as ms, not seconds).
-        signOptions: { expiresIn: numberFromConfig(cs, 'AUTH_JWT_EXPIRES_IN', 604800) }, // 7d fallback
+        signOptions: {
+          // T-JWT-EXPIRY: same NaN guard as auth.module.ts.
+          expiresIn: numberFromConfig(cs, 'AUTH_JWT_EXPIRES_IN', 604800),
+        }, // 7d fallback
       }),
     }),
   ],
