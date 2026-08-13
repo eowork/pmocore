@@ -71,6 +71,55 @@ services:
         condition: service_healthy
     ports:
       - "${FRONTEND_PORT:-3001}:3000"
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: [ "server", "/data", "--console-address", ":9001" ]
+    environment:
+      # The server's root credentials ARE the backend's client credentials: one
+      # pair of values in the root .env feeds both, so they cannot drift.
+      # MinIO refuses to start if user < 3 chars or password < 8 chars.
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
+    ports:
+      # LEFT side is HOST-only. Do NOT wire MINIO_PORT here: the backend reads
+      # MINIO_PORT to reach minio:9000 across the compose network, so it must stay
+      # 9000. Same host-vs-container split as openldap's "1389:389" below.
+      - "${MINIO_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # One-shot: create the bucket, force it PRIVATE, exit. Re-running is a no-op.
+  # Private is a hard requirement, not a default — main.ts gates /uploads to image
+  # types only and serves documents exclusively through the JWT-guarded download
+  # endpoint. An anonymous-readable bucket would hand out every stored document.
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
+    entrypoint: [ "/bin/sh", "-c" ]
+    # $$ escapes compose interpolation so the SHELL expands these, not compose —
+    # keeps the secrets out of the rendered `docker compose config` output.
+    command:
+      - |
+        set -e
+        mc alias set pmo "http://minio:9000" "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"
+        mc mb --ignore-existing "pmo/$$MINIO_BUCKET_NAME"
+        mc anonymous set none "pmo/$$MINIO_BUCKET_NAME"
+        echo "MINIO_INIT_OK: bucket=$$MINIO_BUCKET_NAME visibility=private"
 
 volumes:
   pgdata:
