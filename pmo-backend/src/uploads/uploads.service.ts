@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Readable } from 'stream';
 import { StorageService, StoredFile } from './storage/storage.service';
 import { UploadResponseDto } from './dto';
 import { numberFromConfig } from '../common/config.util';
@@ -25,7 +26,7 @@ export class UploadsService {
     // ALLOWED_MIME_TYPES in .env no longer silently rejects webp uploads.
     const mimeTypesStr = this.configService.get<string>(
       'ALLOWED_MIME_TYPES',
-      'image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain',
+      'image/jpeg,image/png,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,text/plain',
     );
     this.allowedMimeTypes = mimeTypesStr.split(',').map((t) => t.trim());
   }
@@ -101,11 +102,19 @@ export class UploadsService {
     return this.storageService.deleteFile(filePath);
   }
 
-  getFilePath(relativePath: string): string {
-    return this.storageService.getFilePath(relativePath);
+  /**
+   * MINIO-4: storage-agnostic read, replacing the getFilePath()/fileExists()
+   * pair this service used to expose. Those returned an absolute disk path and
+   * a synchronous boolean — neither of which object storage can provide — so
+   * they were removed rather than left as traps for the next caller.
+   *
+   * Throws NotFoundException when the object is missing, under every driver.
+   */
+  async getStream(filePath: string): Promise<Readable> {
+    return this.storageService.getStream(filePath);
   }
 
-  fileExists(relativePath: string): boolean {
-    return this.storageService.fileExists(relativePath);
+  async fileExists(filePath: string): Promise<boolean> {
+    return this.storageService.exists(filePath);
   }
 }

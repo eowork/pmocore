@@ -8,7 +8,6 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { createReadStream } from 'fs';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -2684,10 +2683,12 @@ export class ConstructionProjectsService {
     if (doc.mimeType === 'application/x-google-drive-link') {
       throw new BadRequestException('External links are not downloadable');
     }
-    if (!this.uploadsService.fileExists(doc.filePath)) {
-      throw new NotFoundException('Physical file is missing on the server');
-    }
-    const absolutePath = this.uploadsService.getFilePath(doc.filePath);
+    // MINIO-4: storage-agnostic read. Opened before the headers and the audit
+    // entry so a missing object still 404s without logging a DOWNLOAD that never
+    // happened — every driver's getStream() throws NotFoundException carrying
+    // the same 'Physical file is missing on the server' message the old
+    // fileExists() guard produced, so this needs no separate existence probe.
+    const stream = await this.uploadsService.getStream(doc.filePath);
     res.set({
       'Content-Type': doc.mimeType || 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(doc.fileName)}"`,
@@ -2698,7 +2699,7 @@ export class ConstructionProjectsService {
       fileName: doc.fileName,
       documentType: doc.documentType,
     });
-    return new StreamableFile(createReadStream(absolutePath));
+    return new StreamableFile(stream);
   }
 
   // ZT-3: Soft-delete activation — never hard-deletes; never destroys physical files.
