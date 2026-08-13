@@ -124,3 +124,4 @@ services:
 volumes:
   pgdata:
   backend_uploads:
+  minio_data:
