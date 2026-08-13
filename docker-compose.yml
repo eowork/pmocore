@@ -70,7 +70,7 @@ services:
     environment:
       # Browser-facing API URL — must be reachable from the user's browser
       # (the app is an SPA, so requests are made client-side, not container-to-container).
-      NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
+      # NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
     depends_on:
