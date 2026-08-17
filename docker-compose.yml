@@ -26,12 +26,13 @@ services:
     # The DATABASE_* values below override that file so the backend talks to the
     # "postgres" service instead of localhost.
     env_file:
-      - ./pmo-backend/.env
+      - .backend.env
     environment:
       # Force production in the container — overrides NODE_ENV=development from the
       # dev .env (env_file). Dev mode would select TsMorphMetadataProvider, which
       # reads ./src/*.entity.ts (absent from the compiled image) and crashes startup.
       NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
       DATABASE_HOST: postgres
       DATABASE_PORT: ${POSTGRES_PORT:-5432}
       DATABASE_NAME: ${POSTGRES_DB:-pmo_dashboard}
@@ -40,6 +41,13 @@ services:
       SEED_PMOADMIN_PASSWORD: ${SEED_PMOADMIN_PASSWORD:?SEED_PMOADMIN_PASSWORD must be set in .env}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?SEED_ADMIN_PASSWORD must be set in .env}
       PORT: 3000
+
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio}
+      MINIO_PORT: ${MINIO_PORT:-9000}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,11 +67,11 @@ services:
       context: ./pmo-frontend
     restart: unless-stopped
     env_file:
-      - ./pmo-frontend/.env
+      - .frontend.env
     environment:
       # Browser-facing API URL — must be reachable from the user's browser
       # (the app is an SPA, so requests are made client-side, not container-to-container).
-      NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-NUXT_PUBLIC_API_BASE must be set in .env}
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
     depends_on:
@@ -124,3 +132,4 @@ services:
 volumes:
   pgdata:
   backend_uploads:
+  minio_data:
