@@ -15,7 +15,7 @@ nul
 .vscode/mcp.json
 .mcp.json
 .idea/
-
+.mcp.json.tmp
 # Runtime / operational artifacts (not source code)
 database/backups/
 database/staging/

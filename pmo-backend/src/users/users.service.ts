@@ -32,6 +32,7 @@ import {
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import { JwtPayload } from '../common/interfaces';
+import { AccessLevel } from '../common/enums';
 
 // Rank hierarchy constants (lower = higher authority)
 export const RANK_LEVELS = {
@@ -963,12 +964,23 @@ export class UsersService {
           });
           if (ovr) {
             ovr.canAccess = update.can_access;
+            // Same rule as setPermissionOverride: honour an explicit level, otherwise
+            // give a fresh grant view-only access. A null level denies every write in
+            // ModuleAccessGuard, so a grant without one is not actually a grant.
+            if (update.granted_level) {
+              ovr.grantedLevel = update.granted_level;
+            } else if (update.can_access && !ovr.grantedLevel) {
+              ovr.grantedLevel = AccessLevel.VIEWER;
+            }
             ovr.updatedBy = adminId;
           } else {
             ovr = em.create(UserPermissionOverride, {
               userId,
               moduleKey: update.module_key,
               canAccess: update.can_access,
+              grantedLevel:
+                update.granted_level ??
+                (update.can_access ? AccessLevel.VIEWER : undefined),
               createdBy: adminId,
               updatedBy: adminId,
             });
