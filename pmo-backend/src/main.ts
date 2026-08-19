@@ -8,6 +8,8 @@ import { LoggingInterceptor } from './common/interceptors';
 import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response, NextFunction } from 'express';
+import { StorageService } from './uploads/storage/storage.service';
+import { createUploadedFilesHandler } from './uploads/uploaded-files.handler';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -20,18 +22,22 @@ async function bootstrap() {
   // through the guarded streaming endpoint (.../documents/:docId/download, JWT + guards).
   // This closes the hole where any document was downloadable by direct /uploads URL.
   const configService = app.get(ConfigService);
-  const uploadDir = configService.get<string>('UPLOAD_DIR', './uploads');
-  const absoluteUploadDir = join(process.cwd(), uploadDir);
   const UPLOADS_IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
   app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
     if (!UPLOADS_IMAGE_EXT.test(req.path)) {
-      return res
-        .status(403)
-        .json({ statusCode: 403, message: 'Forbidden: documents are served via the authenticated download endpoint.' });
+      return res.status(403).json({
+        statusCode: 403,
+        message:
+          'Forbidden: documents are served via the authenticated download endpoint.',
+      });
     }
     next();
   });
-  app.useStaticAssets(absoluteUploadDir, { prefix: '/uploads' });
+  // MINIO-4: was app.useStaticAssets(uploadDir, { prefix: '/uploads' }), which
+  // can only read local disk. Streaming through StorageService serves the same
+  // URLs from whichever driver STORAGE_DRIVER selected, so the whitelist above
+  // and the /uploads paths stored in the database both stay exactly as they were.
+  app.use('/uploads', createUploadedFilesHandler(app.get(StorageService)));
 
   // LLL-E3: Serve seeded document templates (public, no auth) at /templates prefix.
   // Files live in pmo-backend/public/templates/{type_code}.docx — see
@@ -42,8 +48,16 @@ async function bootstrap() {
 
   // Restrict CORS to the known frontend origin. FRONTEND_URL defaults to localhost:3001
   // so dev behavior is unchanged. Set FRONTEND_URL in .env for production deployments.
+  const rawOrigins = configService.get<string>(
+    'FRONTEND_URL',
+    'http://localhost:3001',
+  );
+
+  // Convert string into an array: ['http://localhost:3001', 'http://core.carsu.edu.ph', ...]
+  const allowedOrigins = rawOrigins.split(',').map((url) => url.trim());
+
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3001'),
+    origin: allowedOrigins,
   });
 
   // Global validation pipe

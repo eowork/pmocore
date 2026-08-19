@@ -9,6 +9,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { LdapStrategy } from './strategies/ldap.strategy';
 import { JwtAuthGuard, RolesGuard } from './guards';
 import { ActivityLogModule } from '../activity-logs/activity-log.module';
+import { numberFromConfig } from '../common/config.util';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import {
   User,
@@ -43,7 +44,13 @@ import {
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('AUTH_JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<number>('AUTH_JWT_EXPIRES_IN', 28800), // 8h in seconds
+          // T-JWT-EXPIRY: numberFromConfig falls back on a missing/empty/non-numeric
+          // value instead of yielding NaN, which jsonwebtoken rejects at sign() time.
+          expiresIn: numberFromConfig(
+            configService,
+            'AUTH_JWT_EXPIRES_IN',
+            28800,
+          ), // 8h in seconds
         },
       }),
     }),

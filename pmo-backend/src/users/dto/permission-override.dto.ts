@@ -8,6 +8,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { ACCESS_LEVEL_VALUES } from '../../common/enums';
 
 // Module keys that can have permission overrides
 export const VALID_MODULE_KEYS = [
@@ -82,6 +83,20 @@ export class BulkPermissionUpdateItem {
   @IsOptional()
   @IsBoolean()
   can_access: boolean | null;
+
+  // Mirrors SetPermissionOverrideDto. Without it a bulk grant could only ever write
+  // granted_level = NULL, and ModuleAccessGuard rejects every write on a null level —
+  // producing a row that reads "Granted" but permits nothing beyond read.
+  @ApiProperty({
+    description: 'Per-module CRUD level. Defaults to Viewer on a fresh grant.',
+    required: false,
+    enum: ACCESS_LEVEL_VALUES,
+    example: 'Contributor',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(ACCESS_LEVEL_VALUES)
+  granted_level?: string;
 }
 
 // Bulk permission update DTO

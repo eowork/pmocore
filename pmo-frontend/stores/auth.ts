@@ -18,8 +18,22 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = localStorage.getItem('access_token')
   }
 
+  // T-JWT-EXPIRY: treat an expired token as logged-out by decoding its `exp` client-side, so the
+  // app redirects to login cleanly instead of rendering a stale "authenticated" (Viewer/blank) state
+  // when the token has lapsed but its string still sits in localStorage.
+  function isTokenValid(t: string | null): boolean {
+    if (!t) return false
+    try {
+      const part = t.split('.')[1]
+      const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+      return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now()
+    } catch {
+      return false
+    }
+  }
+
   // Getters
-  const isAuthenticated = computed(() => !!token.value)
+  const isAuthenticated = computed(() => isTokenValid(token.value))
   const userFullName = computed(() => user.value?.fullName || '')
   const userEmail = computed(() => user.value?.email || '')
   // NNN-F: avatar URL surfaced for app-bar + profile page

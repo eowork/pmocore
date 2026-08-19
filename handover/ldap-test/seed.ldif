@@ -1,29 +1,52 @@
 # PMO CORE — LDAP test directory seed
 # Loaded by osixia/openldap:1.5.0 at first startup via --copy-service.
 # Mounted at: /container/service/slapd/assets/config/bootstrap/ldif/custom/
-# Contains the ou=users branch and one test entry per local DB user.
 #
-# mail attribute MUST match the user's email in the local `users` table.
-# LdapStrategy.validate() looks up the local DB by email after LDAP auth succeeds.
+# T-LDAP-ROOT (RF-4): reshaped to MIRROR the real CSU directory, which is OpenLDAP/POSIX —
+# uid-keyed entries with objectClass posixAccount + inetOrgPerson and a givenName. This makes the
+# local ldap-test profile a faithful rehearsal of production (filter (uid={{username}})), and lets
+# JIT auto-provisioning (T-LDAP-JIT) exercise the givenName -> firstName mapping.
 #
-# Test credentials (LDAP password — separate from local DB password):
-#   meoangelo.alcantara@carsu.edu.ph / testldap123
-#   pmoadmin@carsu.edu.ph            / testldap123
+# mail MUST match the user's email in the local `users` table — LdapStrategy resolves/creates the
+# local account by email after LDAP auth succeeds.
+#
+# Test credentials (LDAP password — separate from any local DB password).
+# Login uses the uid (matches the (uid={{username}}) search filter):
+#   meoangelo.alcantara / testldap123
+#   pmoadmin            / testldap123
 
 dn: ou=users,dc=carsu,dc=edu,dc=ph
 objectClass: organizationalUnit
 ou: users
 
-dn: cn=meoangelo.alcantara,ou=users,dc=carsu,dc=edu,dc=ph
+dn: uid=meoangelo.alcantara,ou=users,dc=carsu,dc=edu,dc=ph
+objectClass: top
+objectClass: person
 objectClass: inetOrgPerson
-cn: meoangelo.alcantara
+objectClass: posixAccount
+uid: meoangelo.alcantara
+cn: Meo Angelo Alcantara
+givenName: Meo Angelo
 sn: Alcantara
 mail: meoangelo.alcantara@carsu.edu.ph
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /home/meoangelo.alcantara
+loginShell: /bin/bash
 userPassword: testldap123
 
-dn: cn=pmoadmin,ou=users,dc=carsu,dc=edu,dc=ph
+dn: uid=pmoadmin,ou=users,dc=carsu,dc=edu,dc=ph
+objectClass: top
+objectClass: person
 objectClass: inetOrgPerson
-cn: pmoadmin
+objectClass: posixAccount
+uid: pmoadmin
+cn: PMO Admin
+givenName: PMO
 sn: Admin
 mail: pmoadmin@carsu.edu.ph
+uidNumber: 10002
+gidNumber: 10002
+homeDirectory: /home/pmoadmin
+loginShell: /bin/bash
 userPassword: testldap123

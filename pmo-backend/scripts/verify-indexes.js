@@ -24,29 +24,62 @@ async function verifyIndexes() {
     console.log('Step 1: Checking for performance indexes...\n');
 
     const expectedIndexes = [
-      { name: 'idx_record_assignments_module_record', table: 'record_assignments' },
+      {
+        name: 'idx_record_assignments_module_record',
+        table: 'record_assignments',
+      },
       { name: 'idx_record_assignments_user', table: 'record_assignments' },
       { name: 'idx_users_rank_level', table: 'users' },
-      { name: 'idx_construction_projects_publication_status', table: 'construction_projects' },
-      { name: 'idx_repair_projects_publication_status', table: 'repair_projects' },
-      { name: 'idx_university_operations_publication_status', table: 'university_operations' },
-      { name: 'idx_construction_projects_campus', table: 'construction_projects' },
+      {
+        name: 'idx_construction_projects_publication_status',
+        table: 'construction_projects',
+      },
+      {
+        name: 'idx_repair_projects_publication_status',
+        table: 'repair_projects',
+      },
+      {
+        name: 'idx_university_operations_publication_status',
+        table: 'university_operations',
+      },
+      {
+        name: 'idx_construction_projects_campus',
+        table: 'construction_projects',
+      },
       { name: 'idx_repair_projects_campus', table: 'repair_projects' },
-      { name: 'idx_university_operations_campus', table: 'university_operations' },
-      { name: 'idx_construction_projects_created_by', table: 'construction_projects' },
+      {
+        name: 'idx_university_operations_campus',
+        table: 'university_operations',
+      },
+      {
+        name: 'idx_construction_projects_created_by',
+        table: 'construction_projects',
+      },
       { name: 'idx_repair_projects_created_by', table: 'repair_projects' },
-      { name: 'idx_university_operations_created_by', table: 'university_operations' },
-      { name: 'idx_construction_projects_campus_status', table: 'construction_projects' },
+      {
+        name: 'idx_university_operations_created_by',
+        table: 'university_operations',
+      },
+      {
+        name: 'idx_construction_projects_campus_status',
+        table: 'construction_projects',
+      },
       { name: 'idx_repair_projects_campus_status', table: 'repair_projects' },
-      { name: 'idx_university_operations_campus_status', table: 'university_operations' },
+      {
+        name: 'idx_university_operations_campus_status',
+        table: 'university_operations',
+      },
     ];
 
     for (const { name, table } of expectedIndexes) {
-      const result = await pool.query(`
+      const result = await pool.query(
+        `
         SELECT indexname
         FROM pg_indexes
         WHERE schemaname = 'public' AND indexname = $1
-      `, [name]);
+      `,
+        [name],
+      );
 
       if (result.rows.length > 0) {
         console.log(`  ✓ Index '${name}' EXISTS on ${table}`);
@@ -66,8 +99,14 @@ async function verifyIndexes() {
       WHERE module = 'construction-projects' AND record_id = '00000000-0000-0000-0000-000000000000'
     `);
     const plan1 = test1.rows[0]['QUERY PLAN'][0].Plan;
-    if (plan1['Index Name'] === 'idx_record_assignments_module_record' || plan1.Plans?.[0]?.['Index Name'] === 'idx_record_assignments_module_record') {
-      console.log('  ✓ record_assignments query uses idx_record_assignments_module_record');
+    if (
+      plan1['Index Name'] === 'idx_record_assignments_module_record' ||
+      plan1.Plans?.[0]?.['Index Name'] ===
+        'idx_record_assignments_module_record'
+    ) {
+      console.log(
+        '  ✓ record_assignments query uses idx_record_assignments_module_record',
+      );
     } else {
       console.log('  ⚠  record_assignments query not using expected index');
       console.log('     Plan:', JSON.stringify(plan1, null, 2));
@@ -82,17 +121,24 @@ async function verifyIndexes() {
     const plan2 = test2.rows[0]['QUERY PLAN'][0].Plan;
     const usesCompositeIndex =
       plan2['Index Name'] === 'idx_construction_projects_campus_status' ||
-      plan2.Plans?.[0]?.['Index Name'] === 'idx_construction_projects_campus_status';
+      plan2.Plans?.[0]?.['Index Name'] ===
+        'idx_construction_projects_campus_status';
     const usesCampusIndex =
       plan2['Index Name'] === 'idx_construction_projects_campus' ||
       plan2.Plans?.[0]?.['Index Name'] === 'idx_construction_projects_campus';
 
     if (usesCompositeIndex) {
-      console.log('  ✓ construction_projects query uses idx_construction_projects_campus_status (composite)');
+      console.log(
+        '  ✓ construction_projects query uses idx_construction_projects_campus_status (composite)',
+      );
     } else if (usesCampusIndex) {
-      console.log('  ✓ construction_projects query uses idx_construction_projects_campus');
+      console.log(
+        '  ✓ construction_projects query uses idx_construction_projects_campus',
+      );
     } else {
-      console.log('  ⚠  construction_projects query may not be using expected index');
+      console.log(
+        '  ⚠  construction_projects query may not be using expected index',
+      );
       console.log('     Plan:', JSON.stringify(plan2, null, 2));
     }
 
@@ -103,7 +149,10 @@ async function verifyIndexes() {
       WHERE rank_level >= 50 AND deleted_at IS NULL
     `);
     const plan3 = test3.rows[0]['QUERY PLAN'][0].Plan;
-    if (plan3['Index Name'] === 'idx_users_rank_level' || plan3.Plans?.[0]?.['Index Name'] === 'idx_users_rank_level') {
+    if (
+      plan3['Index Name'] === 'idx_users_rank_level' ||
+      plan3.Plans?.[0]?.['Index Name'] === 'idx_users_rank_level'
+    ) {
       console.log('  ✓ users query uses idx_users_rank_level');
     } else {
       console.log('  ⚠  users query not using expected index');
@@ -139,7 +188,6 @@ async function verifyIndexes() {
       console.log('\nAction Required: Review migration 013 execution\n');
       process.exit(1);
     }
-
   } catch (error) {
     console.error('\n✗ Verification failed:', error.message);
     process.exit(1);

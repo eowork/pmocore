@@ -1,5 +1,10 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsDateString, IsNumber, IsUUID,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+  IsNumber,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateRevisionOrderDto {

@@ -30,16 +30,21 @@ async function verifyMigrations() {
     ];
 
     for (const { name, migration } of tables) {
-      const result = await pool.query(`
+      const result = await pool.query(
+        `
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = $1
-      `, [name]);
+      `,
+        [name],
+      );
 
       if (result.rows.length > 0) {
         console.log(`  ✓ Table '${name}' EXISTS (migration ${migration})`);
       } else {
-        console.log(`  ✗ Table '${name}' MISSING (migration ${migration} not applied)`);
+        console.log(
+          `  ✗ Table '${name}' MISSING (migration ${migration} not applied)`,
+        );
         allPassed = false;
       }
     }
@@ -50,30 +55,77 @@ async function verifyMigrations() {
     const columns = [
       { table: 'users', column: 'rank_level', migration: '008' },
       { table: 'users', column: 'campus', migration: '011' },
-      { table: 'construction_projects', column: 'publication_status', migration: '007' },
-      { table: 'construction_projects', column: 'submitted_by', migration: '007' },
-      { table: 'construction_projects', column: 'submitted_at', migration: '007' },
-      { table: 'construction_projects', column: 'reviewed_by', migration: '007' },
-      { table: 'construction_projects', column: 'reviewed_at', migration: '007' },
-      { table: 'construction_projects', column: 'review_notes', migration: '007' },
-      { table: 'construction_projects', column: 'assigned_to', migration: '010' },
-      { table: 'repair_projects', column: 'publication_status', migration: '007' },
+      {
+        table: 'construction_projects',
+        column: 'publication_status',
+        migration: '007',
+      },
+      {
+        table: 'construction_projects',
+        column: 'submitted_by',
+        migration: '007',
+      },
+      {
+        table: 'construction_projects',
+        column: 'submitted_at',
+        migration: '007',
+      },
+      {
+        table: 'construction_projects',
+        column: 'reviewed_by',
+        migration: '007',
+      },
+      {
+        table: 'construction_projects',
+        column: 'reviewed_at',
+        migration: '007',
+      },
+      {
+        table: 'construction_projects',
+        column: 'review_notes',
+        migration: '007',
+      },
+      {
+        table: 'construction_projects',
+        column: 'assigned_to',
+        migration: '010',
+      },
+      {
+        table: 'repair_projects',
+        column: 'publication_status',
+        migration: '007',
+      },
       { table: 'repair_projects', column: 'assigned_to', migration: '010' },
-      { table: 'university_operations', column: 'publication_status', migration: '007' },
-      { table: 'university_operations', column: 'assigned_to', migration: '010' },
+      {
+        table: 'university_operations',
+        column: 'publication_status',
+        migration: '007',
+      },
+      {
+        table: 'university_operations',
+        column: 'assigned_to',
+        migration: '010',
+      },
     ];
 
     for (const { table, column, migration } of columns) {
-      const result = await pool.query(`
+      const result = await pool.query(
+        `
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = $1 AND column_name = $2
-      `, [table, column]);
+      `,
+        [table, column],
+      );
 
       if (result.rows.length > 0) {
-        console.log(`  ✓ Column '${table}.${column}' EXISTS (migration ${migration})`);
+        console.log(
+          `  ✓ Column '${table}.${column}' EXISTS (migration ${migration})`,
+        );
       } else {
-        console.log(`  ✗ Column '${table}.${column}' MISSING (migration ${migration} not applied)`);
+        console.log(
+          `  ✗ Column '${table}.${column}' MISSING (migration ${migration} not applied)`,
+        );
         allPassed = false;
       }
     }
@@ -87,16 +139,21 @@ async function verifyMigrations() {
     ];
 
     for (const { name, migration } of functions) {
-      const result = await pool.query(`
+      const result = await pool.query(
+        `
         SELECT routine_name
         FROM information_schema.routines
         WHERE routine_schema = 'public' AND routine_name = $1
-      `, [name]);
+      `,
+        [name],
+      );
 
       if (result.rows.length > 0) {
         console.log(`  ✓ Function '${name}()' EXISTS (migration ${migration})`);
       } else {
-        console.log(`  ⚠  Function '${name}()' MISSING (migration ${migration} may not be applied)`);
+        console.log(
+          `  ⚠  Function '${name}()' MISSING (migration ${migration} may not be applied)`,
+        );
         // Functions are less critical, don't fail verification
       }
     }
@@ -111,10 +168,11 @@ async function verifyMigrations() {
     } else {
       console.log('✗ Some migrations are MISSING');
       console.log('✗ Database schema is INCOMPLETE');
-      console.log('\nAction Required: Execute missing migrations before production deployment\n');
+      console.log(
+        '\nAction Required: Execute missing migrations before production deployment\n',
+      );
       process.exit(1);
     }
-
   } catch (error) {
     console.error('\n✗ Verification failed:', error.message);
     process.exit(1);

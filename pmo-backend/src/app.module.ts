@@ -7,6 +7,7 @@ import type { MikroOrmModuleOptions } from '@mikro-orm/nestjs';
 import { PostgreSqlDriver } from '@mikro-orm/postgresql';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { numberFromConfig } from './common/config.util';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -52,7 +53,7 @@ import { JwtAuthGuard } from './auth/guards';
       useFactory: (configService: ConfigService): MikroOrmModuleOptions => ({
         driver: PostgreSqlDriver,
         host: configService.get('DATABASE_HOST', 'localhost'),
-        port: configService.get<number>('DATABASE_PORT', 5432),
+        port: numberFromConfig(configService, 'DATABASE_PORT', 5432),
         dbName: configService.get('DATABASE_NAME', 'pmo_dashboard'),
         user: configService.get('DATABASE_USER', 'postgres'),
         password: configService.get('DATABASE_PASSWORD', 'postgres'),

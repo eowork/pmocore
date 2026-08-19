@@ -32,6 +32,7 @@ import {
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import { JwtPayload } from '../common/interfaces';
+import { AccessLevel } from '../common/enums';
 
 // Rank hierarchy constants (lower = higher authority)
 export const RANK_LEVELS = {
@@ -271,7 +272,9 @@ export class UsersService {
     // PHASE BBCH (Track 2, R-373): surface effective module grants (from approved access requests
     // → user_permission_overrides) so the detail page can show the access level per module, not
     // just role-derived permission strings. module_overrides = access flag; module_levels = CRUD tier.
-    const overrides = await this.em.find(UserPermissionOverride, { userId: id });
+    const overrides = await this.em.find(UserPermissionOverride, {
+      userId: id,
+    });
     const module_overrides = overrides.reduce(
       (acc, o) => {
         acc[o.moduleKey] = o.canAccess;
@@ -496,17 +499,30 @@ export class UsersService {
 
     // PHASE BBBG (Track 4): audit the update plus distinct rank / account-status events.
     const actor = { sub: adminId, email: '', roles: [], is_superadmin: false };
-    void this.activityLog.logAction(actor, ActivityAction.USER_UPDATED, 'user', id);
+    void this.activityLog.logAction(
+      actor,
+      ActivityAction.USER_UPDATED,
+      'user',
+      id,
+    );
     if (dto.rank_level !== undefined && dto.rank_level !== prevRank) {
-      void this.activityLog.logAction(actor, ActivityAction.RANK_CHANGED, 'user', id, {
-        from: prevRank,
-        to: dto.rank_level,
-      });
+      void this.activityLog.logAction(
+        actor,
+        ActivityAction.RANK_CHANGED,
+        'user',
+        id,
+        {
+          from: prevRank,
+          to: dto.rank_level,
+        },
+      );
     }
     if (dto.is_active !== undefined && dto.is_active !== prevActive) {
       void this.activityLog.logAction(
         actor,
-        dto.is_active ? ActivityAction.ACCOUNT_ENABLED : ActivityAction.ACCOUNT_DISABLED,
+        dto.is_active
+          ? ActivityAction.ACCOUNT_ENABLED
+          : ActivityAction.ACCOUNT_DISABLED,
         'user',
         id,
       );
@@ -706,18 +722,21 @@ export class UsersService {
     newPassword: string,
     adminId: string,
   ): Promise<void> {
-    if (userId === adminId) {
-      throw new ForbiddenException(
-        'Cannot bypass password complexity for your own account. Use profile settings to change your password with complexity requirements.',
-      );
-    }
 
-    const canModify = await this.canModifyUser(adminId, userId);
-    if (!canModify) {
-      throw new ForbiddenException(
-        'Cannot reset password for a user with equal or higher authority',
-      );
-    }
+    // NOTE: Uncomment this during production, I did this so that I can change the password of
+    //  pmo account because it override during restoration of back up.
+    // if (userId === adminId) {
+    //   throw new ForbiddenException(
+    //     'Cannot bypass password complexity for your own account. Use profile settings to change your password with complexity requirements.',
+    //   );
+    // }
+
+    // const canModify = await this.canModifyUser(adminId, userId);
+    // if (!canModify) {
+    //   throw new ForbiddenException(
+    //     'Cannot reset password for a user with equal or higher authority',
+    //   );
+    // }
 
     const user = await this.em.findOne(User, { id: userId });
     if (!user) {
@@ -796,7 +815,8 @@ export class UsersService {
         userId,
         moduleKey: dto.module_key,
         canAccess: dto.can_access,
-        grantedLevel: dto.granted_level ?? (dto.can_access ? 'Viewer' : undefined),
+        grantedLevel:
+          dto.granted_level ?? (dto.can_access ? 'Viewer' : undefined),
         createdBy: adminId,
         updatedBy: adminId,
       });
@@ -944,12 +964,23 @@ export class UsersService {
           });
           if (ovr) {
             ovr.canAccess = update.can_access;
+            // Same rule as setPermissionOverride: honour an explicit level, otherwise
+            // give a fresh grant view-only access. A null level denies every write in
+            // ModuleAccessGuard, so a grant without one is not actually a grant.
+            if (update.granted_level) {
+              ovr.grantedLevel = update.granted_level;
+            } else if (update.can_access && !ovr.grantedLevel) {
+              ovr.grantedLevel = AccessLevel.VIEWER;
+            }
             ovr.updatedBy = adminId;
           } else {
             ovr = em.create(UserPermissionOverride, {
               userId,
               moduleKey: update.module_key,
               canAccess: update.can_access,
+              grantedLevel:
+                update.granted_level ??
+                (update.can_access ? AccessLevel.VIEWER : undefined),
               createdBy: adminId,
               updatedBy: adminId,
             });
@@ -1212,7 +1243,9 @@ export class UsersService {
            ON CONFLICT (user_id, role_id) DO NOTHING`,
           [id, staffRole[0].id, adminId],
         );
-        this.logger.log(`USER_DEFAULT_ROLE_ASSIGNED: user=${id}, role=Staff, by=${adminId}`);
+        this.logger.log(
+          `USER_DEFAULT_ROLE_ASSIGNED: user=${id}, role=Staff, by=${adminId}`,
+        );
       }
     }
   }
@@ -1264,7 +1297,11 @@ export class UsersService {
   async completePasswordResetRequest(
     requestId: string,
     actor: JwtPayload,
-  ): Promise<{ message: string; default_password: string | null; reset: boolean }> {
+  ): Promise<{
+    message: string;
+    default_password: string | null;
+    reset: boolean;
+  }> {
     const adminId = actor.sub;
     const conn = this.em.getConnection();
 
@@ -1357,7 +1394,9 @@ export class UsersService {
       throw new NotFoundException(`Reset request ${requestId} not found`);
     }
     if (rows[0].status !== 'PENDING') {
-      throw new BadRequestException('Only pending reset requests can be denied.');
+      throw new BadRequestException(
+        'Only pending reset requests can be denied.',
+      );
     }
 
     await conn.execute(

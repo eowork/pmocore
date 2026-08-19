@@ -22,1352 +22,6 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
-        "item_number": {
-          "name": "item_number",
-          "type": "varchar(50)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 50,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "text"
-        },
-        "unit": {
-          "name": "unit",
-          "type": "varchar(20)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 20,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "estimated_material_cost": {
-          "name": "estimated_material_cost",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "estimated_labor_cost": {
-          "name": "estimated_labor_cost",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "unit_cost": {
-          "name": "unit_cost",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "total_cost": {
-          "name": "total_cost",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "is_unit_cost_overridden": {
-          "name": "is_unit_cost_overridden",
-          "type": "bool",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": "false",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "boolean"
-        },
-        "date_entry": {
-          "name": "date_entry",
-          "type": "date",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 0,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "date"
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(50)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 50,
-          "precision": null,
-          "scale": null,
-          "default": "'Active'",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "remarks": {
-          "name": "remarks",
-          "type": "text",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "text"
-        },
-        "category": {
-          "name": "category",
-          "type": "varchar(100)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 100,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "phase": {
-          "name": "phase",
-          "type": "varchar(100)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 100,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "is_variation_order": {
-          "name": "is_variation_order",
-          "type": "bool",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": "false",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "boolean"
-        },
-        "parent_item_id": {
-          "name": "parent_item_id",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "json"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamptz(6)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": 6,
-          "precision": null,
-          "scale": null,
-          "default": "now()",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "datetime"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamptz(6)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": 6,
-          "precision": null,
-          "scale": null,
-          "default": "now()",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "datetime"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamptz(6)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 6,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "datetime"
-        },
-        "deleted_by": {
-          "name": "deleted_by",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
-        "progress": {
-          "name": "progress",
-          "type": "numeric(5,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": 5,
-          "scale": 2,
-          "default": "0.00",
-          "comment": "Percent completion of this POW item (0–100)",
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "int4",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": 32,
-          "scale": 0,
-          "default": "0",
-          "comment": "Display order (ascending); ORM orders by sort_order ASC, created_at ASC",
-          "enumItems": [],
-          "mappedType": "integer"
-        },
-        "start_date": {
-          "name": "start_date",
-          "type": "date",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 0,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "date"
-        },
-        "end_date": {
-          "name": "end_date",
-          "type": "date",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 0,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "date"
-        },
-        "project_duration": {
-          "name": "project_duration",
-          "type": "varchar(100)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 100,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "variance": {
-          "name": "variance",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": "Variance between estimated and actual cost",
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "estimated_project_cost": {
-          "name": "estimated_project_cost",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": "Total estimated cost (material + labor, or standalone figure)",
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "date_of_entry": {
-          "name": "date_of_entry",
-          "type": "date",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 0,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "date"
-        }
-      },
-      "name": "_archived_construction_pow_items_20260521",
-      "schema": "public",
-      "indexes": [
-        {
-          "columnNames": [
-            "id"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "construction_pow_items_pkey",
-          "unique": true,
-          "primary": true
-        },
-        {
-          "columnNames": [
-            "project_id",
-            "sort_order",
-            "created_at"
-          ],
-          "composite": true,
-          "constraint": false,
-          "keyName": "idx_construction_pow_items_order",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "project_id"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_construction_pow_items_project",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "project_id",
-            "status"
-          ],
-          "composite": true,
-          "constraint": false,
-          "keyName": "idx_construction_pow_items_status",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "category"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_cpi_category",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "is_variation_order"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_cpi_isvo",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "phase"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_cpi_phase",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "project_id"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_cpi_project",
-          "unique": false,
-          "primary": false
-        }
-      ],
-      "checks": [],
-      "foreignKeys": {
-        "construction_pow_items_deleted_by_fkey": {
-          "columnNames": [
-            "deleted_by"
-          ],
-          "constraintName": "construction_pow_items_deleted_by_fkey",
-          "localTableName": "public._archived_construction_pow_items_20260521",
-          "referencedTableName": "public.users",
-          "referencedColumnNames": [
-            "id"
-          ],
-          "updateRule": "no action",
-          "deleteRule": "no action"
-        },
-        "construction_pow_items_parent_item_id_fkey": {
-          "columnNames": [
-            "parent_item_id"
-          ],
-          "constraintName": "construction_pow_items_parent_item_id_fkey",
-          "localTableName": "public._archived_construction_pow_items_20260521",
-          "referencedTableName": "public._archived_construction_pow_items_20260521",
-          "referencedColumnNames": [
-            "id"
-          ],
-          "updateRule": "no action",
-          "deleteRule": "no action"
-        },
-        "construction_pow_items_project_id_fkey": {
-          "columnNames": [
-            "project_id"
-          ],
-          "constraintName": "construction_pow_items_project_id_fkey",
-          "localTableName": "public._archived_construction_pow_items_20260521",
-          "referencedTableName": "public.construction_projects",
-          "referencedColumnNames": [
-            "id"
-          ],
-          "updateRule": "no action",
-          "deleteRule": "no action"
-        }
-      },
-      "nativeEnums": {
-        "building_status_enum": {
-          "name": "building_status_enum",
-          "schema": "public",
-          "items": [
-            "OPERATIONAL",
-            "UNDER_CONSTRUCTION",
-            "RENOVATION",
-            "CLOSED"
-          ]
-        },
-        "building_type_enum": {
-          "name": "building_type_enum",
-          "schema": "public",
-          "items": [
-            "ACADEMIC",
-            "ADMINISTRATIVE",
-            "RESIDENTIAL",
-            "OTHER"
-          ]
-        },
-        "campus_enum": {
-          "name": "campus_enum",
-          "schema": "public",
-          "items": [
-            "MAIN",
-            "CABADBARAN",
-            "BOTH"
-          ]
-        },
-        "condition_enum": {
-          "name": "condition_enum",
-          "schema": "public",
-          "items": [
-            "POOR",
-            "FAIR",
-            "GOOD",
-            "VERY_GOOD",
-            "EXCELLENT"
-          ]
-        },
-        "contractor_status_enum": {
-          "name": "contractor_status_enum",
-          "schema": "public",
-          "items": [
-            "ACTIVE",
-            "SUSPENDED",
-            "BLACKLISTED"
-          ]
-        },
-        "department_status_enum": {
-          "name": "department_status_enum",
-          "schema": "public",
-          "items": [
-            "ACTIVE",
-            "INACTIVE"
-          ]
-        },
-        "fund_type_enum": {
-          "name": "fund_type_enum",
-          "schema": "public",
-          "items": [
-            "RAF_PROGRAMS",
-            "RAF_PROJECTS",
-            "RAF_CONTINUING",
-            "IGF_MAIN",
-            "IGF_CABADBARAN"
-          ]
-        },
-        "media_type_enum": {
-          "name": "media_type_enum",
-          "schema": "public",
-          "items": [
-            "IMAGE",
-            "VIDEO",
-            "DOCUMENT",
-            "OTHER"
-          ]
-        },
-        "module_type": {
-          "name": "module_type",
-          "schema": "public",
-          "items": [
-            "CONSTRUCTION",
-            "REPAIR",
-            "OPERATIONS",
-            "ALL"
-          ]
-        },
-        "operation_type_enum": {
-          "name": "operation_type_enum",
-          "schema": "public",
-          "items": [
-            "HIGHER_EDUCATION",
-            "ADVANCED_EDUCATION",
-            "RESEARCH",
-            "TECHNICAL_ADVISORY"
-          ]
-        },
-        "project_status_enum": {
-          "name": "project_status_enum",
-          "schema": "public",
-          "items": [
-            "PLANNING",
-            "ONGOING",
-            "COMPLETED",
-            "ON_HOLD",
-            "CANCELLED",
-            "PROPOSAL",
-            "COMPLETE"
-          ]
-        },
-        "project_type_enum": {
-          "name": "project_type_enum",
-          "schema": "public",
-          "items": [
-            "CONSTRUCTION",
-            "REPAIR",
-            "RESEARCH",
-            "EXTENSION",
-            "TRAINING",
-            "OTHER"
-          ]
-        },
-        "publication_status_enum": {
-          "name": "publication_status_enum",
-          "schema": "public",
-          "items": [
-            "DRAFT",
-            "PENDING_REVIEW",
-            "PUBLISHED",
-            "REJECTED"
-          ]
-        },
-        "repair_status_enum": {
-          "name": "repair_status_enum",
-          "schema": "public",
-          "items": [
-            "REPORTED",
-            "INSPECTED",
-            "APPROVED",
-            "IN_PROGRESS",
-            "COMPLETED",
-            "CANCELLED"
-          ]
-        },
-        "room_status_enum": {
-          "name": "room_status_enum",
-          "schema": "public",
-          "items": [
-            "AVAILABLE",
-            "OCCUPIED",
-            "UNDER_MAINTENANCE",
-            "UNAVAILABLE"
-          ]
-        },
-        "room_type_enum": {
-          "name": "room_type_enum",
-          "schema": "public",
-          "items": [
-            "CLASSROOM",
-            "LABORATORY",
-            "OFFICE",
-            "CONFERENCE",
-            "AUDITORIUM",
-            "OTHER"
-          ]
-        },
-        "semester_enum": {
-          "name": "semester_enum",
-          "schema": "public",
-          "items": [
-            "FIRST",
-            "SECOND",
-            "SUMMER"
-          ]
-        },
-        "setting_data_type_enum": {
-          "name": "setting_data_type_enum",
-          "schema": "public",
-          "items": [
-            "STRING",
-            "NUMBER",
-            "BOOLEAN",
-            "JSON",
-            "DATE",
-            "DATETIME"
-          ]
-        },
-        "urgency_level_enum": {
-          "name": "urgency_level_enum",
-          "schema": "public",
-          "items": [
-            "LOW",
-            "MEDIUM",
-            "HIGH",
-            "CRITICAL"
-          ]
-        }
-      },
-      "comment": null
-    },
-    {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": true,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": "gen_random_uuid()",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
-        "fiscal_year": {
-          "name": "fiscal_year",
-          "type": "int4",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": 32,
-          "scale": 0,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "integer"
-        },
-        "appropriation": {
-          "name": "appropriation",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "obligation": {
-          "name": "obligation",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "disbursement": {
-          "name": "disbursement",
-          "type": "numeric(15,2)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 15,
-          "scale": 2,
-          "default": "0",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "decimal"
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "json"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamptz(6)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": 6,
-          "precision": null,
-          "scale": null,
-          "default": "now()",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "datetime"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamptz(6)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": 6,
-          "precision": null,
-          "scale": null,
-          "default": "now()",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "datetime"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamptz(6)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 6,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "datetime"
-        },
-        "deleted_by": {
-          "name": "deleted_by",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
-        "activity_title": {
-          "name": "activity_title",
-          "type": "varchar(255)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 255,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "transaction_category": {
-          "name": "transaction_category",
-          "type": "varchar(100)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 100,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "remarks": {
-          "name": "remarks",
-          "type": "text",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "text"
-        },
-        "payment_reference": {
-          "name": "payment_reference",
-          "type": "varchar(100)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": 100,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "string"
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(50)",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": 50,
-          "precision": null,
-          "scale": null,
-          "default": "'ALLOCATED'",
-          "comment": null,
-          "enumItems": [
-            "ALLOCATED",
-            "OBLIGATED",
-            "DISBURSED",
-            "LIQUIDATED"
-          ],
-          "mappedType": "enum"
-        }
-      },
-      "name": "_archived_construction_project_financials_20260522",
-      "schema": "public",
-      "indexes": [
-        {
-          "columnNames": [
-            "id"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "construction_project_financials_pkey",
-          "unique": true,
-          "primary": true
-        },
-        {
-          "columnNames": [
-            "project_id"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_cpf_project",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "fiscal_year"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "idx_cpf_year",
-          "unique": false,
-          "primary": false
-        }
-      ],
-      "checks": [],
-      "foreignKeys": {
-        "construction_project_financials_project_id_fkey": {
-          "columnNames": [
-            "project_id"
-          ],
-          "constraintName": "construction_project_financials_project_id_fkey",
-          "localTableName": "public._archived_construction_project_financials_20260522",
-          "referencedTableName": "public.construction_projects",
-          "referencedColumnNames": [
-            "id"
-          ],
-          "updateRule": "no action",
-          "deleteRule": "no action"
-        }
-      },
-      "nativeEnums": {
-        "building_status_enum": {
-          "name": "building_status_enum",
-          "schema": "public",
-          "items": [
-            "OPERATIONAL",
-            "UNDER_CONSTRUCTION",
-            "RENOVATION",
-            "CLOSED"
-          ]
-        },
-        "building_type_enum": {
-          "name": "building_type_enum",
-          "schema": "public",
-          "items": [
-            "ACADEMIC",
-            "ADMINISTRATIVE",
-            "RESIDENTIAL",
-            "OTHER"
-          ]
-        },
-        "campus_enum": {
-          "name": "campus_enum",
-          "schema": "public",
-          "items": [
-            "MAIN",
-            "CABADBARAN",
-            "BOTH"
-          ]
-        },
-        "condition_enum": {
-          "name": "condition_enum",
-          "schema": "public",
-          "items": [
-            "POOR",
-            "FAIR",
-            "GOOD",
-            "VERY_GOOD",
-            "EXCELLENT"
-          ]
-        },
-        "contractor_status_enum": {
-          "name": "contractor_status_enum",
-          "schema": "public",
-          "items": [
-            "ACTIVE",
-            "SUSPENDED",
-            "BLACKLISTED"
-          ]
-        },
-        "department_status_enum": {
-          "name": "department_status_enum",
-          "schema": "public",
-          "items": [
-            "ACTIVE",
-            "INACTIVE"
-          ]
-        },
-        "fund_type_enum": {
-          "name": "fund_type_enum",
-          "schema": "public",
-          "items": [
-            "RAF_PROGRAMS",
-            "RAF_PROJECTS",
-            "RAF_CONTINUING",
-            "IGF_MAIN",
-            "IGF_CABADBARAN"
-          ]
-        },
-        "media_type_enum": {
-          "name": "media_type_enum",
-          "schema": "public",
-          "items": [
-            "IMAGE",
-            "VIDEO",
-            "DOCUMENT",
-            "OTHER"
-          ]
-        },
-        "module_type": {
-          "name": "module_type",
-          "schema": "public",
-          "items": [
-            "CONSTRUCTION",
-            "REPAIR",
-            "OPERATIONS",
-            "ALL"
-          ]
-        },
-        "operation_type_enum": {
-          "name": "operation_type_enum",
-          "schema": "public",
-          "items": [
-            "HIGHER_EDUCATION",
-            "ADVANCED_EDUCATION",
-            "RESEARCH",
-            "TECHNICAL_ADVISORY"
-          ]
-        },
-        "project_status_enum": {
-          "name": "project_status_enum",
-          "schema": "public",
-          "items": [
-            "PLANNING",
-            "ONGOING",
-            "COMPLETED",
-            "ON_HOLD",
-            "CANCELLED",
-            "PROPOSAL",
-            "COMPLETE"
-          ]
-        },
-        "project_type_enum": {
-          "name": "project_type_enum",
-          "schema": "public",
-          "items": [
-            "CONSTRUCTION",
-            "REPAIR",
-            "RESEARCH",
-            "EXTENSION",
-            "TRAINING",
-            "OTHER"
-          ]
-        },
-        "publication_status_enum": {
-          "name": "publication_status_enum",
-          "schema": "public",
-          "items": [
-            "DRAFT",
-            "PENDING_REVIEW",
-            "PUBLISHED",
-            "REJECTED"
-          ]
-        },
-        "repair_status_enum": {
-          "name": "repair_status_enum",
-          "schema": "public",
-          "items": [
-            "REPORTED",
-            "INSPECTED",
-            "APPROVED",
-            "IN_PROGRESS",
-            "COMPLETED",
-            "CANCELLED"
-          ]
-        },
-        "room_status_enum": {
-          "name": "room_status_enum",
-          "schema": "public",
-          "items": [
-            "AVAILABLE",
-            "OCCUPIED",
-            "UNDER_MAINTENANCE",
-            "UNAVAILABLE"
-          ]
-        },
-        "room_type_enum": {
-          "name": "room_type_enum",
-          "schema": "public",
-          "items": [
-            "CLASSROOM",
-            "LABORATORY",
-            "OFFICE",
-            "CONFERENCE",
-            "AUDITORIUM",
-            "OTHER"
-          ]
-        },
-        "semester_enum": {
-          "name": "semester_enum",
-          "schema": "public",
-          "items": [
-            "FIRST",
-            "SECOND",
-            "SUMMER"
-          ]
-        },
-        "setting_data_type_enum": {
-          "name": "setting_data_type_enum",
-          "schema": "public",
-          "items": [
-            "STRING",
-            "NUMBER",
-            "BOOLEAN",
-            "JSON",
-            "DATE",
-            "DATETIME"
-          ]
-        },
-        "urgency_level_enum": {
-          "name": "urgency_level_enum",
-          "schema": "public",
-          "items": [
-            "LOW",
-            "MEDIUM",
-            "HIGH",
-            "CRITICAL"
-          ]
-        }
-      },
-      "comment": null
-    },
-    {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": true,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": "gen_random_uuid()",
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",
@@ -6060,7 +4714,7 @@
           "precision": 5,
           "scale": 2,
           "default": "0.00",
-          "comment": "Percent completion of this milestone (0–100)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -6076,7 +4730,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Optional grouping: SITE_PREPARATION, STRUCTURAL, ARCHITECTURAL, MEP, FINISHING, OTHER",
+          "comment": null,
           "enumItems": [],
           "mappedType": "string"
         },
@@ -12150,7 +10804,7 @@
           "precision": null,
           "scale": null,
           "default": "'PUBLISHED'",
-          "comment": "Publication workflow state: DRAFT (Staff-created), PENDING_REVIEW, PUBLISHED (Admin-approved), REJECTED",
+          "comment": null,
           "enumItems": [
             "DRAFT",
             "PENDING_REVIEW",
@@ -12172,7 +10826,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "User who submitted the record for review",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -12188,7 +10842,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Timestamp when record was submitted for review",
+          "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
         },
@@ -12204,7 +10858,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Admin who reviewed/published the record",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -12220,7 +10874,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Timestamp when record was reviewed",
+          "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
         },
@@ -12236,7 +10890,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Notes from reviewer (especially for rejections)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -12252,7 +10906,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Delegated user who can view (non-PUBLISHED) and edit this record. ON DELETE SET NULL clears assignment if user deleted.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -12898,7 +11552,7 @@
           "precision": null,
           "scale": null,
           "default": "'[]'",
-          "comment": "UN Sustainable Development Goals aligned with this project (array of SDG_n keys)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -12914,7 +11568,7 @@
           "precision": null,
           "scale": null,
           "default": "'[]'",
-          "comment": "Per-project custom Supporting Document repository folders (rendered as repository cards) — mirrors custom_key_sections",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -12930,7 +11584,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "GGG-E: Others-tab data banking — additionalNotes, projectReferences[], specialInstructions, historicalReferences[], customMetadata{}",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -14853,7 +13507,7 @@
           "precision": null,
           "scale": null,
           "default": "'[]'",
-          "comment": "GGG-F WAR: [{description, category, date, percentage, remarks}]",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -14869,7 +13523,7 @@
           "precision": null,
           "scale": null,
           "default": "'[]'",
-          "comment": "GGG-F: [{userId, userName, position, role, date}] — references system users",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -14917,7 +13571,7 @@
           "precision": null,
           "scale": null,
           "default": "'[]'",
-          "comment": "GGG-F MPR: [{itemNumber, description, unit, quantity, unitCost, weightNumber, actualQtyThisPeriod, actualPercentToDate, costToDate}]",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -14997,7 +13651,7 @@
           "precision": null,
           "scale": null,
           "default": "'[]'",
-          "comment": "ZZZ-G: [{title,description,category,severity,status,responsibleParty,resolutionTargetDate,actualResolutionDate,mitigationAction,createdBy,createdAt}]",
+          "comment": null,
           "enumItems": [],
           "mappedType": "json"
         },
@@ -15013,7 +13667,7 @@
           "precision": 15,
           "scale": 2,
           "default": null,
-          "comment": "BBB-C: Billing billed to owner this period (WAR/MPR operational record; Progress Reports is the official record)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -15029,7 +13683,7 @@
           "precision": 5,
           "scale": 2,
           "default": null,
-          "comment": "BBB-C: Financial accomplishment % this period (WAR/MPR operational; Progress Reports is official)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         }
@@ -24048,6 +22702,1155 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
+        "section_key": {
+          "name": "section_key",
+          "type": "varchar(50)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 50,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "item_order": {
+          "name": "item_order",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": "0",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "icon": {
+          "name": "icon",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "link_url": {
+          "name": "link_url",
+          "type": "varchar(500)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 500,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "value_source": {
+          "name": "value_source",
+          "type": "varchar(50)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 50,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "manual_value": {
+          "name": "manual_value",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "media_id": {
+          "name": "media_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "is_published": {
+          "name": "is_published",
+          "type": "bool",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "true",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "boolean"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "is_pinned": {
+          "name": "is_pinned",
+          "type": "bool",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "false",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "boolean"
+        },
+        "scheduled_start": {
+          "name": "scheduled_start",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "scheduled_end": {
+          "name": "scheduled_end",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "page_key": {
+          "name": "page_key",
+          "type": "varchar(50)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 50,
+          "precision": null,
+          "scale": null,
+          "default": "'home'",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "color_token": {
+          "name": "color_token",
+          "type": "varchar(30)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 30,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "linked_project_id": {
+          "name": "linked_project_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "subtitle": {
+          "name": "subtitle",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "full_description": {
+          "name": "full_description",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "author": {
+          "name": "author",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "department": {
+          "name": "department",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "publish_date": {
+          "name": "publish_date",
+          "type": "date",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 0,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "date"
+        },
+        "is_featured": {
+          "name": "is_featured",
+          "type": "bool",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "false",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "boolean"
+        },
+        "status_text": {
+          "name": "status_text",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "campus_text": {
+          "name": "campus_text",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "budget_text": {
+          "name": "budget_text",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "completion_text": {
+          "name": "completion_text",
+          "type": "varchar(50)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 50,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        }
+      },
+      "name": "homepage_items",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "page_key",
+            "section_key",
+            "item_order"
+          ],
+          "composite": true,
+          "constraint": false,
+          "keyName": "homepage_items_page_section_index",
+          "unique": false,
+          "primary": false,
+          "expression": "CREATE INDEX homepage_items_page_section_index ON public.homepage_items USING btree (page_key, section_key, item_order) WHERE (deleted_at IS NULL)"
+        },
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "homepage_items_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "section_key",
+            "item_order"
+          ],
+          "composite": true,
+          "constraint": false,
+          "keyName": "homepage_items_section_order_index",
+          "unique": false,
+          "primary": false,
+          "expression": "CREATE INDEX homepage_items_section_order_index ON public.homepage_items USING btree (section_key, item_order) WHERE (deleted_at IS NULL)"
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {},
+      "nativeEnums": {
+        "building_status_enum": {
+          "name": "building_status_enum",
+          "schema": "public",
+          "items": [
+            "OPERATIONAL",
+            "UNDER_CONSTRUCTION",
+            "RENOVATION",
+            "CLOSED"
+          ]
+        },
+        "building_type_enum": {
+          "name": "building_type_enum",
+          "schema": "public",
+          "items": [
+            "ACADEMIC",
+            "ADMINISTRATIVE",
+            "RESIDENTIAL",
+            "OTHER"
+          ]
+        },
+        "campus_enum": {
+          "name": "campus_enum",
+          "schema": "public",
+          "items": [
+            "MAIN",
+            "CABADBARAN",
+            "BOTH"
+          ]
+        },
+        "condition_enum": {
+          "name": "condition_enum",
+          "schema": "public",
+          "items": [
+            "POOR",
+            "FAIR",
+            "GOOD",
+            "VERY_GOOD",
+            "EXCELLENT"
+          ]
+        },
+        "contractor_status_enum": {
+          "name": "contractor_status_enum",
+          "schema": "public",
+          "items": [
+            "ACTIVE",
+            "SUSPENDED",
+            "BLACKLISTED"
+          ]
+        },
+        "department_status_enum": {
+          "name": "department_status_enum",
+          "schema": "public",
+          "items": [
+            "ACTIVE",
+            "INACTIVE"
+          ]
+        },
+        "fund_type_enum": {
+          "name": "fund_type_enum",
+          "schema": "public",
+          "items": [
+            "RAF_PROGRAMS",
+            "RAF_PROJECTS",
+            "RAF_CONTINUING",
+            "IGF_MAIN",
+            "IGF_CABADBARAN"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "operation_type_enum": {
+          "name": "operation_type_enum",
+          "schema": "public",
+          "items": [
+            "HIGHER_EDUCATION",
+            "ADVANCED_EDUCATION",
+            "RESEARCH",
+            "TECHNICAL_ADVISORY"
+          ]
+        },
+        "project_status_enum": {
+          "name": "project_status_enum",
+          "schema": "public",
+          "items": [
+            "PLANNING",
+            "ONGOING",
+            "COMPLETED",
+            "ON_HOLD",
+            "CANCELLED",
+            "PROPOSAL",
+            "COMPLETE"
+          ]
+        },
+        "project_type_enum": {
+          "name": "project_type_enum",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "RESEARCH",
+            "EXTENSION",
+            "TRAINING",
+            "OTHER"
+          ]
+        },
+        "publication_status_enum": {
+          "name": "publication_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "PENDING_REVIEW",
+            "PUBLISHED",
+            "REJECTED"
+          ]
+        },
+        "repair_status_enum": {
+          "name": "repair_status_enum",
+          "schema": "public",
+          "items": [
+            "REPORTED",
+            "INSPECTED",
+            "APPROVED",
+            "IN_PROGRESS",
+            "COMPLETED",
+            "CANCELLED"
+          ]
+        },
+        "room_status_enum": {
+          "name": "room_status_enum",
+          "schema": "public",
+          "items": [
+            "AVAILABLE",
+            "OCCUPIED",
+            "UNDER_MAINTENANCE",
+            "UNAVAILABLE"
+          ]
+        },
+        "room_type_enum": {
+          "name": "room_type_enum",
+          "schema": "public",
+          "items": [
+            "CLASSROOM",
+            "LABORATORY",
+            "OFFICE",
+            "CONFERENCE",
+            "AUDITORIUM",
+            "OTHER"
+          ]
+        },
+        "semester_enum": {
+          "name": "semester_enum",
+          "schema": "public",
+          "items": [
+            "FIRST",
+            "SECOND",
+            "SUMMER"
+          ]
+        },
+        "setting_data_type_enum": {
+          "name": "setting_data_type_enum",
+          "schema": "public",
+          "items": [
+            "STRING",
+            "NUMBER",
+            "BOOLEAN",
+            "JSON",
+            "DATE",
+            "DATETIME"
+          ]
+        },
+        "urgency_level_enum": {
+          "name": "urgency_level_enum",
+          "schema": "public",
+          "items": [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "setting_key": {
+          "name": "setting_key",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": true,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "setting_value": {
+          "name": "setting_value",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "data_type": {
+          "name": "data_type",
+          "type": "varchar(20)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 20,
+          "precision": null,
+          "scale": null,
+          "default": "'string'",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "page_key": {
+          "name": "page_key",
+          "type": "varchar(50)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 50,
+          "precision": null,
+          "scale": null,
+          "default": "'home'",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        }
+      },
+      "name": "homepage_settings",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "homepage_settings_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "setting_key"
+          ],
+          "composite": false,
+          "constraint": true,
+          "keyName": "homepage_settings_setting_key_unique",
+          "unique": true,
+          "primary": false
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {},
+      "nativeEnums": {
+        "building_status_enum": {
+          "name": "building_status_enum",
+          "schema": "public",
+          "items": [
+            "OPERATIONAL",
+            "UNDER_CONSTRUCTION",
+            "RENOVATION",
+            "CLOSED"
+          ]
+        },
+        "building_type_enum": {
+          "name": "building_type_enum",
+          "schema": "public",
+          "items": [
+            "ACADEMIC",
+            "ADMINISTRATIVE",
+            "RESIDENTIAL",
+            "OTHER"
+          ]
+        },
+        "campus_enum": {
+          "name": "campus_enum",
+          "schema": "public",
+          "items": [
+            "MAIN",
+            "CABADBARAN",
+            "BOTH"
+          ]
+        },
+        "condition_enum": {
+          "name": "condition_enum",
+          "schema": "public",
+          "items": [
+            "POOR",
+            "FAIR",
+            "GOOD",
+            "VERY_GOOD",
+            "EXCELLENT"
+          ]
+        },
+        "contractor_status_enum": {
+          "name": "contractor_status_enum",
+          "schema": "public",
+          "items": [
+            "ACTIVE",
+            "SUSPENDED",
+            "BLACKLISTED"
+          ]
+        },
+        "department_status_enum": {
+          "name": "department_status_enum",
+          "schema": "public",
+          "items": [
+            "ACTIVE",
+            "INACTIVE"
+          ]
+        },
+        "fund_type_enum": {
+          "name": "fund_type_enum",
+          "schema": "public",
+          "items": [
+            "RAF_PROGRAMS",
+            "RAF_PROJECTS",
+            "RAF_CONTINUING",
+            "IGF_MAIN",
+            "IGF_CABADBARAN"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "operation_type_enum": {
+          "name": "operation_type_enum",
+          "schema": "public",
+          "items": [
+            "HIGHER_EDUCATION",
+            "ADVANCED_EDUCATION",
+            "RESEARCH",
+            "TECHNICAL_ADVISORY"
+          ]
+        },
+        "project_status_enum": {
+          "name": "project_status_enum",
+          "schema": "public",
+          "items": [
+            "PLANNING",
+            "ONGOING",
+            "COMPLETED",
+            "ON_HOLD",
+            "CANCELLED",
+            "PROPOSAL",
+            "COMPLETE"
+          ]
+        },
+        "project_type_enum": {
+          "name": "project_type_enum",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "RESEARCH",
+            "EXTENSION",
+            "TRAINING",
+            "OTHER"
+          ]
+        },
+        "publication_status_enum": {
+          "name": "publication_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "PENDING_REVIEW",
+            "PUBLISHED",
+            "REJECTED"
+          ]
+        },
+        "repair_status_enum": {
+          "name": "repair_status_enum",
+          "schema": "public",
+          "items": [
+            "REPORTED",
+            "INSPECTED",
+            "APPROVED",
+            "IN_PROGRESS",
+            "COMPLETED",
+            "CANCELLED"
+          ]
+        },
+        "room_status_enum": {
+          "name": "room_status_enum",
+          "schema": "public",
+          "items": [
+            "AVAILABLE",
+            "OCCUPIED",
+            "UNDER_MAINTENANCE",
+            "UNAVAILABLE"
+          ]
+        },
+        "room_type_enum": {
+          "name": "room_type_enum",
+          "schema": "public",
+          "items": [
+            "CLASSROOM",
+            "LABORATORY",
+            "OFFICE",
+            "CONFERENCE",
+            "AUDITORIUM",
+            "OTHER"
+          ]
+        },
+        "semester_enum": {
+          "name": "semester_enum",
+          "schema": "public",
+          "items": [
+            "FIRST",
+            "SECOND",
+            "SUMMER"
+          ]
+        },
+        "setting_data_type_enum": {
+          "name": "setting_data_type_enum",
+          "schema": "public",
+          "items": [
+            "STRING",
+            "NUMBER",
+            "BOOLEAN",
+            "JSON",
+            "DATE",
+            "DATETIME"
+          ]
+        },
+        "urgency_level_enum": {
+          "name": "urgency_level_enum",
+          "schema": "public",
+          "items": [
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
         "mediable_type": {
           "name": "mediable_type",
           "type": "varchar(100)",
@@ -26747,7 +26550,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase CX-F: Foreign key to pillar_indicator_taxonomy. All indicators must be linked to fixed taxonomy entries. Legacy orphan indicators have been migrated by migration 020.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -26784,7 +26587,7 @@
           "precision": 6,
           "scale": 2,
           "default": null,
-          "comment": "Optional user override for accomplishment rate (%). When set, replaces computed rate in display. Computed rate always recalculated from target/actual separately.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26800,7 +26603,7 @@
           "precision": 6,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q1 override for achievement rate (%). When set, replaces computed Q1 rate in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26816,7 +26619,7 @@
           "precision": 6,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q2 override for achievement rate (%). When set, replaces computed Q2 rate in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26832,7 +26635,7 @@
           "precision": 6,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q3 override for achievement rate (%). When set, replaces computed Q3 rate in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26848,7 +26651,7 @@
           "precision": 6,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q4 override for achievement rate (%). When set, replaces computed Q4 rate in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26864,7 +26667,7 @@
           "precision": 8,
           "scale": 2,
           "default": null,
-          "comment": "Optional annual override for variance (actual - target). When set, replaces computed annual variance in display. Does not affect stored target/actual values.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26880,7 +26683,7 @@
           "precision": 8,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q1 override for variance. When set, replaces computed Q1 variance in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26896,7 +26699,7 @@
           "precision": 8,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q2 override for variance. When set, replaces computed Q2 variance in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26912,7 +26715,7 @@
           "precision": 8,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q3 override for variance. When set, replaces computed Q3 variance in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26928,7 +26731,7 @@
           "precision": 8,
           "scale": 2,
           "default": null,
-          "comment": "Optional per-Q4 override for variance. When set, replaces computed Q4 variance in display.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26944,7 +26747,7 @@
           "precision": 15,
           "scale": 4,
           "default": "NULL::numeric",
-          "comment": "Phase HA: Optional BAR1 alignment override for displayed Total Target. When set, replaces auto-sum of quarterly targets as base for variance/rate computation.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26960,7 +26763,7 @@
           "precision": 15,
           "scale": 4,
           "default": "NULL::numeric",
-          "comment": "Phase HA: Optional BAR1 alignment override for displayed Total Actual. When set, replaces auto-sum of quarterly actuals as base for variance/rate computation.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "decimal"
         },
@@ -26976,7 +26779,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase HE: Catch-up plan narrative for APR/UPR reporting (Not Met Targets)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -26992,7 +26795,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase HE: Facilitating factors narrative for APR/UPR reporting (Met Targets)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -27008,7 +26811,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase HE: Ways forward narrative for APR/UPR reporting",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -27024,7 +26827,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase HK: Means of Verification — documentary or observable evidence supporting indicator accomplishment claims",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -29090,7 +28893,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase CY: Changed from VARCHAR(50) to operation_type_enum for type consistency with university_operations.operation_type. Migration 016b applied 2026-02-27.",
+          "comment": null,
           "enumItems": [
             "HIGHER_EDUCATION",
             "ADVANCED_EDUCATION",
@@ -37056,7 +36859,7 @@
           "precision": null,
           "scale": null,
           "default": "'PUBLISHED'",
-          "comment": "Publication workflow state: DRAFT (Staff-created), PENDING_REVIEW, PUBLISHED (Admin-approved), REJECTED",
+          "comment": null,
           "enumItems": [
             "DRAFT",
             "PENDING_REVIEW",
@@ -37078,7 +36881,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "User who submitted the record for review",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -37094,7 +36897,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Timestamp when record was submitted for review",
+          "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
         },
@@ -37110,7 +36913,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Admin who reviewed/published the record",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -37126,7 +36929,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Timestamp when record was reviewed",
+          "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
         },
@@ -37142,7 +36945,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Notes from reviewer (especially for rejections)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -37158,7 +36961,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Delegated user who can view (non-PUBLISHED) and edit this record. ON DELETE SET NULL clears assignment if user deleted.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         }
@@ -40992,7 +40795,7 @@
           "precision": null,
           "scale": null,
           "default": "'PUBLISHED'",
-          "comment": "Publication workflow state: DRAFT (Staff-created), PENDING_REVIEW, PUBLISHED (Admin-approved), REJECTED",
+          "comment": null,
           "enumItems": [
             "DRAFT",
             "PENDING_REVIEW",
@@ -41014,7 +40817,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "User who submitted the record for review",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -41030,7 +40833,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Timestamp when record was submitted for review",
+          "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
         },
@@ -41046,7 +40849,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Admin who reviewed/published the record",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -41062,7 +40865,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Timestamp when record was reviewed",
+          "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
         },
@@ -41078,7 +40881,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Notes from reviewer (especially for rejections)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -41094,7 +40897,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Delegated user who can view (non-PUBLISHED) and edit this record. ON DELETE SET NULL clears assignment if user deleted.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -42977,7 +42780,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Module type: CONSTRUCTION (COI), REPAIR, OPERATIONS, or ALL (full access)",
+          "comment": null,
           "enumItems": [
             "CONSTRUCTION",
             "REPAIR",
@@ -43310,7 +43113,7 @@
           ]
         }
       },
-      "comment": "Tracks which project modules each admin user can manage. Used for scoped pending review access."
+      "comment": null
     },
     {
       "columns": {
@@ -43906,7 +43709,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Module identifier: coi, repairs, contractors, funding_sources, university_operations, users",
+          "comment": null,
           "enumItems": [],
           "mappedType": "string"
         },
@@ -43922,7 +43725,7 @@
           "precision": null,
           "scale": null,
           "default": "false",
-          "comment": "TRUE = grant access, FALSE = revoke access (overrides role default)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "boolean"
         },
@@ -44294,7 +44097,7 @@
           ]
         }
       },
-      "comment": "Stores per-user module access overrides (Admin can grant/revoke module access regardless of role defaults)"
+      "comment": null
     },
     {
       "columns": {
@@ -44638,7 +44441,7 @@
           ]
         }
       },
-      "comment": "Phase HN: Pillar-level access assignments for Physical/Financial modules"
+      "comment": null
     },
     {
       "columns": {
@@ -45366,7 +45169,7 @@
           "precision": 32,
           "scale": 0,
           "default": "100",
-          "comment": "User rank level for permission hierarchy. Lower = higher authority. 10=SuperAdmin, 20=SeniorAdmin, 30=ModuleAdmin, 50=SeniorStaff, 70=JuniorStaff, 100=Viewer",
+          "comment": null,
           "enumItems": [],
           "mappedType": "integer"
         },
@@ -45382,7 +45185,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "User office/campus assignment for record visibility scoping. Staff users see records matching their campus + own records. Admin/SuperAdmin bypass campus scoping.",
+          "comment": null,
           "enumItems": [],
           "mappedType": "text"
         },
@@ -45398,7 +45201,7 @@
           "precision": null,
           "scale": null,
           "default": "'ACTIVE'",
-          "comment": "Phase HU: user lifecycle status (ACTIVE, INACTIVE, SUSPENDED)",
+          "comment": null,
           "enumItems": [],
           "mappedType": "string"
         },
@@ -45414,7 +45217,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase HU: audit — user id of last updater",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },
@@ -45462,7 +45265,7 @@
           "precision": null,
           "scale": null,
           "default": null,
-          "comment": "Phase HU: audit — user id of creator",
+          "comment": null,
           "enumItems": [],
           "mappedType": "uuid"
         },

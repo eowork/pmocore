@@ -24,7 +24,7 @@ import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from './dto';
 import { Public, CurrentUser, Roles } from './decorators';
-import { JwtAuthGuard, RolesGuard } from './guards';
+import { JwtAuthGuard, RolesGuard, LdapAuthGuard } from './guards';
 import { OAuthFailureFilter } from './filters/oauth-failure.filter';
 import { JwtPayload } from '../common/interfaces';
 
@@ -66,10 +66,23 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Admin-only account creation (CSU institutional users)', description: 'Creates an account with NO module access (dashboard-only) until an administrator grants module permissions. Replaces public self-registration.' })
-  @ApiResponse({ status: 201, description: 'Account created — dashboard-only until access is granted' })
-  @ApiResponse({ status: 400, description: 'Validation error or passwords do not match' })
-  @ApiResponse({ status: 403, description: 'Forbidden — administrator role required' })
+  @ApiOperation({
+    summary: 'Admin-only account creation (CSU institutional users)',
+    description:
+      'Creates an account with NO module access (dashboard-only) until an administrator grants module permissions. Replaces public self-registration.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Account created — dashboard-only until access is granted',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error or passwords do not match',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — administrator role required',
+  })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
@@ -155,7 +168,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({
     status: 400,
-    description: 'Validation error, wrong current password, or SSO-only account',
+    description:
+      'Validation error, wrong current password, or SSO-only account',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 429, description: 'Too many attempts' })
@@ -226,7 +240,8 @@ export class AuthController {
   // Phase HY: OpenLDAP login — credentials in body (username + password)
   @Public()
   @Post('ldap')
-  @UseGuards(AuthGuard('ldap'))
+  // T-LDAP-ROOT (RF-5): custom guard logs the specific failure reason before the 401.
+  @UseGuards(LdapAuthGuard)
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute — mirrors /auth/login
   @ApiOperation({
