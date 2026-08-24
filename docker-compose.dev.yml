@@ -1,4 +1,4 @@
-# Standalone dev stack — hot reload for backend + frontend.
+# Standalone dev stack — hot reload for the backend; the frontend runs on the host.
 # Independent from docker-compose.yml (not an override): run one or the other.
 #
 #   Switch to dev:  docker compose down && docker compose -f docker-compose.dev.yml up -d --build
@@ -73,27 +73,14 @@ services:
       retries: 6
       start_period: 30s
 
-  frontend:
-    build:
-      context: ./pmo-frontend
-      target: build
-    restart: unless-stopped
-    env_file:
-      - ./pmo-frontend/.env
-    environment:
-      NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
-      NODE_ENV: development
-      NITRO_HOST: 0.0.0.0
-      NITRO_PORT: 3001
-    command: ["sh", "-c", "npm run dev -- --host 0.0.0.0"]
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-3001}:3001"
-    volumes:
-      - ./pmo-frontend:/app
-      - /app/node_modules
+  # The frontend is deliberately NOT a service here — Nuxt runs on the Windows host
+  # (`cd pmo-frontend && npm run dev`, which already binds port 3001). Reason: Nuxt
+  # DevTools' "open in editor" and the Vite overlay's file links spawn the editor
+  # binary in the same process as the dev server, so from inside a Linux container
+  # they can never reach WebStorm on the host. The host dev server reaches this
+  # stack through the published ports below (backend on ${BACKEND_PORT:-3000}), and
+  # Nitro's devProxy in nuxt.config.ts keeps browser traffic same-origin on :3001,
+  # so no CORS entry is needed. See pmo-frontend/.env for the required variables.
 
   # MINIO-0 — S3-compatible object storage for uploads.
   # Step 0 of the storage migration: INFRA ONLY. The backend still runs
