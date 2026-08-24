@@ -29,8 +29,21 @@ export const ACCESS_REQUEST_MODULE_VALUES: string[] = [
 const LEVEL_ACTIONS: Record<string, Set<string>> = {
   [AccessLevel.VIEWER]: new Set(['read']),
   [AccessLevel.CONTRIBUTOR]: new Set(['read', 'create', 'update']),
-  [AccessLevel.APPROVER]: new Set(['read', 'create', 'update', 'approve', 'publish']),
-  [AccessLevel.MANAGER]: new Set(['read', 'create', 'update', 'approve', 'publish', 'delete']),
+  [AccessLevel.APPROVER]: new Set([
+    'read',
+    'create',
+    'update',
+    'approve',
+    'publish',
+  ]),
+  [AccessLevel.MANAGER]: new Set([
+    'read',
+    'create',
+    'update',
+    'approve',
+    'publish',
+    'delete',
+  ]),
 };
 
 export type ModuleAction = 'read' | 'create' | 'update' | 'delete';

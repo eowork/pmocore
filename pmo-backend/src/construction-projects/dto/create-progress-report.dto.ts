@@ -1,5 +1,12 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsDateString, IsNumber, IsInt, IsUUID, IsArray,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+  IsNumber,
+  IsInt,
+  IsUUID,
+  IsArray,
 } from 'class-validator';
 
 export class CreateProgressReportDto {
@@ -64,7 +71,11 @@ export class CreateProgressReportDto {
 
   @IsOptional()
   @IsArray()
-  narrative_list?: Array<{ text: string; author?: string; created_at?: string }>;
+  narrative_list?: Array<{
+    text: string;
+    author?: string;
+    created_at?: string;
+  }>;
 
   @IsOptional()
   @IsArray()
@@ -72,9 +83,17 @@ export class CreateProgressReportDto {
 
   @IsOptional()
   @IsArray()
-  issues_encountered_list?: Array<{ text: string; author?: string; created_at?: string }>;
+  issues_encountered_list?: Array<{
+    text: string;
+    author?: string;
+    created_at?: string;
+  }>;
 
   @IsOptional()
   @IsArray()
-  mitigation_actions_list?: Array<{ text: string; author?: string; created_at?: string }>;
+  mitigation_actions_list?: Array<{
+    text: string;
+    author?: string;
+    created_at?: string;
+  }>;
 }

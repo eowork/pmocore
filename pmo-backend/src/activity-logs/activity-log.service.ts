@@ -57,9 +57,19 @@ export class ActivityLogService {
     }
   }
 
-  async findLogs(filter: ActivityLogFilter): Promise<{ data: ActivityLog[]; total: number; page: number; pageSize: number }> {
+  async findLogs(
+    filter: ActivityLogFilter,
+  ): Promise<{
+    data: ActivityLog[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const page = filter.page && filter.page > 0 ? filter.page : 1;
-    const pageSize = filter.pageSize && filter.pageSize > 0 ? Math.min(filter.pageSize, 200) : 50;
+    const pageSize =
+      filter.pageSize && filter.pageSize > 0
+        ? Math.min(filter.pageSize, 200)
+        : 50;
     const where: Record<string, unknown> = {};
     if (filter.entityType) where.entityType = filter.entityType;
     if (filter.entityId) where.entityId = filter.entityId;

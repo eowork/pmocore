@@ -7,7 +7,11 @@ import { UsersModule } from '../users/users.module';
 import { ActivityLogModule } from '../activity-logs/activity-log.module';
 
 @Module({
-  imports: [MikroOrmModule.forFeature([AccessRequest]), UsersModule, ActivityLogModule],
+  imports: [
+    MikroOrmModule.forFeature([AccessRequest]),
+    UsersModule,
+    ActivityLogModule,
+  ],
   controllers: [AccessRequestsController],
   providers: [AccessRequestsService],
 })

@@ -11,7 +11,6 @@
  */
 
 import type { PublicationStatus } from '~/utils/adapters'
-import { getPublicationStatusColor } from '~/utils/status-colors'
 // Phase DQ-A: VueApexCharts removed — analytics belong on main module page only
 
 definePageMeta({
@@ -23,7 +22,7 @@ const route = useRoute()
 const api = useApi()
 const toast = useToast()
 const authStore = useAuthStore()
-const { isAdmin, isStaff, canAdd, canEdit, isSuperAdmin } = usePermissions()
+const { isAdmin, isStaff, canAdd, isSuperAdmin } = usePermissions()
 
 // Phase DW-C: Centralized fiscal year store
 import { useFiscalYearStore } from '~/stores/fiscalYear'
@@ -95,14 +94,6 @@ const PILLARS = [
   },
 ] as const
 
-// Phase HN: Pillar-based tab visibility (Directive 158)
-const visiblePillars = computed(() => {
-  if (isAdmin.value || isSuperAdmin.value) return PILLARS
-  const assignments = authStore.user?.pillarAssignments ?? []
-  if (assignments.length === 0) return PILLARS // no restriction if unassigned
-  return PILLARS.filter(p => assignments.includes(p.id))
-})
-
 // State
 // Phase DW-C: selectedFiscalYear now comes from fiscalYearStore (storeToRefs)
 // Phase DW-A: Remove ALL; default to Q1; Q4 = Final Year Projection
@@ -161,37 +152,6 @@ const saving = ref(false)
 // Phase FJ: Prior-quarter prefill state
 const wasPrefilled = ref(false)
 const prefillSourceQ = ref<string | null>(null)
-
-// Phase AAAA-C: Cross-quarter fraction display fallback for the entry dialog.
-// Presentation-only — does NOT mutate entryForm's save-bound numerator/denominator fields.
-// Holds a fraction caption (e.g. "286/268") per quarter for target/actual when the
-// current record's own fraction columns are empty but a value is present.
-const dialogFractionFallback = ref<{ target: (string | null)[]; actual: (string | null)[] }>({
-  target: [null, null, null, null],
-  actual: [null, null, null, null],
-})
-
-async function refreshDialogFractionFallback(record: any) {
-  const fallback: { target: (string | null)[]; actual: (string | null)[] } = {
-    target: [null, null, null, null],
-    actual: [null, null, null, null],
-  }
-  if (record && selectedIndicator.value?.unit_type === 'PERCENTAGE') {
-    for (let i = 1; i <= 4; i++) {
-      const targetFractionText = parsePctInput(entryForm.value[`target_str_q${i}`]).fractionText
-      if (!targetFractionText) {
-        const str = await getFractionAwareStr(record, i, 'target')
-        fallback.target[i - 1] = parsePctInput(str).fractionText
-      }
-      const actualFractionText = parsePctInput(entryForm.value[`actual_str_q${i}`]).fractionText
-      if (!actualFractionText) {
-        const str = await getFractionAwareStr(record, i, 'actual')
-        fallback.actual[i - 1] = parsePctInput(str).fractionText
-      }
-    }
-  }
-  dialogFractionFallback.value = fallback
-}
 const PRIOR_QUARTER_MAP: Record<string, string | null> = {
   Q1: null, Q2: 'Q1', Q3: 'Q2', Q4: 'Q3',
 }
@@ -243,6 +203,7 @@ const currentQuarterStatus = computed(() => {
   return currentQuarterlyReport.value?.publication_status ?? 'NOT_STARTED'
 })
 
+
 // Phase DS-A: Unit type display with abbreviated labels for consistent chip width
 const unitTypeConfig: Record<string, { suffix: string; color: string; icon: string; label: string; title: string }> = {
   PERCENTAGE: { suffix: '%', color: 'blue', icon: 'mdi-percent', label: 'PCT', title: 'Percentage' },
@@ -252,119 +213,6 @@ const unitTypeConfig: Record<string, { suffix: string; color: string; icon: stri
 
 function getUnitConfig(unitType: string) {
   return unitTypeConfig[unitType] || { suffix: '', color: 'grey', icon: 'mdi-help', label: '?', title: 'Unknown' }
-}
-
-// Phase UUU-A: Smart dual-entry parser for PERCENTAGE indicators
-// Accepts "90" (direct %) or "286/268" (fraction → computed %)
-interface PctParseResult {
-  computed: number | null
-  numerator: number | null
-  denominator: number | null
-  display: string
-  fractionText: string | null
-  isValid: boolean
-  error: string | null
-}
-
-function parsePctInput(raw: string | null | undefined): PctParseResult {
-  if (!raw || raw.trim() === '') {
-    return { computed: null, numerator: null, denominator: null, display: '', fractionText: null, isValid: true, error: null }
-  }
-  const trimmed = raw.trim()
-  if (trimmed.includes('/')) {
-    const parts = trimmed.split('/')
-    const n = parseFloat(parts[0].trim())
-    const d = parseFloat(parts[1]?.trim() ?? '')
-    if (isNaN(n) || isNaN(d)) {
-      return { computed: null, numerator: null, denominator: null, display: '', fractionText: trimmed, isValid: false, error: 'Invalid fraction format' }
-    }
-    if (d === 0) {
-      return { computed: null, numerator: n, denominator: 0, display: '', fractionText: trimmed, isValid: false, error: 'Denominator cannot be zero' }
-    }
-    const pct = Math.min((n / d) * 100, 9999.99)
-    return { computed: parseFloat(pct.toFixed(4)), numerator: n, denominator: d, display: `${pct.toFixed(2)}%`, fractionText: `${n}/${d}`, isValid: true, error: null }
-  } else {
-    const v = parseFloat(trimmed)
-    if (isNaN(v)) {
-      return { computed: null, numerator: null, denominator: null, display: '', fractionText: null, isValid: false, error: 'Invalid value' }
-    }
-    return { computed: parseFloat(v.toFixed(4)), numerator: null, denominator: null, display: `${v.toFixed(2)}%`, fractionText: null, isValid: true, error: null }
-  }
-}
-
-// Phase UUU-B: Reconstruct the string input value from stored DB fields
-// If N/D are stored → reconstruct fraction string "N/D"
-// If only accomplishment stored (legacy or direct %) → return the raw number as string
-function buildPctStrFromRecord(num: any, den: any, accomplishment: any): string {
-  const n = num != null ? Number(num) : null
-  const d = den != null ? Number(den) : null
-  if (n != null && d != null && !isNaN(n) && !isNaN(d) && d > 0) {
-    return `${n}/${d}`
-  }
-  if (accomplishment != null && accomplishment !== '') {
-    const v = Number(accomplishment)
-    return isNaN(v) ? '' : String(v)
-  }
-  return ''
-}
-
-// XXX-G: Reconstruct override fraction string input from stored fraction text or numeric override
-function buildOverridePctStr(fractionStr: any, totalValue: any): string {
-  if (typeof fractionStr === 'string' && fractionStr.includes('/')) {
-    return fractionStr
-  }
-  if (totalValue != null && totalValue !== '') {
-    const v = Number(totalValue)
-    return isNaN(v) ? '' : String(v)
-  }
-  return ''
-}
-
-// Phase AAAA-A: Cache of per-quarter indicator lists for the active pillar/fiscal year.
-// One fetch per quarter — cleared whenever pillar or fiscal year changes.
-const quarterIndicatorCache = ref<Map<string, any[]>>(new Map())
-
-async function getQuarterIndicatorList(quarter: string): Promise<any[]> {
-  if (quarterIndicatorCache.value.has(quarter)) {
-    return quarterIndicatorCache.value.get(quarter)!
-  }
-  if (!selectedFiscalYear.value || selectedFiscalYear.value < 2020) return []
-  try {
-    const res = await api.get<any[]>(
-      `/api/university-operations/indicators?pillar_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&quarter=${quarter}`
-    )
-    const list = Array.isArray(res) ? res : (res as any)?.data || []
-    quarterIndicatorCache.value.set(quarter, list)
-    return list
-  } catch (err) {
-    console.error('[Physical] getQuarterIndicatorList failed:', err)
-    return []
-  }
-}
-
-// Phase AAAA-B: Cross-quarter fraction-aware fallback. If the given record's own
-// numerator/denominator for quarter `quarterIndex` are missing but its target/actual
-// value is present, fall back to the indicator's own reported_quarter=QN record's
-// fraction columns to reconstruct an "N/D" string.
-async function getFractionAwareStr(record: any, quarterIndex: number, kind: 'target' | 'actual'): Promise<string> {
-  const qKey = `q${quarterIndex}`
-  const numField = kind === 'target' ? `target_numerator_${qKey}` : `numerator_${qKey}`
-  const denField = kind === 'target' ? `target_denominator_${qKey}` : `denominator_${qKey}`
-  const valField = kind === 'target' ? `target_${qKey}` : `accomplishment_${qKey}`
-
-  if (record?.[numField] != null && record?.[denField] != null) {
-    return buildPctStrFromRecord(record[numField], record[denField], record[valField])
-  }
-  if (record?.[valField] === null || record?.[valField] === undefined) {
-    return ''
-  }
-
-  const list = await getQuarterIndicatorList(`Q${quarterIndex}`)
-  const match = list.find((r: any) => r.pillar_indicator_id === record?.pillar_indicator_id)
-  if (match?.[numField] != null && match?.[denField] != null) {
-    return buildPctStrFromRecord(match[numField], match[denField], record[valField])
-  }
-  return buildPctStrFromRecord(record?.[numField], record?.[denField], record?.[valField])
 }
 
 // Outcome indicators
@@ -513,19 +361,34 @@ async function fetchPillarData() {
   loading.value = false
 }
 
-// Phase HU: Use pillar-operation endpoint — no ownership filter, correct for display context (Directive 211)
+// Find or identify current operation
 async function findCurrentOperation() {
   try {
+    // Phase DL-D: Diagnostic logging for operation lookup
     console.log('[Physical] findCurrentOperation: Searching for', {
       operation_type: activePillar.value,
       fiscal_year: selectedFiscalYear.value,
+      fiscal_year_type: typeof selectedFiscalYear.value,
     });
 
-    const found = await api.get<any>(
-      `/api/university-operations/pillar-operation?pillar_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}`
-    ).catch(() => null)
+    // Phase EK-C: Add filters to avoid pagination miss
+    const response = await api.get<any>(
+      `/api/university-operations?type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
+    )
+    const data = Array.isArray(response) ? response : (response?.data || [])
 
-    currentOperation.value = found
+    console.log('[Physical] findCurrentOperation: Available operations:', data.map((op: any) => ({
+      id: op.id,
+      operation_type: op.operation_type,
+      fiscal_year: op.fiscal_year,
+      fiscal_year_type: typeof op.fiscal_year,
+      title: op.title,
+    })));
+
+    // Phase DL-D: Type-safe comparison (convert both to numbers)
+    currentOperation.value = data.find(
+      (op: any) => op.operation_type === activePillar.value && Number(op.fiscal_year) === Number(selectedFiscalYear.value)
+    ) || null
 
     console.log('[Physical] findCurrentOperation: Result:', currentOperation.value ? {
       id: currentOperation.value.id,
@@ -595,85 +458,6 @@ function formatNumber(val: number | null | undefined): string {
   return Number(val).toFixed(2)
 }
 
-// Phase VVV-B: Returns the primary cell display + optional fraction line for a
-// read-only indicator table cell. For PERCENTAGE indicators, renders "106.72%"
-// with a "286/268" fraction line below when numerator/denominator are stored.
-function getPctCellDisplay(
-  record: any,
-  fieldPrefix: string,
-  q: string,
-  unitType: string,
-): { primary: string; fraction: string | null } {
-  const qKey = q.toLowerCase()
-  const val = record?.[`${fieldPrefix}_${qKey}`]
-  if (val === null || val === undefined) return { primary: '—', fraction: null }
-  const num = Number(val)
-  if (isNaN(num)) return { primary: '—', fraction: null }
-  if (unitType !== 'PERCENTAGE') {
-    const suffix = getUnitConfig(unitType).suffix
-    return { primary: num.toLocaleString(undefined, { maximumFractionDigits: 2 }) + suffix, fraction: null }
-  }
-  const primary = `${num.toFixed(2)}%`
-  // XXX-D: branch on fieldPrefix so 'target' reads target_numerator/denominator_qN
-  // (new XXX-A columns) and 'accomplishment' reads the existing numerator/denominator_qN
-  // (VVV fix, unchanged) — prevents the actual fraction from bleeding into the target cell
-  const numerator = fieldPrefix === 'target' ? record?.[`target_numerator_${qKey}`] : record?.[`numerator_${qKey}`]
-  const denominator = fieldPrefix === 'target' ? record?.[`target_denominator_${qKey}`] : record?.[`denominator_${qKey}`]
-  const n = numerator != null ? Number(numerator) : null
-  const d = denominator != null ? Number(denominator) : null
-  let fraction = (n !== null && d !== null && !isNaN(n) && !isNaN(d) && d > 0)
-    ? `${n}/${d}`
-    : null
-
-  // Phase AAAA-D: fall back to the indicator's own reported_quarter=QN record's
-  // fraction columns when this snapshot's numerator/denominator are missing
-  if (fraction === null && record?.pillar_indicator_id) {
-    fraction = fractionOverlay.value[`${record.pillar_indicator_id}|${qKey}|${fieldPrefix}`] ?? null
-  }
-
-  return { primary, fraction }
-}
-
-// Phase AAAA-D: Cross-quarter fraction overlay for the read-only indicator tables.
-// Maps "<pillarIndicatorId>|<qKey>|<fieldPrefix>" -> "N/D" for cells whose own
-// numerator/denominator are missing for that quarter but a value is present,
-// falling back to the indicator's own reported_quarter=QN record.
-const fractionOverlay = ref<Record<string, string>>({})
-
-async function buildFractionOverlay() {
-  const overlay: Record<string, string> = {}
-  for (const record of pillarIndicators.value) {
-    const taxonomyId = record?.pillar_indicator_id
-    if (!taxonomyId) continue
-    const indicator = pillarTaxonomy.value.find(t => t.id === taxonomyId)
-    if (indicator?.unit_type !== 'PERCENTAGE') continue
-
-    for (let i = 1; i <= 4; i++) {
-      const qKey = `q${i}`
-      for (const fieldPrefix of ['target', 'accomplishment'] as const) {
-        const numField = fieldPrefix === 'target' ? `target_numerator_${qKey}` : `numerator_${qKey}`
-        const denField = fieldPrefix === 'target' ? `target_denominator_${qKey}` : `denominator_${qKey}`
-        const valField = `${fieldPrefix}_${qKey}`
-
-        if (record[numField] != null && record[denField] != null) continue
-        if (record[valField] === null || record[valField] === undefined) continue
-
-        const list = await getQuarterIndicatorList(`Q${i}`)
-        const match = list.find((r: any) => r.pillar_indicator_id === taxonomyId)
-        if (match?.[numField] != null && match?.[denField] != null && Number(match[denField]) > 0) {
-          overlay[`${taxonomyId}|${qKey}|${fieldPrefix}`] = `${Number(match[numField])}/${Number(match[denField])}`
-        }
-      }
-    }
-  }
-  fractionOverlay.value = overlay
-}
-
-// Phase AAAA-D: Rebuild the overlay whenever the current quarter's indicator data changes
-watch(pillarIndicators, () => {
-  buildFractionOverlay()
-})
-
 // Format percentage (used in indicator table rows and entry dialog)
 function formatPercent(val: number | null | undefined): string {
   if (val === null || val === undefined) return '—'
@@ -694,81 +478,17 @@ function getVarianceColor(variance: number | null | undefined): string {
   return variance >= 0 ? 'success' : 'error'
 }
 
-
-// Phase HG: Unified column visibility config (Directives 107–110)
-const columnVisibility = reactive({
-  score: false,
-  remarks: false,
-  notes: false, // XXX-F: per-quarter Notes (remarks_q1-4)
-  catch_up_plans: false,
-  facilitating_factors: false,
-  ways_forward: false,
-  mov: false,
-})
-
-// Phase HK: Stacked panel visibility guard (Directive 138)
-const anyNarrativeVisible = computed(() =>
-  columnVisibility.score || columnVisibility.remarks || columnVisibility.notes || columnVisibility.catch_up_plans || columnVisibility.facilitating_factors || columnVisibility.ways_forward || columnVisibility.mov
-)
-
-// Phase HK: Colspan = 13 base + edit col (Directive 136)
-const narrativeRowColspan = computed(() => {
-  let n = 13 // Indicator(1) + Q cols(8) + Totals(2) + Variance(1) + Rate(1)
-  if (canEditData()) n++
-  return n
-})
-
-// Phase HL: MOV type-selector state (Directive 146)
-const movType = ref<'text' | 'link' | 'file'>('text')
-const movValue = ref('')
-const movUploading = ref(false)
-const movFileMetadata = ref<{ filename: string; size: number; mimeType: string } | null>(null)
-const movFileInputRef = ref<HTMLInputElement | null>(null)
-
-function parseMov(raw: string | null | undefined): { type: 'text' | 'link' | 'file'; value: string; metadata: any } {
-  if (!raw) return { type: 'text', value: '', metadata: null }
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed.type && parsed.value !== undefined) return { type: parsed.type, value: parsed.value, metadata: parsed.metadata || null }
-  } catch {}
-  return { type: 'text', value: raw, metadata: null }
-}
-
-function serializeMov(): string | null {
-  if (!movValue.value && movType.value !== 'file') return null
-  const obj: any = { type: movType.value, value: movValue.value }
-  if (movType.value === 'file' && movFileMetadata.value) obj.metadata = movFileMetadata.value
-  return JSON.stringify(obj)
-}
-
-watch(movType, () => { movValue.value = ''; movFileMetadata.value = null })
-
-async function handleMovFileUpload(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (!input.files?.[0]) return
-  const file = input.files[0]
-  const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 // 25MB
-  if (file.size > MAX_UPLOAD_BYTES) {
-    toast.error(`File too large. Maximum allowed size is 25MB (selected file: ${(file.size / 1024 / 1024).toFixed(1)}MB)`)
-    if (input) input.value = ''
-    return
-  }
-  const formData = new FormData()
-  formData.append('file', file)
-  movUploading.value = true
-  try {
-    const response = await api.upload<{ filePath: string; originalName: string; fileSize: number; mimeType: string }>('/api/uploads', formData)
-    movValue.value = response.filePath
-    movFileMetadata.value = { filename: response.originalName, size: response.fileSize, mimeType: response.mimeType }
-  } catch (err: any) {
-    toast.error(err.message || 'File upload failed')
-  } finally {
-    movUploading.value = false
-    if (input) input.value = ''
-  }
-}
-
 // Publication status helpers
+function getPublicationStatusColor(status: PublicationStatus | string): string {
+  const colors: Record<string, string> = {
+    DRAFT: 'grey',
+    PENDING_REVIEW: 'orange',
+    PUBLISHED: 'success',
+    REJECTED: 'error',
+    FETCH_ERROR: 'warning',
+  }
+  return colors[status] || 'grey'
+}
 
 function getPublicationStatusLabel(status: PublicationStatus | string): string {
   const labels: Record<string, string> = {
@@ -792,9 +512,7 @@ function isOwnerOrAssigned(op: any): boolean {
 }
 
 function canEditData(): boolean {
-  // PHASE BBBD (Track 8): canonical 'university_operations' key so the access LEVEL governs
-  // (Viewer = read-only; Contributor+ = edit). Previously 'operations' bypassed the level system.
-  if (!currentOperation.value) return canAdd('university_operations')
+  if (!currentOperation.value) return canAdd('operations')
   // Phase GOV-C: Admin on PUBLISHED quarterly must have explicit unlock approval
   if (isAdmin.value) {
     if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') {
@@ -805,9 +523,7 @@ function canEditData(): boolean {
   if (currentOperation.value.publication_status === 'PUBLISHED') return false
   // Phase ER-A: Published quarterly report locks indicator/financial edits for non-admin users
   if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') return false
-  // PHASE BBBD (Track 8): existing-operation edit requires BOTH record assignment AND module-level
-  // edit capability (module access ≠ record access; a Viewer assigned to a record stays read-only).
-  return isOwnerOrAssigned(currentOperation.value) && canEdit('university_operations')
+  return isOwnerOrAssigned(currentOperation.value)
 }
 
 // Phase EM-C: Cross-pillar submit guard — checks quarterly report status
@@ -914,55 +630,12 @@ async function openEntryDialogDirect(indicator: any) {
       accomplishment_q2: existingData.accomplishment_q2 ?? null,
       accomplishment_q3: existingData.accomplishment_q3 ?? null,
       accomplishment_q4: existingData.accomplishment_q4 ?? null,
+      score_q1: existingData.score_q1 || '',
+      score_q2: existingData.score_q2 || '',
+      score_q3: existingData.score_q3 || '',
+      score_q4: existingData.score_q4 || '',
       remarks: existingData.remarks || '',
-      // Phase HE: APR/UPR narrative fields (Directive 386)
-      catch_up_plan: existingData.catch_up_plan || '',
-      facilitating_factors: existingData.facilitating_factors || '',
-      ways_forward: existingData.ways_forward || '',
-      // Phase HK: MOV field (Directive 140)
-      mov: existingData.mov || '',
-      // Phase GY/GZ: Annual-only overrides (Directive 359)
       override_rate: existingData.override_rate ?? null,
-      override_variance: existingData.override_variance ?? null,
-      // Phase HA: Total overrides (Directive 371)
-      override_total_target: existingData.override_total_target ?? null,
-      override_total_actual: existingData.override_total_actual ?? null,
-      // XXX-G: Override fraction string inputs for PERCENTAGE indicators
-      override_total_target_str: buildOverridePctStr(existingData.override_total_target_fraction, existingData.override_total_target),
-      override_total_actual_str: buildOverridePctStr(existingData.override_total_actual_fraction, existingData.override_total_actual),
-      // Phase TTT/UUU: N/D stored for PERCENTAGE fraction auditability
-      numerator_q1: existingData.numerator_q1 ?? null,
-      denominator_q1: existingData.denominator_q1 ?? null,
-      numerator_q2: existingData.numerator_q2 ?? null,
-      denominator_q2: existingData.denominator_q2 ?? null,
-      numerator_q3: existingData.numerator_q3 ?? null,
-      denominator_q3: existingData.denominator_q3 ?? null,
-      numerator_q4: existingData.numerator_q4 ?? null,
-      denominator_q4: existingData.denominator_q4 ?? null,
-      // XXX-E: Target N/D stored for PERCENTAGE fraction auditability (mirrors numerator_qN above)
-      target_numerator_q1: existingData.target_numerator_q1 ?? null,
-      target_denominator_q1: existingData.target_denominator_q1 ?? null,
-      target_numerator_q2: existingData.target_numerator_q2 ?? null,
-      target_denominator_q2: existingData.target_denominator_q2 ?? null,
-      target_numerator_q3: existingData.target_numerator_q3 ?? null,
-      target_denominator_q3: existingData.target_denominator_q3 ?? null,
-      target_numerator_q4: existingData.target_numerator_q4 ?? null,
-      target_denominator_q4: existingData.target_denominator_q4 ?? null,
-      // Phase UUU: Smart string inputs for PERCENTAGE dual-entry (Target + Actual)
-      // XXX-E: target_str_qN reconstructs from target_numerator/denominator_qN when present (mirrors actual_str_qN)
-      target_str_q1: buildPctStrFromRecord(existingData.target_numerator_q1, existingData.target_denominator_q1, existingData.target_q1),
-      target_str_q2: buildPctStrFromRecord(existingData.target_numerator_q2, existingData.target_denominator_q2, existingData.target_q2),
-      target_str_q3: buildPctStrFromRecord(existingData.target_numerator_q3, existingData.target_denominator_q3, existingData.target_q3),
-      target_str_q4: buildPctStrFromRecord(existingData.target_numerator_q4, existingData.target_denominator_q4, existingData.target_q4),
-      actual_str_q1: buildPctStrFromRecord(existingData.numerator_q1, existingData.denominator_q1, existingData.accomplishment_q1),
-      actual_str_q2: buildPctStrFromRecord(existingData.numerator_q2, existingData.denominator_q2, existingData.accomplishment_q2),
-      actual_str_q3: buildPctStrFromRecord(existingData.numerator_q3, existingData.denominator_q3, existingData.accomplishment_q3),
-      actual_str_q4: buildPctStrFromRecord(existingData.numerator_q4, existingData.denominator_q4, existingData.accomplishment_q4),
-      // XXX-F: Per-quarter notes (optional, no calculation impact)
-      remarks_str_q1: existingData.remarks_q1 || '',
-      remarks_str_q2: existingData.remarks_q2 || '',
-      remarks_str_q3: existingData.remarks_q3 || '',
-      remarks_str_q4: existingData.remarks_q4 || '',
       _existingId: existingData.id || null,
     }
   } else {
@@ -991,7 +664,7 @@ async function openEntryDialogDirect(indicator: any) {
     }
 
     if (priorData) {
-      // Deep-copy target/actual columns from prior quarter's record as starting point
+      // Deep-copy ALL 12 columns from prior quarter's record as starting point
       entryForm.value = {
         pillar_indicator_id: indicator.id,
         fiscal_year: selectedFiscalYear.value,
@@ -1003,54 +676,12 @@ async function openEntryDialogDirect(indicator: any) {
         accomplishment_q2: priorData.accomplishment_q2 ?? null,
         accomplishment_q3: priorData.accomplishment_q3 ?? null,
         accomplishment_q4: priorData.accomplishment_q4 ?? null,
+        score_q1: priorData.score_q1 || '',
+        score_q2: priorData.score_q2 || '',
+        score_q3: priorData.score_q3 || '',
+        score_q4: priorData.score_q4 || '',
         remarks: priorData.remarks || '',
-        // Phase HE: Do not inherit prior quarter's narrative fields (Directive 386)
-        catch_up_plan: '',
-        facilitating_factors: '',
-        ways_forward: '',
-        // Phase HK: MOV not inherited from prior quarter (Directive 142)
-        mov: '',
-        override_rate: null,
-        override_variance: null,
-        // Phase HA: Do not inherit prior quarter's total overrides (Directive 371)
-        override_total_target: null,
-        override_total_actual: null,
-        // XXX-G: Override fraction string inputs not inherited (mirrors override_total_target/actual)
-        override_total_target_str: '',
-        override_total_actual_str: '',
-        // Phase UUU: Inherit N/D from prior quarter (prefill starting point, user edits freely)
-        numerator_q1: priorData.numerator_q1 ?? null,
-        denominator_q1: priorData.denominator_q1 ?? null,
-        numerator_q2: priorData.numerator_q2 ?? null,
-        denominator_q2: priorData.denominator_q2 ?? null,
-        numerator_q3: priorData.numerator_q3 ?? null,
-        denominator_q3: priorData.denominator_q3 ?? null,
-        numerator_q4: priorData.numerator_q4 ?? null,
-        denominator_q4: priorData.denominator_q4 ?? null,
-        // XXX-E: Inherit Target N/D from prior quarter (prefill starting point, user edits freely)
-        target_numerator_q1: priorData.target_numerator_q1 ?? null,
-        target_denominator_q1: priorData.target_denominator_q1 ?? null,
-        target_numerator_q2: priorData.target_numerator_q2 ?? null,
-        target_denominator_q2: priorData.target_denominator_q2 ?? null,
-        target_numerator_q3: priorData.target_numerator_q3 ?? null,
-        target_denominator_q3: priorData.target_denominator_q3 ?? null,
-        target_numerator_q4: priorData.target_numerator_q4 ?? null,
-        target_denominator_q4: priorData.target_denominator_q4 ?? null,
-        // Phase UUU: Smart string inputs — reconstruct from prior data
-        // XXX-E: target_str_qN reconstructs from target_numerator/denominator_qN when present
-        target_str_q1: buildPctStrFromRecord(priorData.target_numerator_q1, priorData.target_denominator_q1, priorData.target_q1),
-        target_str_q2: buildPctStrFromRecord(priorData.target_numerator_q2, priorData.target_denominator_q2, priorData.target_q2),
-        target_str_q3: buildPctStrFromRecord(priorData.target_numerator_q3, priorData.target_denominator_q3, priorData.target_q3),
-        target_str_q4: buildPctStrFromRecord(priorData.target_numerator_q4, priorData.target_denominator_q4, priorData.target_q4),
-        actual_str_q1: buildPctStrFromRecord(priorData.numerator_q1, priorData.denominator_q1, priorData.accomplishment_q1),
-        actual_str_q2: buildPctStrFromRecord(priorData.numerator_q2, priorData.denominator_q2, priorData.accomplishment_q2),
-        actual_str_q3: buildPctStrFromRecord(priorData.numerator_q3, priorData.denominator_q3, priorData.accomplishment_q3),
-        actual_str_q4: buildPctStrFromRecord(priorData.numerator_q4, priorData.denominator_q4, priorData.accomplishment_q4),
-        // XXX-F: Inherit per-quarter notes from prior quarter (prefill starting point, user edits freely)
-        remarks_str_q1: priorData.remarks_q1 || '',
-        remarks_str_q2: priorData.remarks_q2 || '',
-        remarks_str_q3: priorData.remarks_q3 || '',
-        remarks_str_q4: priorData.remarks_q4 || '',
+        override_rate: null, // Phase FY-2: do not inherit prior quarter's override
         _existingId: preservedId,
       }
       wasPrefilled.value = true
@@ -1062,51 +693,16 @@ async function openEntryDialogDirect(indicator: any) {
         fiscal_year: selectedFiscalYear.value,
         target_q1: null, target_q2: null, target_q3: null, target_q4: null,
         accomplishment_q1: null, accomplishment_q2: null, accomplishment_q3: null, accomplishment_q4: null,
+        score_q1: '', score_q2: '', score_q3: '', score_q4: '',
         remarks: '',
-        // Phase HE: APR/UPR narrative fields (Directive 386)
-        catch_up_plan: '',
-        facilitating_factors: '',
-        ways_forward: '',
-        // Phase HK: MOV default empty (Directive 140)
-        mov: '',
         override_rate: null,
-        override_variance: null,
-        // Phase HA: Total overrides default to null (Directive 371)
-        override_total_target: null,
-        override_total_actual: null,
-        // XXX-G: Override fraction string inputs default empty
-        override_total_target_str: '',
-        override_total_actual_str: '',
-        // Phase TTT/UUU: Fraction fields default to null
-        numerator_q1: null, denominator_q1: null,
-        numerator_q2: null, denominator_q2: null,
-        numerator_q3: null, denominator_q3: null,
-        numerator_q4: null, denominator_q4: null,
-        // XXX-E: Target fraction fields default to null
-        target_numerator_q1: null, target_denominator_q1: null,
-        target_numerator_q2: null, target_denominator_q2: null,
-        target_numerator_q3: null, target_denominator_q3: null,
-        target_numerator_q4: null, target_denominator_q4: null,
-        // Phase UUU: Smart string inputs default empty
-        target_str_q1: '', target_str_q2: '', target_str_q3: '', target_str_q4: '',
-        actual_str_q1: '', actual_str_q2: '', actual_str_q3: '', actual_str_q4: '',
-        // XXX-F: Per-quarter notes default empty
-        remarks_str_q1: '', remarks_str_q2: '', remarks_str_q3: '', remarks_str_q4: '',
         _existingId: preservedId,
       }
     }
   }
 
   // Phase DT-A: Tab navigation removed — all quarters shown simultaneously
-  // Phase HL: Initialize MOV type-selector from stored JSON (Directive 146)
-  const movParsed = parseMov(entryForm.value.mov || null)
-  movType.value = movParsed.type
-  movValue.value = movParsed.value
-  movFileMetadata.value = movParsed.metadata
   entryDialog.value = true
-
-  // Phase AAAA-C: Compute cross-quarter fraction display fallbacks (presentation-only)
-  refreshDialogFractionFallback(existingData)
 }
 
 /**
@@ -1126,33 +722,12 @@ function sanitizeNumericPayload(data: any): any {
     'accomplishment_q2',
     'accomplishment_q3',
     'accomplishment_q4',
-    'override_total_target',
-    'override_total_actual',
-    'numerator_q1',
-    'denominator_q1',
-    'numerator_q2',
-    'denominator_q2',
-    'numerator_q3',
-    'denominator_q3',
-    'numerator_q4',
-    'denominator_q4',
-    // Phase XXX: target-fraction columns (XXX-C) — excludes remarks_q1-4 and
-    // override_total_*_fraction (text fields, must not be coerced to numeric)
-    'target_numerator_q1',
-    'target_denominator_q1',
-    'target_numerator_q2',
-    'target_denominator_q2',
-    'target_numerator_q3',
-    'target_denominator_q3',
-    'target_numerator_q4',
-    'target_denominator_q4',
   ]
 
   const sanitized = { ...data }
 
   numericFields.forEach(field => {
-    const val = sanitized[field]
-    if (val === '' || val === null || (typeof val === 'number' && isNaN(val))) {
+    if (sanitized[field] === '') {
       sanitized[field] = null
     }
   })
@@ -1189,30 +764,6 @@ async function saveQuarterlyData() {
   })));
   console.groupEnd();
 
-  // Phase UUU: Validate all PERCENTAGE string inputs before saving
-  const isPctType = selectedIndicator.value?.unit_type === 'PERCENTAGE'
-  if (isPctType) {
-    const f = entryForm.value
-    const checks = [
-      { str: f.target_str_q1, label: 'Target Q1' }, { str: f.target_str_q2, label: 'Target Q2' },
-      { str: f.target_str_q3, label: 'Target Q3' }, { str: f.target_str_q4, label: 'Target Q4' },
-      { str: f.actual_str_q1, label: 'Actual Q1' }, { str: f.actual_str_q2, label: 'Actual Q2' },
-      { str: f.actual_str_q3, label: 'Actual Q3' }, { str: f.actual_str_q4, label: 'Actual Q4' },
-      // XXX-G: Validate override fraction string inputs
-      { str: f.override_total_target_str, label: 'Override Total Target' },
-      { str: f.override_total_actual_str, label: 'Override Total Actual' },
-    ]
-    for (const { str, label } of checks) {
-      if (str && str.trim() !== '') {
-        const r = parsePctInput(str)
-        if (!r.isValid) {
-          toast.error(`${label}: ${r.error}`)
-          return
-        }
-      }
-    }
-  }
-
   saving.value = true
   try {
     // First ensure we have an operation
@@ -1232,72 +783,25 @@ async function saveQuarterlyData() {
 
     const { _existingId } = entryForm.value
 
-    // Phase UUU: Parse PERCENTAGE string inputs into computed values + N/D for storage
-    const f = entryForm.value
-    const tP1 = isPctType ? parsePctInput(f.target_str_q1) : null
-    const tP2 = isPctType ? parsePctInput(f.target_str_q2) : null
-    const tP3 = isPctType ? parsePctInput(f.target_str_q3) : null
-    const tP4 = isPctType ? parsePctInput(f.target_str_q4) : null
-    const aP1 = isPctType ? parsePctInput(f.actual_str_q1) : null
-    const aP2 = isPctType ? parsePctInput(f.actual_str_q2) : null
-    const aP3 = isPctType ? parsePctInput(f.actual_str_q3) : null
-    const aP4 = isPctType ? parsePctInput(f.actual_str_q4) : null
-    // XXX-G: Parse override fraction string inputs for PERCENTAGE indicators
-    const oTP = isPctType ? parsePctInput(f.override_total_target_str) : null
-    const oAP = isPctType ? parsePctInput(f.override_total_actual_str) : null
-
+    // Phase FL-1: Full 12-field payload — record-level isolation via per-quarter DB records
+    // Each quarter has its own independent record; all columns are editable
     const quarterPayload: any = {
-      pillar_indicator_id: f.pillar_indicator_id,
-      fiscal_year: f.fiscal_year,
+      pillar_indicator_id: entryForm.value.pillar_indicator_id,
+      fiscal_year: entryForm.value.fiscal_year,
       reported_quarter: selectedQuarter.value,
-      // Phase VVV-A: PERCENTAGE fields use `?? null` (not `?? f.*`) so a cleared
-      // field sends null to the API instead of restoring the stale stored value
-      target_q1: isPctType ? (tP1?.computed ?? null) : f.target_q1,
-      target_q2: isPctType ? (tP2?.computed ?? null) : f.target_q2,
-      target_q3: isPctType ? (tP3?.computed ?? null) : f.target_q3,
-      target_q4: isPctType ? (tP4?.computed ?? null) : f.target_q4,
-      accomplishment_q1: isPctType ? (aP1?.computed ?? null) : f.accomplishment_q1,
-      accomplishment_q2: isPctType ? (aP2?.computed ?? null) : f.accomplishment_q2,
-      accomplishment_q3: isPctType ? (aP3?.computed ?? null) : f.accomplishment_q3,
-      accomplishment_q4: isPctType ? (aP4?.computed ?? null) : f.accomplishment_q4,
-      remarks: f.remarks,
-      // Phase HE: APR/UPR narrative fields (Directive 386)
-      catch_up_plan: f.catch_up_plan?.trim() || null,
-      facilitating_factors: f.facilitating_factors?.trim() || null,
-      ways_forward: f.ways_forward?.trim() || null,
-      // Phase HK → Phase HL: MOV field — serialize from type-selector (Directive 146)
-      mov: serializeMov(),
-      override_rate: f.override_rate,
-      override_variance: f.override_variance,
-      // Phase HA: Total overrides (Directive 373)
-      // XXX-G: PERCENTAGE indicators derive override totals from the fraction/% string input
-      override_total_target: isPctType ? (oTP?.computed ?? null) : f.override_total_target,
-      override_total_actual: isPctType ? (oAP?.computed ?? null) : f.override_total_actual,
-      override_total_target_fraction: isPctType ? (oTP?.fractionText ?? null) : null,
-      override_total_actual_fraction: isPctType ? (oAP?.fractionText ?? null) : null,
-      // Phase TTT/UUU: N/D from Actual parse (null for direct % entry, populated for fraction entry)
-      numerator_q1: isPctType ? (aP1?.numerator ?? null) : null,
-      denominator_q1: isPctType ? (aP1?.denominator ?? null) : null,
-      numerator_q2: isPctType ? (aP2?.numerator ?? null) : null,
-      denominator_q2: isPctType ? (aP2?.denominator ?? null) : null,
-      numerator_q3: isPctType ? (aP3?.numerator ?? null) : null,
-      denominator_q3: isPctType ? (aP3?.denominator ?? null) : null,
-      numerator_q4: isPctType ? (aP4?.numerator ?? null) : null,
-      denominator_q4: isPctType ? (aP4?.denominator ?? null) : null,
-      // XXX-E: N/D from Target parse (mirrors Actual numerator/denominator above)
-      target_numerator_q1: isPctType ? (tP1?.numerator ?? null) : null,
-      target_denominator_q1: isPctType ? (tP1?.denominator ?? null) : null,
-      target_numerator_q2: isPctType ? (tP2?.numerator ?? null) : null,
-      target_denominator_q2: isPctType ? (tP2?.denominator ?? null) : null,
-      target_numerator_q3: isPctType ? (tP3?.numerator ?? null) : null,
-      target_denominator_q3: isPctType ? (tP3?.denominator ?? null) : null,
-      target_numerator_q4: isPctType ? (tP4?.numerator ?? null) : null,
-      target_denominator_q4: isPctType ? (tP4?.denominator ?? null) : null,
-      // XXX-F: Per-quarter notes (optional, no calculation impact)
-      remarks_q1: f.remarks_str_q1?.trim() || null,
-      remarks_q2: f.remarks_str_q2?.trim() || null,
-      remarks_q3: f.remarks_str_q3?.trim() || null,
-      remarks_q4: f.remarks_str_q4?.trim() || null,
+      target_q1: entryForm.value.target_q1,
+      target_q2: entryForm.value.target_q2,
+      target_q3: entryForm.value.target_q3,
+      target_q4: entryForm.value.target_q4,
+      accomplishment_q1: entryForm.value.accomplishment_q1,
+      accomplishment_q2: entryForm.value.accomplishment_q2,
+      accomplishment_q3: entryForm.value.accomplishment_q3,
+      accomplishment_q4: entryForm.value.accomplishment_q4,
+      score_q1: entryForm.value.score_q1,
+      score_q2: entryForm.value.score_q2,
+      score_q3: entryForm.value.score_q3,
+      score_q4: entryForm.value.score_q4,
+      remarks: entryForm.value.remarks,
     }
 
     // Phase DV-A: Sanitize empty strings to null for numeric fields
@@ -1387,121 +891,27 @@ async function saveQuarterlyData() {
   }
 }
 
-// Phase UUU-E: Per-quarter accomplishment percentage — real-time feedback
-// PERCENTAGE: reads actual_str_qN via parsePctInput (handles both direct % and fraction)
-// COUNT/WEIGHTED_COUNT: original (actual/target)*100 formula
-const quarterlyComputedPct = computed(() => {
-  const f = entryForm.value
-  const isPct = selectedIndicator.value?.unit_type === 'PERCENTAGE'
-  if (isPct) {
-    return [f.actual_str_q1, f.actual_str_q2, f.actual_str_q3, f.actual_str_q4].map(str => {
-      const r = parsePctInput(str)
-      return (r.isValid && r.computed !== null) ? r.computed : null
-    })
-  }
-  const quarters = [
-    { target: f.target_q1, actual: f.accomplishment_q1 },
-    { target: f.target_q2, actual: f.accomplishment_q2 },
-    { target: f.target_q3, actual: f.accomplishment_q3 },
-    { target: f.target_q4, actual: f.accomplishment_q4 },
-  ]
-  return quarters.map(({ target, actual }) => {
-    const t = Number(target)
-    const a = actual
-    if (a === null || a === undefined || a === '' || isNaN(Number(a))) return null
-    if (!t || t === 0) return null
-    return Math.min((Number(a) / t) * 100, 9999.99)
-  })
-})
-
-// Phase SSS-B: Unit-type-aware instructional banner text
-const entryBannerText = computed(() => {
-  const type = selectedIndicator.value?.unit_type || 'COUNT'
-  if (type === 'PERCENTAGE') {
-    return 'Enter a percentage directly (e.g., 90 for 90%) or a fraction (e.g., 286/268 — the system computes the percentage automatically). Both Target and Actual support this dual-entry format.'
-  }
-  return 'Enter the target and actual values for each quarter (e.g., number of beneficiaries, graduates). Accomplishment percentages are automatically computed — do not pre-compute or enter percentages manually.'
-})
-
 // Phase FY-1: DBM BAR1 standard — ALL indicator types use SUM (Directive 211/212)
-// Phase ZZZ-A: PERCENTAGE indicators derive totals/overrides live from the `_str`
-// fraction inputs (mirroring the save-time parsing in saveQuarterlyData), so the
-// Variance/Rate preview updates immediately while editing — including Override
-// Total Target/Actual.
 const computedPreview = computed(() => {
   const f = entryForm.value
-  const isPctType = selectedIndicator.value?.unit_type === 'PERCENTAGE'
+  const targets = [f.target_q1, f.target_q2, f.target_q3, f.target_q4]
+    .filter(v => v !== null && v !== undefined && v !== '')
+  const actuals = [f.accomplishment_q1, f.accomplishment_q2, f.accomplishment_q3, f.accomplishment_q4]
+    .filter(v => v !== null && v !== undefined && v !== '')
 
-  let totalTarget: number | null
-  let totalActual: number | null
-  let overrideTarget: number | null
-  let overrideActual: number | null
-  // Phase AAAC-C: fraction-aggregate caption strings (ΣN/ΣD), parity with backend AAAC-A
-  let totalTargetFraction: string | null = null
-  let totalActualFraction: string | null = null
-
-  if (isPctType) {
-    // Phase AAAC-C: mirror backend AAAC-A — when every filled quarter has a valid
-    // numerator/denominator pair, total = ΣN/ΣD × 100; otherwise legacy sum-of-%.
-    const sideTotal = (strs: string[]): { total: number | null; fraction: string | null } => {
-      const parsed = strs.map(s => parsePctInput(s))
-      const filled = parsed.filter(p => p.computed !== null)
-      const legacySum = filled.length > 0
-        ? filled.reduce((a, p) => a + (p.computed as number), 0)
-        : null
-      let sumNum = 0
-      let sumDen = 0
-      let allHaveFraction = filled.length > 0
-      for (const p of parsed) {
-        if (p.computed === null) continue
-        if (p.numerator === null || p.denominator === null || p.denominator <= 0) {
-          allHaveFraction = false
-          break
-        }
-        sumNum += p.numerator
-        sumDen += p.denominator
-      }
-      if (allHaveFraction && sumDen > 0) {
-        return { total: parseFloat(((sumNum / sumDen) * 100).toFixed(4)), fraction: `${sumNum}/${sumDen}` }
-      }
-      return { total: legacySum, fraction: null }
-    }
-
-    const tSide = sideTotal([f.target_str_q1, f.target_str_q2, f.target_str_q3, f.target_str_q4])
-    const aSide = sideTotal([f.actual_str_q1, f.actual_str_q2, f.actual_str_q3, f.actual_str_q4])
-    totalTarget = tSide.total
-    totalActual = aSide.total
-    totalTargetFraction = tSide.fraction
-    totalActualFraction = aSide.fraction
-    overrideTarget = parsePctInput(f.override_total_target_str).computed
-    overrideActual = parsePctInput(f.override_total_actual_str).computed
-  } else {
-    const targets = [f.target_q1, f.target_q2, f.target_q3, f.target_q4]
-      .filter(v => v !== null && v !== undefined && v !== '')
-    const actuals = [f.accomplishment_q1, f.accomplishment_q2, f.accomplishment_q3, f.accomplishment_q4]
-      .filter(v => v !== null && v !== undefined && v !== '')
-
-    totalTarget = targets.length > 0 ? targets.reduce((a, b) => Number(a) + Number(b), 0) : null
-    totalActual = actuals.length > 0 ? actuals.reduce((a, b) => Number(a) + Number(b), 0) : null
-
-    // Phase HA: Apply override totals as effective base for variance/rate (Directive 374)
-    overrideTarget = (f.override_total_target != null && f.override_total_target !== '')
-      ? Number(f.override_total_target)
-      : null
-    overrideActual = (f.override_total_actual != null && f.override_total_actual !== '')
-      ? Number(f.override_total_actual)
-      : null
-  }
-
-  const effectiveTarget = overrideTarget ?? totalTarget
-  const effectiveActual = overrideActual ?? totalActual
-
-  const variance = effectiveTarget !== null && effectiveActual !== null ? effectiveActual - effectiveTarget : null
-  const rate = effectiveTarget !== null && effectiveTarget !== 0 && effectiveActual !== null
-    ? (effectiveActual / effectiveTarget) * 100
+  const totalTarget = targets.length > 0
+    ? targets.reduce((a, b) => Number(a) + Number(b), 0)
+    : null
+  const totalActual = actuals.length > 0
+    ? actuals.reduce((a, b) => Number(a) + Number(b), 0)
     : null
 
-  return { totalTarget, totalActual, totalTargetFraction, totalActualFraction, variance, rate }
+  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+    ? (totalActual / totalTarget) * 100
+    : null
+
+  return { totalTarget, totalActual, variance, rate }
 })
 
 // Phase EM-C: Submit quarterly report for the current FY+quarter (single API call)
@@ -1595,8 +1005,6 @@ watch(activePillar, async () => {
     console.warn('[Physical] Skipping fetch - fiscal year not initialized')
     return
   }
-  // Phase AAAA-A: Pillar changed — cached per-quarter indicator lists are stale
-  quarterIndicatorCache.value.clear()
   loading.value = true
   await fetchTaxonomy()
   await fetchIndicatorData()
@@ -1610,8 +1018,6 @@ watch(selectedFiscalYear, async (newYear) => {
   // Phase EP-A: Skip during onMounted initialization to prevent race condition
   if (isInitializing) return
   if (!newYear || newYear < 2020) return
-  // Phase AAAA-A: Fiscal year changed — cached per-quarter indicator lists are stale
-  quarterIndicatorCache.value.clear()
   // Phase DI-B: Sync year changes to URL query
   router.replace({
     query: { ...route.query, year: newYear.toString() }
@@ -1636,10 +1042,6 @@ watch(selectedQuarter, async () => {
 
 // Phase DW-C: Fix race condition - await fiscal year fetch before indicator data
 onMounted(async () => {
-  // Phase HN: If current activePillar not in visiblePillars, select first visible
-  if (!visiblePillars.value.some(p => p.id === activePillar.value)) {
-    activePillar.value = visiblePillars.value[0]?.id ?? PILLARS[0].id
-  }
   // Ensure fiscal year is initialized before fetching pillar data
   await fiscalYearStore.fetchFiscalYears()
   await fetchPillarData()
@@ -1654,8 +1056,8 @@ onMounted(async () => {
 
 <template>
   <div>
-    <!-- Row 1: Title + Submit/Status (Phase HK-1 — Directive 133) -->
-    <div class="d-flex align-center ga-3 mb-2" style="justify-content: space-between">
+    <!-- Header -->
+    <div class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-4 ga-3">
       <div class="d-flex align-center ga-3">
         <v-btn icon="mdi-arrow-left" variant="text" @click="goBack" />
         <div>
@@ -1667,16 +1069,76 @@ onMounted(async () => {
           </p>
         </div>
       </div>
-      <div class="d-flex align-center flex-wrap ga-2">
+      <!-- Phase EM-D: Expanded max-width to 760px for breathing room with all controls -->
+      <div class="d-flex flex-column flex-sm-row align-stretch align-sm-center ga-2 ga-sm-3" style="width: 100%; max-width: 760px">
+        <!-- Phase EE-D: Quarter Selector — tooltip removed (v-tooltip on v-select causes persistent display) -->
+        <v-select
+          v-model="selectedQuarter"
+          :items="quarterOptions"
+          item-title="title"
+          item-value="value"
+          label="Reporting Period"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="flex-sm-0-0-auto"
+          style="width: 100%; max-width: 200px"
+          prepend-inner-icon="mdi-calendar-range"
+        />
+        <!-- Fiscal Year Selector -->
+        <v-select
+          v-model="selectedFiscalYear"
+          :items="fiscalYearOptions"
+          label="Fiscal Year"
+          variant="outlined"
+          density="compact"
+          hide-details
+          class="flex-sm-0-0-auto"
+          style="width: 100%; max-width: 170px"
+          prepend-inner-icon="mdi-calendar"
+        />
+        <!-- Phase EO-F: Export menu (before Submit per header control order spec) -->
+        <v-menu>
+          <template v-slot:activator="{ props }">
+            <v-btn
+              color="primary"
+              variant="outlined"
+              density="compact"
+              prepend-icon="mdi-file-export"
+              class="flex-sm-0-0-auto"
+              v-bind="props"
+            >
+              <span class="d-none d-sm-inline">Export</span>
+              <v-icon class="d-sm-none">mdi-file-export</v-icon>
+            </v-btn>
+          </template>
+          <v-list density="compact">
+            <v-list-item disabled>
+              <template v-slot:prepend>
+                <v-icon>mdi-file-pdf-box</v-icon>
+              </template>
+              <v-list-item-title>Export to PDF</v-list-item-title>
+              <v-list-item-subtitle class="text-caption">Coming soon</v-list-item-subtitle>
+            </v-list-item>
+            <v-list-item disabled>
+              <template v-slot:prepend>
+                <v-icon>mdi-file-excel</v-icon>
+              </template>
+              <v-list-item-title>Export to Excel</v-list-item-title>
+              <v-list-item-subtitle class="text-caption">Coming soon</v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+        </v-menu>
+        <!-- Phase EO-F: Submit / status button (rightmost position) -->
         <v-btn
           v-if="canSubmitAllPillars()"
           color="primary"
-          variant="flat"
+          variant="tonal"
           density="compact"
           :prepend-icon="currentQuarterlyReport?.publication_status === 'REJECTED' ? 'mdi-refresh' : 'mdi-send'"
           :loading="actionLoading"
           @click="submitAllPillarsForReview"
-          class="flex-shrink-0"
+          class="flex-sm-0-0-auto"
         >
           <span class="d-none d-sm-inline">{{ currentQuarterlyReport?.publication_status === 'REJECTED' ? 'Resubmit' : 'Submit for Review' }}</span>
           <v-icon class="d-sm-none">{{ currentQuarterlyReport?.publication_status === 'REJECTED' ? 'mdi-refresh' : 'mdi-send' }}</v-icon>
@@ -1689,7 +1151,7 @@ onMounted(async () => {
           prepend-icon="mdi-undo"
           :loading="actionLoading"
           @click="withdrawAllPillarsSubmission"
-          class="flex-shrink-0"
+          class="flex-sm-0-0-auto"
         >
           <span class="d-none d-sm-inline">Withdraw Submission</span>
           <v-icon class="d-sm-none">mdi-undo</v-icon>
@@ -1701,7 +1163,7 @@ onMounted(async () => {
           density="compact"
           prepend-icon="mdi-clock-outline"
           disabled
-          class="flex-shrink-0"
+          class="flex-sm-0-0-auto"
         >
           <span class="d-none d-sm-inline">Pending Review</span>
           <v-icon class="d-sm-none">mdi-clock-outline</v-icon>
@@ -1712,105 +1174,13 @@ onMounted(async () => {
           variant="tonal"
           size="small"
           prepend-icon="mdi-check-circle"
-          class="flex-shrink-0"
+          class="flex-sm-0-0-auto"
         >
           Approved
         </v-chip>
+        <!-- Phase DW-C: "Add Fiscal Year" button moved to main university-operations page -->
       </div>
     </div>
-
-    <!-- Row 2: Controls — Quarter + FY + Columns + Export (Phase HK-1) -->
-    <div class="d-flex align-center flex-wrap ga-2 mb-4">
-      <v-select
-        v-model="selectedQuarter"
-        :items="quarterOptions"
-        item-title="title"
-        item-value="value"
-        label="Reporting Period"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="width: 200px"
-        prepend-inner-icon="mdi-calendar-range"
-      />
-      <v-select
-        v-model="selectedFiscalYear"
-        :items="fiscalYearOptions"
-        label="Fiscal Year"
-        variant="outlined"
-        density="compact"
-        hide-details
-        style="width: 170px"
-        prepend-inner-icon="mdi-calendar"
-      />
-      <!-- Phase HG: Column visibility toggle (Directive 108) -->
-      <v-menu :close-on-content-click="false" location="bottom end">
-        <template #activator="{ props }">
-          <v-btn v-bind="props" variant="outlined" density="compact" prepend-icon="mdi-table-column" class="flex-shrink-0">
-            <span class="d-none d-sm-inline">Columns</span>
-            <v-icon class="d-sm-none">mdi-table-column</v-icon>
-          </v-btn>
-        </template>
-        <v-list density="compact" min-width="210">
-          <v-list-subheader class="text-caption">Optional Columns</v-list-subheader>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.score" label="Score" density="compact" hide-details color="primary" />
-          </v-list-item>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.remarks" label="Remarks" density="compact" hide-details color="primary" />
-          </v-list-item>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.notes" label="Notes (per-quarter)" density="compact" hide-details color="primary" />
-          </v-list-item>
-          <v-list-subheader class="text-caption">Narrative Fields (APR/UPR)</v-list-subheader>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.catch_up_plans" label="Catch-Up Plans" density="compact" hide-details color="primary" />
-          </v-list-item>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.facilitating_factors" label="Facilitating Factors" density="compact" hide-details color="primary" />
-          </v-list-item>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.ways_forward" label="Ways Forward" density="compact" hide-details color="primary" />
-          </v-list-item>
-          <!-- Phase HK: MOV toggle under Verification subheader (Directive 139) -->
-          <v-list-subheader class="text-caption">Verification</v-list-subheader>
-          <v-list-item>
-            <v-checkbox v-model="columnVisibility.mov" label="Means of Verification (MOV)" density="compact" hide-details color="primary" />
-          </v-list-item>
-        </v-list>
-      </v-menu>
-      <v-menu>
-        <template v-slot:activator="{ props }">
-          <v-btn
-            variant="outlined"
-            density="compact"
-            prepend-icon="mdi-file-export"
-            class="flex-shrink-0"
-            v-bind="props"
-          >
-            <span class="d-none d-sm-inline">Export</span>
-            <v-icon class="d-sm-none">mdi-file-export</v-icon>
-          </v-btn>
-        </template>
-        <v-list density="compact">
-          <v-list-item disabled>
-            <template v-slot:prepend>
-              <v-icon>mdi-file-pdf-box</v-icon>
-            </template>
-            <v-list-item-title>Export to PDF</v-list-item-title>
-            <v-list-item-subtitle class="text-caption">Coming soon</v-list-item-subtitle>
-          </v-list-item>
-          <v-list-item disabled>
-            <template v-slot:prepend>
-              <v-icon>mdi-file-excel</v-icon>
-            </template>
-            <v-list-item-title>Export to Excel</v-list-item-title>
-            <v-list-item-subtitle class="text-caption">Coming soon</v-list-item-subtitle>
-          </v-list-item>
-        </v-list>
-      </v-menu>
-    </div>
-    <!-- Phase DW-C: "Add Fiscal Year" button on main university-operations page -->
 
     <!-- Phase EO-B: Consolidated hero bar — single authoritative quarterly status -->
     <v-sheet v-if="currentPillar" rounded="lg" class="mb-4 pa-3 d-flex align-center justify-space-between flex-wrap ga-2" color="grey-lighten-4">
@@ -1919,7 +1289,7 @@ onMounted(async () => {
     <!-- Phase DR-C: Pillar Tabs with Full Program Names -->
     <v-card class="mb-4">
       <v-tabs v-model="activePillar" bg-color="primary" show-arrows class="pillar-tabs">
-        <v-tab v-for="pillar in visiblePillars" :key="pillar.id" :value="pillar.id" class="pillar-tab">
+        <v-tab v-for="pillar in PILLARS" :key="pillar.id" :value="pillar.id" class="pillar-tab">
           <v-icon start>{{ pillar.icon }}</v-icon>
           {{ pillar.fullName }}
         </v-tab>
@@ -2005,14 +1375,6 @@ onMounted(async () => {
               <p class="mb-2">
                 <strong>Quarter Schedule:</strong> Q1 (Jan–Mar) · Q2 (Apr–Jun) · Q3 (Jul–Sep) · Q4 (Oct–Dec)
               </p>
-              <p class="mb-2">
-                <strong>Override Totals:</strong> The "Total Target" and "Total Actual" columns
-                show the sum of your Q1–Q4 entries by default. However, if the official BAR No. 1
-                report uses a different verified total (e.g., due to annual targets or official
-                adjustments), you can enter an override value in the entry dialog. When an override
-                is set, the table will display the official value instead of the auto-calculated sum.
-                Use this to ensure your entries match the submitted government report exactly.
-              </p>
               <p class="mb-0">
                 <strong>Submission &amp; Review:</strong> Once all indicators are complete for a quarter, submit for review using the Submit button. Your data goes through: Draft → Pending Review → Published. Published quarters are locked for editing unless unlocked by an administrator.
               </p>
@@ -2029,7 +1391,6 @@ onMounted(async () => {
           <v-chip size="small" class="ml-2" color="primary" variant="tonal">
             {{ outcomeIndicators.length }}
           </v-chip>
-          <v-spacer />
         </v-card-title>
         <v-divider />
 
@@ -2037,18 +1398,12 @@ onMounted(async () => {
         <div v-if="outcomeIndicators.length > 0" class="responsive-table-wrapper">
           <v-table density="compact">
             <thead>
-              <tr class="bg-primary text-white">
+              <tr class="bg-grey-lighten-4">
                 <th class="text-left indicator-column" rowspan="2">Indicator</th>
                 <th v-for="q in QUARTERS" :key="q" colspan="2" class="text-center qgroup-header border-right-q" :class="{ 'q-active-group': q === selectedQuarter }">{{ q }}</th>
-                <!-- Phase GZ: Total Target + Total Actual columns (Directive 361) -->
-                <th class="text-center total-column" rowspan="2">Total Target</th>
-                <th class="text-center total-column" rowspan="2">Total Actual</th>
                 <th class="variance-column" rowspan="2">Variance</th>
                 <th class="rate-column" rowspan="2">Rate</th>
-                <!-- Phase HL: Action column label (Directive 149) -->
-                <th v-if="canEditData()" class="action-column text-center" rowspan="2">
-                  <v-icon size="x-small" color="grey">mdi-pencil-outline</v-icon>
-                </th>
+                <th v-if="canEditData()" class="action-column" rowspan="2"></th>
               </tr>
               <tr class="bg-grey-lighten-5">
                 <template v-for="q in QUARTERS" :key="q + '-sub'">
@@ -2058,8 +1413,9 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <template v-for="indicator in outcomeIndicators" :key="indicator.id">
               <tr
+                v-for="indicator in outcomeIndicators"
+                :key="indicator.id"
                 class="cursor-pointer"
                 @click="canEditData() && openEntryDialog(indicator)"
               >
@@ -2099,41 +1455,12 @@ onMounted(async () => {
                 <template v-if="getIndicatorData(indicator.id)">
                   <!-- Phase DW-D: Always render all 12 quarter cells with highlight -->
                   <template v-for="q in QUARTERS" :key="q + '-data'">
-                    <td class="text-center qsub-cell" :class="qCellClass(q)">
-                      <div>{{ getPctCellDisplay(getIndicatorData(indicator.id), 'target', q, indicator.unit_type).primary }}</div>
-                      <div
-                        v-if="getPctCellDisplay(getIndicatorData(indicator.id), 'target', q, indicator.unit_type).fraction"
-                        class="text-caption text-grey"
-                      >{{ getPctCellDisplay(getIndicatorData(indicator.id), 'target', q, indicator.unit_type).fraction }}</div>
-                    </td>
-                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
-                      <div>{{ getPctCellDisplay(getIndicatorData(indicator.id), 'accomplishment', q, indicator.unit_type).primary }}</div>
-                      <div
-                        v-if="getPctCellDisplay(getIndicatorData(indicator.id), 'accomplishment', q, indicator.unit_type).fraction"
-                        class="text-caption text-grey"
-                      >{{ getPctCellDisplay(getIndicatorData(indicator.id), 'accomplishment', q, indicator.unit_type).fraction }}</div>
-                    </td>
+                    <td class="text-center qsub-cell" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
+                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
                   </template>
-                  <!-- Phase GZ: Total Target + Total Actual (Directive 361) -->
-                  <td class="text-center">
-                    {{ formatNumber(getIndicatorData(indicator.id)?.total_target) }}{{ getUnitConfig(indicator.unit_type).suffix }}
-                    <!-- XXX-G: Override target fraction caption -->
-                    <div v-if="getIndicatorData(indicator.id)?.override_total_target_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.override_total_target_fraction }}</div>
-                    <!-- AAAC-B: fraction-aggregate caption (ΣN/ΣD) when no override fraction set -->
-                    <div v-else-if="getIndicatorData(indicator.id)?.total_target_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.total_target_fraction }}</div>
-                  </td>
-                  <td class="text-center text-success">
-                    {{ formatNumber(getIndicatorData(indicator.id)?.total_accomplishment) }}{{ getUnitConfig(indicator.unit_type).suffix }}
-                    <!-- XXX-G: Override actual fraction caption -->
-                    <div v-if="getIndicatorData(indicator.id)?.override_total_actual_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.override_total_actual_fraction }}</div>
-                    <!-- AAAC-B: fraction-aggregate caption (ΣN/ΣD) when no override fraction set -->
-                    <div v-else-if="getIndicatorData(indicator.id)?.total_actual_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.total_actual_fraction }}</div>
-                  </td>
-                  <!-- Phase GZ: Annual Variance + Rate (Directives 360, 363) -->
                   <td class="text-right">
                     <v-chip
                       size="x-small"
-                      class="metric-chip"
                       :color="getVarianceColor(getIndicatorData(indicator.id)?.variance)"
                       variant="tonal"
                     >
@@ -2143,7 +1470,6 @@ onMounted(async () => {
                   <td class="text-right">
                     <v-chip
                       size="x-small"
-                      class="metric-chip"
                       :color="getRateColor(getIndicatorData(indicator.id)?.accomplishment_rate)"
                       variant="tonal"
                     >
@@ -2151,8 +1477,7 @@ onMounted(async () => {
                     </v-chip>
                   </td>
                 </template>
-                <!-- Phase HK: No-data colspan (Directive 137) -->
-                <td v-else colspan="12" class="text-center">
+                <td v-else colspan="10" class="text-center">
                   <div class="no-data-hint pa-2">
                     <v-icon size="small" color="grey" class="mr-1">mdi-pencil-plus-outline</v-icon>
                     <span class="text-grey">Click row to enter quarterly data</span>
@@ -2162,74 +1487,6 @@ onMounted(async () => {
                   <v-btn icon="mdi-pencil" variant="text" size="x-small" @click.stop="openEntryDialog(indicator)" />
                 </td>
               </tr>
-              <!-- Phase HK: Below-row stacked panel — remarks + narratives + MOV (Directives 135, 138, 141) -->
-              <!-- Phase HL: Stacked panel click-to-edit (Directive 148) -->
-              <tr v-if="anyNarrativeVisible && getIndicatorData(indicator.id)" class="narrative-stacked-row" :class="{ 'cursor-pointer': canEditData() }" @click="canEditData() && openEntryDialog(indicator)">
-                <td :colspan="narrativeRowColspan" class="pa-0">
-                  <div class="narrative-stacked-panel">
-                    <div v-if="columnVisibility.score" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Score:</span>
-                      <span class="narrative-stacked-text">
-                        Q1: {{ getIndicatorData(indicator.id)?.score_q1 || '—' }} |
-                        Q2: {{ getIndicatorData(indicator.id)?.score_q2 || '—' }} |
-                        Q3: {{ getIndicatorData(indicator.id)?.score_q3 || '—' }} |
-                        Q4: {{ getIndicatorData(indicator.id)?.score_q4 || '—' }}
-                      </span>
-                    </div>
-                    <div v-if="columnVisibility.remarks" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Remarks:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.remarks" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.remarks }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <!-- XXX-F: Per-quarter Notes (Issue A) -->
-                    <div v-if="columnVisibility.notes" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Notes:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.remarks_q1 || getIndicatorData(indicator.id)?.remarks_q2 || getIndicatorData(indicator.id)?.remarks_q3 || getIndicatorData(indicator.id)?.remarks_q4" class="narrative-stacked-text">
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q1">Q1: {{ getIndicatorData(indicator.id)?.remarks_q1 }}<br></template>
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q2">Q2: {{ getIndicatorData(indicator.id)?.remarks_q2 }}<br></template>
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q3">Q3: {{ getIndicatorData(indicator.id)?.remarks_q3 }}<br></template>
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q4">Q4: {{ getIndicatorData(indicator.id)?.remarks_q4 }}</template>
-                      </span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <div v-if="columnVisibility.catch_up_plans" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Catch-Up Plans:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.catch_up_plan" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.catch_up_plan }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <div v-if="columnVisibility.facilitating_factors" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Facilitating Factors:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.facilitating_factors" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.facilitating_factors }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <div v-if="columnVisibility.ways_forward" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Ways Forward:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.ways_forward" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.ways_forward }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <!-- Phase HL: Type-aware MOV display (Directive 147) -->
-                    <div v-if="columnVisibility.mov" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">MOV:</span>
-                      <template v-if="getIndicatorData(indicator.id)?.mov">
-                        <a v-if="parseMov(getIndicatorData(indicator.id).mov).type === 'link'"
-                           :href="parseMov(getIndicatorData(indicator.id).mov).value"
-                           target="_blank" rel="noopener" class="narrative-stacked-text text-primary"
-                           @click.stop>
-                          <v-icon size="x-small" class="mr-1">mdi-open-in-new</v-icon>
-                          {{ parseMov(getIndicatorData(indicator.id).mov).value }}
-                        </a>
-                        <span v-else-if="parseMov(getIndicatorData(indicator.id).mov).type === 'file'" class="narrative-stacked-text">
-                          <v-icon size="x-small" class="mr-1">mdi-file-check</v-icon>
-                          {{ parseMov(getIndicatorData(indicator.id).mov).metadata?.filename || parseMov(getIndicatorData(indicator.id).mov).value }}
-                        </span>
-                        <span v-else class="narrative-stacked-text">{{ parseMov(getIndicatorData(indicator.id).mov).value }}</span>
-                      </template>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-              </template>
             </tbody>
           </v-table>
 
@@ -2264,18 +1521,12 @@ onMounted(async () => {
         <div v-if="outputIndicators.length > 0" class="responsive-table-wrapper">
           <v-table density="compact">
             <thead>
-              <tr class="bg-primary text-white">
+              <tr class="bg-grey-lighten-4">
                 <th class="text-left indicator-column" rowspan="2">Indicator</th>
                 <th v-for="q in QUARTERS" :key="q" colspan="2" class="text-center qgroup-header border-right-q" :class="{ 'q-active-group': q === selectedQuarter }">{{ q }}</th>
-                <!-- Phase GZ: Total Target + Total Actual columns (Directive 361) -->
-                <th class="text-center total-column" rowspan="2">Total Target</th>
-                <th class="text-center total-column" rowspan="2">Total Actual</th>
                 <th class="variance-column" rowspan="2">Variance</th>
                 <th class="rate-column" rowspan="2">Rate</th>
-                <!-- Phase HL: Action column label (Directive 149) -->
-                <th v-if="canEditData()" class="action-column text-center" rowspan="2">
-                  <v-icon size="x-small" color="grey">mdi-pencil-outline</v-icon>
-                </th>
+                <th v-if="canEditData()" class="action-column" rowspan="2"></th>
               </tr>
               <tr class="bg-grey-lighten-5">
                 <template v-for="q in QUARTERS" :key="q + '-sub'">
@@ -2285,8 +1536,9 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <template v-for="indicator in outputIndicators" :key="indicator.id">
               <tr
+                v-for="indicator in outputIndicators"
+                :key="indicator.id"
                 class="cursor-pointer"
                 @click="canEditData() && openEntryDialog(indicator)"
               >
@@ -2326,41 +1578,12 @@ onMounted(async () => {
                 <template v-if="getIndicatorData(indicator.id)">
                   <!-- Phase DW-D: Always render all 8 quarter cells with highlight -->
                   <template v-for="q in QUARTERS" :key="q + '-data'">
-                    <td class="text-center qsub-cell" :class="qCellClass(q)">
-                      <div>{{ getPctCellDisplay(getIndicatorData(indicator.id), 'target', q, indicator.unit_type).primary }}</div>
-                      <div
-                        v-if="getPctCellDisplay(getIndicatorData(indicator.id), 'target', q, indicator.unit_type).fraction"
-                        class="text-caption text-grey"
-                      >{{ getPctCellDisplay(getIndicatorData(indicator.id), 'target', q, indicator.unit_type).fraction }}</div>
-                    </td>
-                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
-                      <div>{{ getPctCellDisplay(getIndicatorData(indicator.id), 'accomplishment', q, indicator.unit_type).primary }}</div>
-                      <div
-                        v-if="getPctCellDisplay(getIndicatorData(indicator.id), 'accomplishment', q, indicator.unit_type).fraction"
-                        class="text-caption text-grey"
-                      >{{ getPctCellDisplay(getIndicatorData(indicator.id), 'accomplishment', q, indicator.unit_type).fraction }}</div>
-                    </td>
+                    <td class="text-center qsub-cell" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
+                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
                   </template>
-                  <!-- Phase GZ: Total Target + Total Actual (Directive 361) -->
-                  <td class="text-center">
-                    {{ formatNumber(getIndicatorData(indicator.id)?.total_target) }}{{ getUnitConfig(indicator.unit_type).suffix }}
-                    <!-- XXX-G: Override target fraction caption -->
-                    <div v-if="getIndicatorData(indicator.id)?.override_total_target_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.override_total_target_fraction }}</div>
-                    <!-- AAAC-B: fraction-aggregate caption (ΣN/ΣD) when no override fraction set -->
-                    <div v-else-if="getIndicatorData(indicator.id)?.total_target_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.total_target_fraction }}</div>
-                  </td>
-                  <td class="text-center text-success">
-                    {{ formatNumber(getIndicatorData(indicator.id)?.total_accomplishment) }}{{ getUnitConfig(indicator.unit_type).suffix }}
-                    <!-- XXX-G: Override actual fraction caption -->
-                    <div v-if="getIndicatorData(indicator.id)?.override_total_actual_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.override_total_actual_fraction }}</div>
-                    <!-- AAAC-B: fraction-aggregate caption (ΣN/ΣD) when no override fraction set -->
-                    <div v-else-if="getIndicatorData(indicator.id)?.total_actual_fraction" class="text-caption text-grey">{{ getIndicatorData(indicator.id)?.total_actual_fraction }}</div>
-                  </td>
-                  <!-- Phase GZ: Annual Variance + Rate (Directives 360, 363) -->
                   <td class="text-right">
                     <v-chip
                       size="x-small"
-                      class="metric-chip"
                       :color="getVarianceColor(getIndicatorData(indicator.id)?.variance)"
                       variant="tonal"
                     >
@@ -2370,7 +1593,6 @@ onMounted(async () => {
                   <td class="text-right">
                     <v-chip
                       size="x-small"
-                      class="metric-chip"
                       :color="getRateColor(getIndicatorData(indicator.id)?.accomplishment_rate)"
                       variant="tonal"
                     >
@@ -2378,8 +1600,7 @@ onMounted(async () => {
                     </v-chip>
                   </td>
                 </template>
-                <!-- Phase HK: No-data colspan (Directive 137) -->
-                <td v-else colspan="12" class="text-center">
+                <td v-else colspan="10" class="text-center">
                   <div class="no-data-hint pa-2">
                     <v-icon size="small" color="grey" class="mr-1">mdi-pencil-plus-outline</v-icon>
                     <span class="text-grey">Click row to enter quarterly data</span>
@@ -2389,74 +1610,6 @@ onMounted(async () => {
                   <v-btn icon="mdi-pencil" variant="text" size="x-small" @click.stop="openEntryDialog(indicator)" />
                 </td>
               </tr>
-              <!-- Phase HK: Below-row stacked panel — remarks + narratives + MOV (Directives 135, 138, 141) -->
-              <!-- Phase HL: Stacked panel click-to-edit (Directive 148) -->
-              <tr v-if="anyNarrativeVisible && getIndicatorData(indicator.id)" class="narrative-stacked-row" :class="{ 'cursor-pointer': canEditData() }" @click="canEditData() && openEntryDialog(indicator)">
-                <td :colspan="narrativeRowColspan" class="pa-0">
-                  <div class="narrative-stacked-panel">
-                    <div v-if="columnVisibility.score" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Score:</span>
-                      <span class="narrative-stacked-text">
-                        Q1: {{ getIndicatorData(indicator.id)?.score_q1 || '—' }} |
-                        Q2: {{ getIndicatorData(indicator.id)?.score_q2 || '—' }} |
-                        Q3: {{ getIndicatorData(indicator.id)?.score_q3 || '—' }} |
-                        Q4: {{ getIndicatorData(indicator.id)?.score_q4 || '—' }}
-                      </span>
-                    </div>
-                    <div v-if="columnVisibility.remarks" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Remarks:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.remarks" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.remarks }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <!-- XXX-F: Per-quarter Notes (Issue A) -->
-                    <div v-if="columnVisibility.notes" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Notes:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.remarks_q1 || getIndicatorData(indicator.id)?.remarks_q2 || getIndicatorData(indicator.id)?.remarks_q3 || getIndicatorData(indicator.id)?.remarks_q4" class="narrative-stacked-text">
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q1">Q1: {{ getIndicatorData(indicator.id)?.remarks_q1 }}<br></template>
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q2">Q2: {{ getIndicatorData(indicator.id)?.remarks_q2 }}<br></template>
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q3">Q3: {{ getIndicatorData(indicator.id)?.remarks_q3 }}<br></template>
-                        <template v-if="getIndicatorData(indicator.id)?.remarks_q4">Q4: {{ getIndicatorData(indicator.id)?.remarks_q4 }}</template>
-                      </span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <div v-if="columnVisibility.catch_up_plans" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Catch-Up Plans:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.catch_up_plan" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.catch_up_plan }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <div v-if="columnVisibility.facilitating_factors" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Facilitating Factors:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.facilitating_factors" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.facilitating_factors }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <div v-if="columnVisibility.ways_forward" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">Ways Forward:</span>
-                      <span v-if="getIndicatorData(indicator.id)?.ways_forward" class="narrative-stacked-text">{{ getIndicatorData(indicator.id)?.ways_forward }}</span>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                    <!-- Phase HL: Type-aware MOV display (Directive 147) -->
-                    <div v-if="columnVisibility.mov" class="narrative-stacked-item">
-                      <span class="narrative-stacked-label">MOV:</span>
-                      <template v-if="getIndicatorData(indicator.id)?.mov">
-                        <a v-if="parseMov(getIndicatorData(indicator.id).mov).type === 'link'"
-                           :href="parseMov(getIndicatorData(indicator.id).mov).value"
-                           target="_blank" rel="noopener" class="narrative-stacked-text text-primary"
-                           @click.stop>
-                          <v-icon size="x-small" class="mr-1">mdi-open-in-new</v-icon>
-                          {{ parseMov(getIndicatorData(indicator.id).mov).value }}
-                        </a>
-                        <span v-else-if="parseMov(getIndicatorData(indicator.id).mov).type === 'file'" class="narrative-stacked-text">
-                          <v-icon size="x-small" class="mr-1">mdi-file-check</v-icon>
-                          {{ parseMov(getIndicatorData(indicator.id).mov).metadata?.filename || parseMov(getIndicatorData(indicator.id).mov).value }}
-                        </span>
-                        <span v-else class="narrative-stacked-text">{{ parseMov(getIndicatorData(indicator.id).mov).value }}</span>
-                      </template>
-                      <span v-else class="text-grey text-caption">—</span>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-              </template>
             </tbody>
           </v-table>
 
@@ -2480,8 +1633,7 @@ onMounted(async () => {
     <!-- Phase DW-C: Fiscal Year Creation Dialog moved to main university-operations page -->
 
     <!-- Phase DU-A: Quarterly Data Entry Dialog — Vertical Quarter-Row Table -->
-    <!-- Phase HD: persistent removed — enables outside-click + ESC close (Directive 384) -->
-    <v-dialog v-model="entryDialog" max-width="900">
+    <v-dialog v-model="entryDialog" max-width="700" persistent>
       <v-card>
         <v-card-title class="d-flex align-center">
           <v-icon start>mdi-table-edit</v-icon>
@@ -2524,86 +1676,34 @@ onMounted(async () => {
             All values pre-filled from <strong>{{ prefillSourceQ }}</strong> record — edit freely. This will create a new {{ selectedQuarter }} record.
           </v-alert>
 
-          <!-- Phase SSS-B: Instructional banner — unit-type-aware guidance -->
-          <v-alert
-            type="info"
-            variant="tonal"
-            density="compact"
-            class="mb-3"
-            closable
-            icon="mdi-information-outline"
-          >
-            {{ entryBannerText }}
-          </v-alert>
-
-          <!-- Phase UUU: Vertical tabular data entry — Quarter / Target / Actual / Acc. % -->
-          <!-- Score column removed: fraction is now native to Target/Actual dual-entry inputs -->
-          <!-- Phase YYY-A: overflow-x wrapper so widened columns scroll on narrow viewports -->
-          <div style="overflow-x: auto">
+          <!-- Phase DU-A: Vertical tabular data entry — rows = quarters, cols = T/A/S -->
           <v-table density="compact" class="mb-4">
             <thead>
-              <tr class="bg-primary text-white">
+              <tr class="bg-grey-lighten-4">
                 <th class="q-label-cell">Quarter</th>
                 <th class="text-center">Target</th>
                 <th class="text-center">Actual</th>
-                <th class="text-center acc-pct-col">Acc. %</th>
-                <th class="text-center">Notes (Optional)</th>
+                <th class="text-center">Score (optional)</th>
               </tr>
             </thead>
             <tbody>
+              <!-- Phase FL-1: All quarter fields are fully editable — record isolation at DB level -->
               <!-- Q1 -->
               <tr>
                 <td class="q-label-cell">
                   <v-chip size="small" color="blue" variant="tonal" class="font-weight-bold">Q1</v-chip>
                 </td>
-                <!-- Target Q1 -->
-                <td class="du-input-cell du-input-cell--target">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.target_q1" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.target_str_q1" placeholder="90 or 200/200"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.target_str_q1 && parsePctInput(entryForm.target_str_q1).error)" />
-                    <div v-if="parsePctInput(entryForm.target_str_q1).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.target_str_q1).display }}</span>
-                      <span v-if="parsePctInput(entryForm.target_str_q1).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.target_str_q1).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.target[0]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.target[0] }})</span>
-                    </div>
-                    <div v-if="entryForm.target_str_q1 && parsePctInput(entryForm.target_str_q1).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.target_str_q1).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.target_q1" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <!-- Actual Q1 -->
-                <td class="du-input-cell du-input-cell--actual">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.accomplishment_q1" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.actual_str_q1" placeholder="75 or 286/268"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.actual_str_q1 && parsePctInput(entryForm.actual_str_q1).error)" />
-                    <div v-if="parsePctInput(entryForm.actual_str_q1).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.actual_str_q1).display }}</span>
-                      <span v-if="parsePctInput(entryForm.actual_str_q1).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.actual_str_q1).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.actual[0]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.actual[0] }})</span>
-                    </div>
-                    <div v-if="entryForm.actual_str_q1 && parsePctInput(entryForm.actual_str_q1).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.actual_str_q1).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.accomplishment_q1" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <td class="text-center acc-pct-col">
-                  <v-chip v-if="quarterlyComputedPct[0] !== null" size="x-small"
-                    :color="quarterlyComputedPct[0]! >= 100 ? 'success' : quarterlyComputedPct[0]! >= 80 ? 'warning' : 'error'"
-                    variant="tonal">
-                    {{ quarterlyComputedPct[0]!.toFixed(1) }}%
-                  </v-chip>
-                  <span v-else class="text-grey text-caption">—</span>
-                </td>
-                <!-- XXX-F: Notes Q1 (optional, no calculation impact) -->
-                <td class="du-input-cell du-input-cell--notes">
-                  <v-textarea v-model="entryForm.remarks_str_q1" placeholder="Optional note"
-                    density="compact" variant="outlined" hide-details rows="2" auto-grow />
+                <td class="du-input-cell">
+                  <v-text-field v-model="entryForm.score_q1" placeholder="e.g. 148/200"
+                    density="compact" variant="outlined" hide-details />
                 </td>
               </tr>
               <!-- Q2 -->
@@ -2611,54 +1711,17 @@ onMounted(async () => {
                 <td class="q-label-cell">
                   <v-chip size="small" color="teal" variant="tonal" class="font-weight-bold">Q2</v-chip>
                 </td>
-                <!-- Target Q2 -->
-                <td class="du-input-cell du-input-cell--target">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.target_q2" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.target_str_q2" placeholder="90 or 200/200"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.target_str_q2 && parsePctInput(entryForm.target_str_q2).error)" />
-                    <div v-if="parsePctInput(entryForm.target_str_q2).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.target_str_q2).display }}</span>
-                      <span v-if="parsePctInput(entryForm.target_str_q2).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.target_str_q2).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.target[1]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.target[1] }})</span>
-                    </div>
-                    <div v-if="entryForm.target_str_q2 && parsePctInput(entryForm.target_str_q2).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.target_str_q2).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.target_q2" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <!-- Actual Q2 -->
-                <td class="du-input-cell du-input-cell--actual">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.accomplishment_q2" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.actual_str_q2" placeholder="75 or 286/268"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.actual_str_q2 && parsePctInput(entryForm.actual_str_q2).error)" />
-                    <div v-if="parsePctInput(entryForm.actual_str_q2).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.actual_str_q2).display }}</span>
-                      <span v-if="parsePctInput(entryForm.actual_str_q2).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.actual_str_q2).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.actual[1]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.actual[1] }})</span>
-                    </div>
-                    <div v-if="entryForm.actual_str_q2 && parsePctInput(entryForm.actual_str_q2).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.actual_str_q2).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.accomplishment_q2" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <td class="text-center acc-pct-col">
-                  <v-chip v-if="quarterlyComputedPct[1] !== null" size="x-small"
-                    :color="quarterlyComputedPct[1]! >= 100 ? 'success' : quarterlyComputedPct[1]! >= 80 ? 'warning' : 'error'"
-                    variant="tonal">
-                    {{ quarterlyComputedPct[1]!.toFixed(1) }}%
-                  </v-chip>
-                  <span v-else class="text-grey text-caption">—</span>
-                </td>
-                <!-- XXX-F: Notes Q2 (optional, no calculation impact) -->
-                <td class="du-input-cell du-input-cell--notes">
-                  <v-textarea v-model="entryForm.remarks_str_q2" placeholder="Optional note"
-                    density="compact" variant="outlined" hide-details rows="2" auto-grow />
+                <td class="du-input-cell">
+                  <v-text-field v-model="entryForm.score_q2" placeholder="e.g. 148/200"
+                    density="compact" variant="outlined" hide-details />
                 </td>
               </tr>
               <!-- Q3 -->
@@ -2666,54 +1729,17 @@ onMounted(async () => {
                 <td class="q-label-cell">
                   <v-chip size="small" color="orange" variant="tonal" class="font-weight-bold">Q3</v-chip>
                 </td>
-                <!-- Target Q3 -->
-                <td class="du-input-cell du-input-cell--target">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.target_q3" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.target_str_q3" placeholder="90 or 200/200"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.target_str_q3 && parsePctInput(entryForm.target_str_q3).error)" />
-                    <div v-if="parsePctInput(entryForm.target_str_q3).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.target_str_q3).display }}</span>
-                      <span v-if="parsePctInput(entryForm.target_str_q3).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.target_str_q3).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.target[2]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.target[2] }})</span>
-                    </div>
-                    <div v-if="entryForm.target_str_q3 && parsePctInput(entryForm.target_str_q3).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.target_str_q3).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.target_q3" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <!-- Actual Q3 -->
-                <td class="du-input-cell du-input-cell--actual">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.accomplishment_q3" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.actual_str_q3" placeholder="75 or 286/268"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.actual_str_q3 && parsePctInput(entryForm.actual_str_q3).error)" />
-                    <div v-if="parsePctInput(entryForm.actual_str_q3).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.actual_str_q3).display }}</span>
-                      <span v-if="parsePctInput(entryForm.actual_str_q3).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.actual_str_q3).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.actual[2]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.actual[2] }})</span>
-                    </div>
-                    <div v-if="entryForm.actual_str_q3 && parsePctInput(entryForm.actual_str_q3).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.actual_str_q3).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.accomplishment_q3" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <td class="text-center acc-pct-col">
-                  <v-chip v-if="quarterlyComputedPct[2] !== null" size="x-small"
-                    :color="quarterlyComputedPct[2]! >= 100 ? 'success' : quarterlyComputedPct[2]! >= 80 ? 'warning' : 'error'"
-                    variant="tonal">
-                    {{ quarterlyComputedPct[2]!.toFixed(1) }}%
-                  </v-chip>
-                  <span v-else class="text-grey text-caption">—</span>
-                </td>
-                <!-- XXX-F: Notes Q3 (optional, no calculation impact) -->
-                <td class="du-input-cell du-input-cell--notes">
-                  <v-textarea v-model="entryForm.remarks_str_q3" placeholder="Optional note"
-                    density="compact" variant="outlined" hide-details rows="2" auto-grow />
+                <td class="du-input-cell">
+                  <v-text-field v-model="entryForm.score_q3" placeholder="e.g. 148/200"
+                    density="compact" variant="outlined" hide-details />
                 </td>
               </tr>
               <!-- Q4 -->
@@ -2721,80 +1747,45 @@ onMounted(async () => {
                 <td class="q-label-cell">
                   <v-chip size="small" color="deep-purple" variant="tonal" class="font-weight-bold">Q4</v-chip>
                 </td>
-                <!-- Target Q4 -->
-                <td class="du-input-cell du-input-cell--target">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.target_q4" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.target_str_q4" placeholder="90 or 200/200"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.target_str_q4 && parsePctInput(entryForm.target_str_q4).error)" />
-                    <div v-if="parsePctInput(entryForm.target_str_q4).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.target_str_q4).display }}</span>
-                      <span v-if="parsePctInput(entryForm.target_str_q4).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.target_str_q4).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.target[3]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.target[3] }})</span>
-                    </div>
-                    <div v-if="entryForm.target_str_q4 && parsePctInput(entryForm.target_str_q4).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.target_str_q4).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.target_q4" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <!-- Actual Q4 -->
-                <td class="du-input-cell du-input-cell--actual">
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field v-model.number="entryForm.accomplishment_q4" type="number" step="0.01" min="0"
-                      density="compact" variant="outlined" hide-details />
-                  </template>
-                  <template v-else>
-                    <v-text-field v-model="entryForm.actual_str_q4" placeholder="75 or 286/268"
-                      density="compact" variant="outlined" hide-details
-                      :error="!!(entryForm.actual_str_q4 && parsePctInput(entryForm.actual_str_q4).error)" />
-                    <div v-if="parsePctInput(entryForm.actual_str_q4).computed !== null" class="text-caption mt-1">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.actual_str_q4).display }}</span>
-                      <span v-if="parsePctInput(entryForm.actual_str_q4).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.actual_str_q4).fractionText }}</span>
-                      <span v-else-if="dialogFractionFallback.actual[3]" class="text-grey-darken-1 ml-1 font-italic">({{ dialogFractionFallback.actual[3] }})</span>
-                    </div>
-                    <div v-if="entryForm.actual_str_q4 && parsePctInput(entryForm.actual_str_q4).error" class="text-caption text-error mt-1">{{ parsePctInput(entryForm.actual_str_q4).error }}</div>
-                  </template>
+                <td class="du-input-cell">
+                  <v-text-field v-model.number="entryForm.accomplishment_q4" type="number" step="0.01" min="0"
+                    density="compact" variant="outlined" hide-details />
                 </td>
-                <td class="text-center acc-pct-col">
-                  <v-chip v-if="quarterlyComputedPct[3] !== null" size="x-small"
-                    :color="quarterlyComputedPct[3]! >= 100 ? 'success' : quarterlyComputedPct[3]! >= 80 ? 'warning' : 'error'"
-                    variant="tonal">
-                    {{ quarterlyComputedPct[3]!.toFixed(1) }}%
-                  </v-chip>
-                  <span v-else class="text-grey text-caption">—</span>
-                </td>
-                <!-- XXX-F: Notes Q4 (optional, no calculation impact) -->
-                <td class="du-input-cell du-input-cell--notes">
-                  <v-textarea v-model="entryForm.remarks_str_q4" placeholder="Optional note"
-                    density="compact" variant="outlined" hide-details rows="2" auto-grow />
+                <td class="du-input-cell">
+                  <v-text-field v-model="entryForm.score_q4" placeholder="e.g. 148/200"
+                    density="compact" variant="outlined" hide-details />
                 </td>
               </tr>
             </tbody>
           </v-table>
-          </div>
 
-          <!-- Phase HB: Annual Performance Summary (Directives 375–380) — Moved before remarks (HQ-8, Directive 180) -->
-          <v-card variant="outlined" class="bg-grey-lighten-4 mb-4">
+          <!-- Remarks -->
+          <v-textarea
+            v-model="entryForm.remarks"
+            label="Remarks"
+            rows="2"
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+          />
+
+          <!-- Annual Totals (Read-Only) -->
+          <v-card variant="outlined" class="bg-grey-lighten-4">
             <v-card-text class="py-2">
-              <!-- HB-1: Renamed header (Directive 375) -->
-              <div class="text-subtitle-2 mb-2">
-                <v-icon start size="small">mdi-chart-bar</v-icon>
-                Annual Performance Summary
+              <div class="text-subtitle-2 mb-1">
+                <v-icon start size="small">mdi-calculator</v-icon>
+                Annual Totals (Read-Only)
               </div>
-
-              <!-- HB-2: Group 1 — Auto-Calculated Values (Directive 376) -->
-              <div class="text-caption text-medium-emphasis font-weight-medium mb-1">Auto-Calculated Values</div>
-              <div class="d-flex ga-3 flex-wrap mb-2">
+              <div class="d-flex ga-4 flex-wrap mb-3">
                 <v-chip variant="tonal" size="small">
                   Total Target: {{ formatNumber(computedPreview.totalTarget) }}
-                  <!-- AAAC-C: fraction-aggregate caption (ΣN/ΣD) -->
-                  <span v-if="computedPreview.totalTargetFraction" class="ml-1 text-grey-darken-1">({{ computedPreview.totalTargetFraction }})</span>
                 </v-chip>
                 <v-chip variant="tonal" size="small">
                   Total Actual: {{ formatNumber(computedPreview.totalActual) }}
-                  <span v-if="computedPreview.totalActualFraction" class="ml-1 text-grey-darken-1">({{ computedPreview.totalActualFraction }})</span>
                 </v-chip>
                 <v-chip
                   :color="getVarianceColor(computedPreview.variance)"
@@ -2810,277 +1801,42 @@ onMounted(async () => {
                 >
                   Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}
                 </v-chip>
-                <v-chip
-                  v-if="computedPreview.rate !== null && computedPreview.rate > 100"
-                  color="success"
-                  variant="tonal"
-                  size="small"
-                >
-                  <v-icon start size="x-small">mdi-trophy-outline</v-icon>
-                  Overachievement
+                <!-- Phase FY-2: Override active badge -->
+                <v-chip v-if="entryForm.override_rate !== null && entryForm.override_rate !== ''" color="warning" variant="tonal" size="small">
+                  <v-icon start size="x-small">mdi-pencil-circle</v-icon>
+                  Override Applied: {{ entryForm.override_rate }}%
                 </v-chip>
               </div>
-
-              <v-divider class="my-3" />
-
-              <!-- HB-2: Group 2 — Override Values (Directive 376) -->
-              <div class="text-caption text-medium-emphasis font-weight-medium mb-1">
-                Override Values
-                <span class="font-weight-regular ml-1">(Optional — use when official BAR1 values differ from system calculations)</span>
-              </div>
-
-              <!-- HB-3: 2-column grid, no max-width (Directives 377–379) -->
-              <v-row dense class="mt-1">
-                <v-col cols="12" sm="6">
-                  <!-- XXX-G: PERCENTAGE indicators support fraction entry for override total target -->
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field
-                      v-model.number="entryForm.override_total_target"
-                      label="Override Total Target"
-                      type="number"
-                      step="0.01"
-                      :min="0"
-                      variant="outlined"
-                      density="compact"
-                      clearable
-                      hide-details="auto"
-                      hint="Replaces quarterly sum as base for variance/rate."
-                      persistent-hint
-                      class="mb-3"
-                      @click:clear="entryForm.override_total_target = null"
-                    />
-                  </template>
-                  <template v-else>
-                    <v-text-field
-                      v-model="entryForm.override_total_target_str"
-                      label="Override Total Target"
-                      placeholder="90 or 200/200"
-                      variant="outlined"
-                      density="compact"
-                      clearable
-                      hide-details="auto"
-                      hint="Replaces quarterly sum as base for variance/rate. Enter % or N/D fraction."
-                      persistent-hint
-                      class="mb-3"
-                      :error="!!(entryForm.override_total_target_str && parsePctInput(entryForm.override_total_target_str).error)"
-                      @click:clear="entryForm.override_total_target_str = ''"
-                    />
-                    <div v-if="parsePctInput(entryForm.override_total_target_str).computed !== null" class="text-caption mt-1 mb-2">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.override_total_target_str).display }}</span>
-                      <span v-if="parsePctInput(entryForm.override_total_target_str).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.override_total_target_str).fractionText }}</span>
-                    </div>
-                    <div v-if="entryForm.override_total_target_str && parsePctInput(entryForm.override_total_target_str).error" class="text-caption text-error mt-1 mb-2">{{ parsePctInput(entryForm.override_total_target_str).error }}</div>
-                  </template>
-                  <v-text-field
-                    v-model.number="entryForm.override_rate"
-                    label="Override Rate (%)"
-                    type="number"
-                    :min="0"
-                    :max="9999.99"
-                    variant="outlined"
-                    density="compact"
-                    clearable
-                    hide-details="auto"
-                    hint="Overrides computed achievement rate."
-                    persistent-hint
-                    @click:clear="entryForm.override_rate = null"
-                  />
-                </v-col>
-                <v-col cols="12" sm="6">
-                  <!-- XXX-G: PERCENTAGE indicators support fraction entry for override total actual -->
-                  <template v-if="selectedIndicator?.unit_type !== 'PERCENTAGE'">
-                    <v-text-field
-                      v-model.number="entryForm.override_total_actual"
-                      label="Override Total Actual"
-                      type="number"
-                      step="0.01"
-                      :min="0"
-                      variant="outlined"
-                      density="compact"
-                      clearable
-                      hide-details="auto"
-                      hint="Replaces quarterly sum as base for variance/rate."
-                      persistent-hint
-                      class="mb-3"
-                      @click:clear="entryForm.override_total_actual = null"
-                    />
-                  </template>
-                  <template v-else>
-                    <v-text-field
-                      v-model="entryForm.override_total_actual_str"
-                      label="Override Total Actual"
-                      placeholder="75 or 286/268"
-                      variant="outlined"
-                      density="compact"
-                      clearable
-                      hide-details="auto"
-                      hint="Replaces quarterly sum as base for variance/rate. Enter % or N/D fraction."
-                      persistent-hint
-                      class="mb-3"
-                      :error="!!(entryForm.override_total_actual_str && parsePctInput(entryForm.override_total_actual_str).error)"
-                      @click:clear="entryForm.override_total_actual_str = ''"
-                    />
-                    <div v-if="parsePctInput(entryForm.override_total_actual_str).computed !== null" class="text-caption mt-1 mb-2">
-                      <span class="font-weight-medium">{{ parsePctInput(entryForm.override_total_actual_str).display }}</span>
-                      <span v-if="parsePctInput(entryForm.override_total_actual_str).fractionText" class="text-grey-darken-1 ml-1">{{ parsePctInput(entryForm.override_total_actual_str).fractionText }}</span>
-                    </div>
-                    <div v-if="entryForm.override_total_actual_str && parsePctInput(entryForm.override_total_actual_str).error" class="text-caption text-error mt-1 mb-2">{{ parsePctInput(entryForm.override_total_actual_str).error }}</div>
-                  </template>
-                  <v-text-field
-                    v-model.number="entryForm.override_variance"
-                    label="Override Variance"
-                    type="number"
-                    step="0.01"
-                    variant="outlined"
-                    density="compact"
-                    clearable
-                    hide-details="auto"
-                    hint="Overrides computed annual variance."
-                    persistent-hint
-                    @click:clear="entryForm.override_variance = null"
-                  />
-                </v-col>
-              </v-row>
-
-              <!-- HB-4: Active override badges — one per active field (Directive 380) -->
-              <div
-                v-if="entryForm.override_total_target != null || entryForm.override_total_actual != null || entryForm.override_rate != null || entryForm.override_variance != null"
-                class="d-flex ga-2 flex-wrap mt-3"
-              >
-                <v-chip v-if="entryForm.override_total_target != null && entryForm.override_total_target !== ''"
-                        color="warning" variant="tonal" size="small">
-                  <v-icon start size="x-small">mdi-pencil-circle</v-icon>
-                  Target Override
-                </v-chip>
-                <v-chip v-if="entryForm.override_total_actual != null && entryForm.override_total_actual !== ''"
-                        color="warning" variant="tonal" size="small">
-                  <v-icon start size="x-small">mdi-pencil-circle</v-icon>
-                  Actual Override
-                </v-chip>
-                <v-chip v-if="entryForm.override_rate != null && entryForm.override_rate !== ''"
-                        color="warning" variant="tonal" size="small">
-                  <v-icon start size="x-small">mdi-pencil-circle</v-icon>
-                  Rate Override: {{ entryForm.override_rate }}%
-                </v-chip>
-                <v-chip v-if="entryForm.override_variance != null && entryForm.override_variance !== ''"
-                        color="warning" variant="tonal" size="small">
-                  <v-icon start size="x-small">mdi-pencil-circle</v-icon>
-                  Variance Override
-                </v-chip>
-              </div>
-
+              <!-- Phase FY-2: Optional rate override input (Directive 213) -->
+              <v-text-field
+                v-model.number="entryForm.override_rate"
+                label="Override Rate (%) — Optional"
+                type="number"
+                variant="outlined"
+                density="compact"
+                :min="0"
+                :max="9999.99"
+                clearable
+                hide-details="auto"
+                hint="Leave blank to use auto-calculated rate. Override does not affect Target or Actual values."
+                persistent-hint
+                class="mt-1"
+                style="max-width: 280px;"
+                @click:clear="entryForm.override_rate = null"
+              />
             </v-card-text>
           </v-card>
-
-          <!-- Remarks -->
-          <v-textarea
-            v-model="entryForm.remarks"
-            label="Remarks"
-            rows="2"
-            variant="outlined"
-            density="compact"
-            class="mb-3"
-          />
-
-          <!-- Phase HE: APR/UPR Narrative Fields (Directive 386) -->
-          <v-divider class="my-2" />
-          <div class="text-subtitle-2 text-grey-darken-1 mb-2 mt-1">
-            <v-icon start size="small" color="grey">mdi-text-box-outline</v-icon>
-            Narrative Fields (APR/UPR)
-          </div>
-          <v-textarea
-            v-model="entryForm.catch_up_plan"
-            label="Catch-Up Plans (Not Met Targets)"
-            variant="outlined"
-            density="compact"
-            rows="3"
-            auto-grow
-            class="mb-2 narrative-textarea"
-            hint="Remediation actions planned for indicators that missed their targets"
-            persistent-hint
-          />
-          <v-textarea
-            v-model="entryForm.facilitating_factors"
-            label="Facilitating Factors (Met Targets)"
-            variant="outlined"
-            density="compact"
-            rows="3"
-            auto-grow
-            class="mb-2 narrative-textarea"
-            hint="Conditions or resources that enabled achievement of targets"
-            persistent-hint
-          />
-          <v-textarea
-            v-model="entryForm.ways_forward"
-            label="Ways Forward"
-            variant="outlined"
-            density="compact"
-            rows="3"
-            auto-grow
-            class="mb-3 narrative-textarea"
-            hint="Recommended next steps and improvements for the next period"
-            persistent-hint
-          />
-          <!-- Phase HL: MOV type-selector UI (Directive 146) -->
-          <div class="mb-3">
-            <div class="text-subtitle-2 mb-2">Means of Verification (MOV)</div>
-            <v-btn-toggle v-model="movType" mandatory density="compact" color="primary" class="mb-2">
-              <v-btn value="text" size="small"><v-icon start size="small">mdi-text</v-icon>Text</v-btn>
-              <v-btn value="link" size="small"><v-icon start size="small">mdi-link</v-icon>Link</v-btn>
-              <v-btn value="file" size="small"><v-icon start size="small">mdi-file-upload</v-icon>File</v-btn>
-            </v-btn-toggle>
-
-            <v-textarea
-              v-if="movType === 'text'"
-              v-model="movValue"
-              label="MOV Description"
-              variant="outlined"
-              density="compact"
-              rows="2"
-              auto-grow
-              hint="Evidence or documentation supporting accomplishment claims"
-              persistent-hint
-            />
-            <v-text-field
-              v-else-if="movType === 'link'"
-              v-model="movValue"
-              label="MOV URL"
-              variant="outlined"
-              density="compact"
-              prepend-inner-icon="mdi-link"
-              hint="Paste a link to the supporting document or resource"
-              persistent-hint
-            />
-            <div v-else-if="movType === 'file'">
-              <input ref="movFileInputRef" type="file" style="display:none" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.txt" @change="handleMovFileUpload" />
-              <v-btn variant="outlined" size="small" :loading="movUploading" @click="movFileInputRef?.click()">
-                <v-icon start size="small">mdi-upload</v-icon>
-                {{ movFileMetadata ? 'Replace File' : 'Upload File' }}
-              </v-btn>
-              <div v-if="movFileMetadata" class="mt-2 text-body-2">
-                <v-icon size="small" class="mr-1">mdi-file-check</v-icon>
-                {{ movFileMetadata.filename }}
-                <span class="text-grey ml-1">({{ (movFileMetadata.size / 1024).toFixed(1) }} KB)</span>
-              </div>
-              <div v-else-if="movValue" class="mt-2 text-body-2">
-                <v-icon size="small" class="mr-1">mdi-file</v-icon>
-                {{ movValue }}
-              </div>
-            </div>
-          </div>
-
         </v-card-text>
 
         <v-divider />
 
         <v-card-actions class="pa-4">
-          <v-btn variant="text" @click="entryDialog = false" :disabled="movUploading">Cancel</v-btn>
+          <v-btn variant="text" @click="entryDialog = false">Cancel</v-btn>
           <v-spacer />
           <v-btn
             color="primary"
             variant="elevated"
             :loading="saving"
-            :disabled="movUploading"
             @click="saveQuarterlyData"
           >
             <v-icon start>mdi-content-save</v-icon>
@@ -3178,8 +1934,7 @@ onMounted(async () => {
   position: sticky;
   top: 0;
   z-index: 1;
-  background-color: #003300 !important;
-  color: white !important;
+  background-color: #f5f5f5;
 }
 
 /* Phase DS-D: Multiline indicator text with preserved line breaks per BAR1 standard
@@ -3191,7 +1946,7 @@ onMounted(async () => {
   white-space: pre-line;  /* Preserve newlines, wrap normally */
   word-wrap: break-word;
   overflow-wrap: break-word;
-  line-height: 1.6;
+  line-height: 5;
   max-width: none;
   /* Phase EE-F: Line-clamp to 3 lines — full text readable via tooltip on hover */
   display: -webkit-box;
@@ -3239,14 +1994,13 @@ onMounted(async () => {
 }
 
 /* Phase DR-F: Flexible indicator column for full BAR1 text display */
-/* Phase HA: Reduced from 320px → 220px to eliminate horizontal scroll at 1366px sidebar-open (Directive 365) */
 .indicator-column {
-  min-width: 220px;
+  min-width: 320px;  /* Increased from 280px for longer indicators with sub-items */
   width: auto;
 }
 
 .indicator-cell {
-  min-width: 220px;  /* Phase HA: Reduced from 320px (Directive 365) */
+  min-width: 320px;  /* Increased from 280px */
   padding: 14px 16px !important;  /* Increased vertical padding */
   vertical-align: top;
 }
@@ -3276,64 +2030,15 @@ onMounted(async () => {
 }
 
 .variance-column {
-  width: 100px;
-  min-width: 100px;
+  width: 80px;
+  min-width: 80px;
   text-align: right;
   vertical-align: top;
 }
 
-/* Phase ZZZ-C / AAAB-A: Variance/Rate chip — middle value, readable but less dominant */
-.metric-chip {
-  font-size: 0.8125rem !important;
-  font-weight: 500;
-  height: 22px;
-}
-
-/* Phase GZ: Total Target + Total Actual columns (Directive 361) */
-.total-column {
-  min-width: 90px;
-  white-space: nowrap;
-}
-
-/* Phase HJ: Narrative below-row stacked sections (Directive 128) */
-.narrative-stacked-row td {
-  background-color: #f9f9f9;
-  border-top: none;
-}
-.narrative-stacked-panel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px 16px 10px;
-}
-.narrative-stacked-item {
-  flex: 1 1 280px;
-  min-width: 200px;
-}
-.narrative-stacked-label {
-  display: block;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #616161;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 2px;
-}
-.narrative-stacked-text {
-  font-size: 0.8rem;
-  color: #212121;
-  white-space: pre-line;
-}
-
-/* Phase HF: Narrative textarea resize (Directive 102) */
-.narrative-textarea :deep(textarea) {
-  resize: vertical;
-  min-height: 72px;
-}
-
 .rate-column {
-  width: 100px;
-  min-width: 100px;
+  width: 80px;
+  min-width: 80px;
   text-align: right;
   vertical-align: top;
 }
@@ -3373,12 +2078,6 @@ onMounted(async () => {
 
   .v-table .text-caption {
     font-size: 0.7rem !important;
-  }
-
-  /* Phase ZZZ-C / AAAB-A: Variance/Rate chips — tuned down on mobile */
-  .metric-chip {
-    font-size: 0.75rem !important;
-    height: 20px;
   }
 }
 
@@ -3430,14 +2129,13 @@ onMounted(async () => {
 }
 
 /* Phase DU-B: Expanded ALL-mode quarterly sub-columns */
-/* Phase HA: Reduced from 68px → 56px to eliminate table overflow (Directive 366) */
 .qgroup-header {
   font-weight: 600;
   font-size: 0.8rem;
 }
 .qsub-col {
-  min-width: 56px;
-  width: 56px;
+  min-width: 68px;
+  width: 68px;
   font-size: 0.75rem;
 }
 .qsub-col-score {
@@ -3446,7 +2144,7 @@ onMounted(async () => {
   font-size: 0.75rem;
 }
 .qsub-cell {
-  min-width: 56px;
+  min-width: 68px;
   font-size: 0.8rem;
 }
 .qsub-cell-score {
@@ -3465,22 +2163,6 @@ onMounted(async () => {
 }
 .du-input-cell {
   padding: 8px 6px !important;
-  vertical-align: middle;
-}
-
-/* Phase YYY-A: widen Target/Actual/Notes input cells in the Quarterly Entry Dialog */
-.du-input-cell--target,
-.du-input-cell--actual {
-  min-width: 220px;
-}
-
-.du-input-cell--notes {
-  min-width: 180px;
-}
-
-.acc-pct-col {
-  width: 72px;
-  min-width: 72px;
   vertical-align: middle;
 }
 

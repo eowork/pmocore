@@ -15,6 +15,8 @@ export class Migration20260518010000_AddGalleryImageTakenDate extends Migration 
   }
 
   override async down(): Promise<void> {
-    this.addSql(`ALTER TABLE construction_gallery DROP COLUMN IF EXISTS image_taken_date;`);
+    this.addSql(
+      `ALTER TABLE construction_gallery DROP COLUMN IF EXISTS image_taken_date;`,
+    );
   }
 }

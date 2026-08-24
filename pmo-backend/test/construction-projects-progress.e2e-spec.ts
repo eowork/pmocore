@@ -19,7 +19,9 @@ describe('ConstructionProjects - Progress Tracking (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
 
     // Login to get auth token
@@ -162,8 +164,12 @@ describe('ConstructionProjects - Progress Tracking (e2e)', () => {
       // Verify it's sorted (if data exists)
       if (response.body.data.length > 1) {
         for (let i = 0; i < response.body.data.length - 1; i++) {
-          const current = parseFloat(response.body.data[i].physical_progress || 0);
-          const next = parseFloat(response.body.data[i + 1].physical_progress || 0);
+          const current = parseFloat(
+            response.body.data[i].physical_progress || 0,
+          );
+          const next = parseFloat(
+            response.body.data[i + 1].physical_progress || 0,
+          );
           expect(current).toBeGreaterThanOrEqual(next);
         }
       }

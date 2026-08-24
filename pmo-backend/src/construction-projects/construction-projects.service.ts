@@ -8,7 +8,6 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { createReadStream } from 'fs';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -479,9 +478,7 @@ export class ConstructionProjectsService {
   // Loaded once at session start by the frontend store — makes contractor tab
   // permissions stateless at render time (parity with institutional role gates).
   // Null permissions resolve to deny-by-default.
-  async getMyProjectPermissions(
-    userId: string,
-  ): Promise<Record<string, any>> {
+  async getMyProjectPermissions(userId: string): Promise<Record<string, any>> {
     const conn = this.em.getConnection();
     const rows = await conn.execute(
       `SELECT ra.record_id as project_id, ra.permissions
@@ -517,7 +514,14 @@ export class ConstructionProjectsService {
 
   async getAnalyticsSummary(): Promise<any> {
     const conn = this.em.getConnection();
-    const [statusRows, campusRows, pubRows, aggRow, fundingSourceRows, contractorRows] = await Promise.all([
+    const [
+      statusRows,
+      campusRows,
+      pubRows,
+      aggRow,
+      fundingSourceRows,
+      contractorRows,
+    ] = await Promise.all([
       conn.execute(
         `SELECT status, COUNT(*) as count, COALESCE(SUM(contract_amount),0) as total_contract
          FROM construction_projects WHERE deleted_at IS NULL GROUP BY status ORDER BY count DESC`,
@@ -623,14 +627,16 @@ export class ConstructionProjectsService {
     );
     const r = rows[0];
     const contractAmount = parseFloat(r.total_contract_amount);
-    const costIncurred   = parseFloat(r.total_cost_incurred);
+    const costIncurred = parseFloat(r.total_cost_incurred);
     return {
-      total_appropriation: contractAmount,       // back-compat key
-      total_obligation: costIncurred,            // back-compat key (closest semantic)
-      total_disbursement: costIncurred,          // back-compat key
+      total_appropriation: contractAmount, // back-compat key
+      total_obligation: costIncurred, // back-compat key (closest semantic)
+      total_disbursement: costIncurred, // back-compat key
       projects_with_financials: parseInt(r.projects_with_reports, 10),
-      utilization_rate: contractAmount > 0 ? (costIncurred / contractAmount) * 100 : 0,
-      disbursement_rate: contractAmount > 0 ? (costIncurred / contractAmount) * 100 : 0,
+      utilization_rate:
+        contractAmount > 0 ? (costIncurred / contractAmount) * 100 : 0,
+      disbursement_rate:
+        contractAmount > 0 ? (costIncurred / contractAmount) * 100 : 0,
     };
   }
 
@@ -714,7 +720,8 @@ export class ConstructionProjectsService {
       }
 
       // MB: cost_amount is alias for contract_amount (DB column unchanged)
-      const effectiveContractAmount = dto.cost_amount ?? dto.contract_amount ?? null;
+      const effectiveContractAmount =
+        dto.cost_amount ?? dto.contract_amount ?? null;
 
       let cpResult: any;
       try {
@@ -796,19 +803,27 @@ export class ConstructionProjectsService {
             dto.as_of_date ?? null,
             dto.cost_incurred_to_date ?? null,
             dto.rdp_alignment ? JSON.stringify(dto.rdp_alignment) : null,
-            dto.socioeconomic_agenda ? JSON.stringify(dto.socioeconomic_agenda) : null,
+            dto.socioeconomic_agenda
+              ? JSON.stringify(dto.socioeconomic_agenda)
+              : null,
             dto.csu_likha_goals ? JSON.stringify(dto.csu_likha_goals) : null,
             dto.sdg_goals ? JSON.stringify(dto.sdg_goals) : null,
-            dto.rdp2017_alignment ? JSON.stringify(dto.rdp2017_alignment) : null,
+            dto.rdp2017_alignment
+              ? JSON.stringify(dto.rdp2017_alignment)
+              : null,
             dto.point_agenda_10 ? JSON.stringify(dto.point_agenda_10) : null,
             dto.beneficiary_list ? JSON.stringify(dto.beneficiary_list) : null,
             dto.funding_source_type ?? null,
-            dto.additional_funding_sources ? JSON.stringify(dto.additional_funding_sources) : null,
+            dto.additional_funding_sources
+              ? JSON.stringify(dto.additional_funding_sources)
+              : null,
             dto.remarks_log ? JSON.stringify(dto.remarks_log) : '[]',
             dto.personnel_groups ? JSON.stringify(dto.personnel_groups) : null,
             // FFF-B: Others-tab JSONB fields — persist at creation so edit reload shows correct data
             dto.status_updates ? JSON.stringify(dto.status_updates) : '[]',
-            dto.readiness_documents ? JSON.stringify(dto.readiness_documents) : '[]',
+            dto.readiness_documents
+              ? JSON.stringify(dto.readiness_documents)
+              : '[]',
             dto.signatories ? JSON.stringify(dto.signatories) : '[]',
             // AAAK: Two-Level Funding — Level 1 defaults to OTHER if omitted, Level 2 free text
             dto.primary_funding_source ?? 'OTHER',
@@ -934,7 +949,10 @@ export class ConstructionProjectsService {
     }
 
     // MB: cost_amount is a frontend alias — map to contract_amount column.
-    if ((dto as any).cost_amount !== undefined && (dto as any).contract_amount === undefined) {
+    if (
+      (dto as any).cost_amount !== undefined &&
+      (dto as any).contract_amount === undefined
+    ) {
       (dto as any).contract_amount = (dto as any).cost_amount;
     }
     delete (dto as any).cost_amount;
@@ -945,14 +963,16 @@ export class ConstructionProjectsService {
     if (Array.isArray((dto as any).remarks_log)) {
       const authorLabel = user?.email ?? userId;
       const now = new Date().toISOString();
-      (dto as any).remarks_log = ((dto as any).remarks_log as any[]).map((r: any) => {
-        const isNew = !r.created_at;
-        return {
-          ...r,
-          created_at: r.created_at || now,
-          author: r.author || (isNew ? authorLabel : undefined),
-        };
-      });
+      (dto as any).remarks_log = ((dto as any).remarks_log as any[]).map(
+        (r: any) => {
+          const isNew = !r.created_at;
+          return {
+            ...r,
+            created_at: r.created_at || now,
+            author: r.author || (isNew ? authorLabel : undefined),
+          };
+        },
+      );
     }
 
     // KY-B1: exclude undefined AND empty arrays — empty arrays must not overwrite
@@ -960,19 +980,25 @@ export class ConstructionProjectsService {
     // EEE-B: Others-tab scalar JSONB arrays (status_updates, etc.) CAN be
     // set to [] to clear all entries — they do not suffer from [[]] wrapping, so exempt them.
     const clearableArrayFields = new Set([
-      'status_updates', 'readiness_documents', 'signatories',
-    ])
+      'status_updates',
+      'readiness_documents',
+      'signatories',
+    ]);
     const fields = Object.keys(dto).filter(
       (k) =>
         dto[k] !== undefined &&
-        (clearableArrayFields.has(k) || !(Array.isArray(dto[k]) && (dto[k] as any[]).length === 0)) &&
+        (clearableArrayFields.has(k) ||
+          !(Array.isArray(dto[k]) && (dto[k] as any[]).length === 0)) &&
         k !== 'assigned_user_ids' &&
         k !== 'assignments',
     );
     if (fields.length === 0 && !requiresStatusReset) {
       // PV-A: process assignments even when no other project fields changed
       if (dto.assignments !== undefined) {
-        await this.updateRecordAssignmentsWithMetadata(id, dto.assignments || []);
+        await this.updateRecordAssignmentsWithMetadata(
+          id,
+          dto.assignments || [],
+        );
         // PQ-F: log assignment-only saves
         this.fireLog(user, ActivityAction.UPDATE, id, {
           action: 'ASSIGNMENT_UPDATE',
@@ -989,17 +1015,28 @@ export class ConstructionProjectsService {
     }
 
     const jsonFields = [
-      'objectives', 'key_features', 'metadata',
-      'output_indicators', 'outcome_indicators',
-      'status_updates', 'readiness_documents', 'signatories',
+      'objectives',
+      'key_features',
+      'metadata',
+      'output_indicators',
+      'outcome_indicators',
+      'status_updates',
+      'readiness_documents',
+      'signatories',
       'incident_log',
       'document_checklist_remarks',
       // MC: new JSONB fields
-      'rdp_alignment', 'socioeconomic_agenda', 'csu_likha_goals', 'sdg_goals',
+      'rdp_alignment',
+      'socioeconomic_agenda',
+      'csu_likha_goals',
+      'sdg_goals',
       // XXX-K: Historical Planning Frameworks (2017-2022)
-      'rdp2017_alignment', 'point_agenda_10',
-      'beneficiary_list', 'additional_funding_sources',
-      'remarks_log', 'personnel_groups',
+      'rdp2017_alignment',
+      'point_agenda_10',
+      'beneficiary_list',
+      'additional_funding_sources',
+      'remarks_log',
+      'personnel_groups',
       'project_notes_banking', // GGG-E
     ];
     let setClause = fields.map((f) => `${f} = ?`).join(', ');
@@ -1074,7 +1111,11 @@ export class ConstructionProjectsService {
 
   // --- Draft Governance Workflow (ORM) ---
 
-  async submitForReview(id: string, userId: string, user?: JwtPayload): Promise<any> {
+  async submitForReview(
+    id: string,
+    userId: string,
+    user?: JwtPayload,
+  ): Promise<any> {
     const project = await this.findOne(id);
 
     if (
@@ -1278,7 +1319,13 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMilestone> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canCreate');
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canCreate',
+      );
     const entity = this.milestoneRepo.create({
       projectId,
       title: dto.title,
@@ -1287,7 +1334,9 @@ export class ConstructionProjectsService {
       status: dto.status || 'PENDING',
       remarks: dto.remarks,
       startDate: dto.start_date ? new Date(dto.start_date) : undefined,
-      actualStartDate: dto.actual_start_date ? new Date(dto.actual_start_date) : undefined,
+      actualStartDate: dto.actual_start_date
+        ? new Date(dto.actual_start_date)
+        : undefined,
       progress: dto.progress != null ? String(dto.progress) : '0.00',
       category: dto.category,
       // LI-D: audit
@@ -1295,7 +1344,10 @@ export class ConstructionProjectsService {
     });
     await this.em.persist(entity).flush();
     this.logger.log(`MILESTONE_CREATED: id=${entity.id}, project=${projectId}`);
-    this.fireLog(user, ActivityAction.CREATE, projectId, { milestoneId: entity.id, title: dto.title });
+    this.fireLog(user, ActivityAction.CREATE, projectId, {
+      milestoneId: entity.id,
+      title: dto.title,
+    });
     return entity;
   }
 
@@ -1306,7 +1358,8 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMilestone> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     const entity = await this.milestoneRepo.findOne({
       id: milestoneId,
       projectId,
@@ -1328,8 +1381,7 @@ export class ConstructionProjectsService {
       entity.actualStartDate = dto.actual_start_date
         ? new Date(dto.actual_start_date)
         : undefined;
-    if (dto.progress !== undefined)
-      entity.progress = String(dto.progress);
+    if (dto.progress !== undefined) entity.progress = String(dto.progress);
     if (dto.category !== undefined) entity.category = dto.category;
     // LI-D: audit
     entity.updatedBy = user?.sub;
@@ -1337,18 +1389,37 @@ export class ConstructionProjectsService {
     await this.em.flush();
 
     this.logger.log(`MILESTONE_UPDATED: id=${milestoneId}`);
-    this.fireLog(user, ActivityAction.UPDATE, projectId, { milestoneId, title: entity.title });
+    this.fireLog(user, ActivityAction.UPDATE, projectId, {
+      milestoneId,
+      title: entity.title,
+    });
     return entity;
   }
 
-  async removeMilestone(projectId: string, milestoneId: string, user?: JwtPayload): Promise<void> {
+  async removeMilestone(
+    projectId: string,
+    milestoneId: string,
+    user?: JwtPayload,
+  ): Promise<void> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canDelete');
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canDelete',
+      );
     // LI-D: fetch title before delete for audit log
-    const entity = await this.milestoneRepo.findOne({ id: milestoneId, projectId });
+    const entity = await this.milestoneRepo.findOne({
+      id: milestoneId,
+      projectId,
+    });
     if (!entity)
       throw new NotFoundException(`Milestone ${milestoneId} not found`);
-    this.fireLog(user, ActivityAction.DELETE, projectId, { milestoneId, title: entity.title });
+    this.fireLog(user, ActivityAction.DELETE, projectId, {
+      milestoneId,
+      title: entity.title,
+    });
     await this.em.remove(entity).flush();
     this.logger.log(`MILESTONE_DELETED: id=${milestoneId}`);
   }
@@ -1360,7 +1431,7 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMilestone[]> {
     await this.findOne(projectId);
-    const entities = dto.items.map(item =>
+    const entities = dto.items.map((item) =>
       this.milestoneRepo.create({
         projectId,
         title: item.title,
@@ -1369,15 +1440,22 @@ export class ConstructionProjectsService {
         status: item.status || 'PENDING',
         remarks: item.remarks,
         startDate: item.start_date ? new Date(item.start_date) : undefined,
-        actualStartDate: item.actual_start_date ? new Date(item.actual_start_date) : undefined,
+        actualStartDate: item.actual_start_date
+          ? new Date(item.actual_start_date)
+          : undefined,
         progress: item.progress != null ? String(item.progress) : '0.00',
         category: item.category,
         createdBy: user?.sub,
       }),
     );
     await this.em.persist(entities).flush();
-    this.logger.log(`BATCH_MILESTONE_CREATED: ${entities.length} items, project=${projectId}`);
-    this.fireLog(user, ActivityAction.CREATE, projectId, { batch: true, count: entities.length });
+    this.logger.log(
+      `BATCH_MILESTONE_CREATED: ${entities.length} items, project=${projectId}`,
+    );
+    this.fireLog(user, ActivityAction.CREATE, projectId, {
+      batch: true,
+      count: entities.length,
+    });
     return entities;
   }
 
@@ -1388,7 +1466,7 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionTimelineEntry[]> {
     await this.findOne(projectId);
-    const entities = dto.items.map(item =>
+    const entities = dto.items.map((item) =>
       this.timelineEntryRepo.create({
         projectId,
         entryType: item.entry_type || 'WEEKLY',
@@ -1405,8 +1483,13 @@ export class ConstructionProjectsService {
       }),
     );
     await this.em.persist(entities).flush();
-    this.logger.log(`BATCH_TIMELINE_CREATED: ${entities.length} items, project=${projectId}`);
-    this.fireLog(user, ActivityAction.CREATE, projectId, { batch: true, count: entities.length });
+    this.logger.log(
+      `BATCH_TIMELINE_CREATED: ${entities.length} items, project=${projectId}`,
+    );
+    this.fireLog(user, ActivityAction.CREATE, projectId, {
+      batch: true,
+      count: entities.length,
+    });
     return entities;
   }
 
@@ -1428,7 +1511,8 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionTimelineEntry> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, userId, user, 'canCreate');
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canCreate');
     const entity = this.timelineEntryRepo.create({
       projectId,
       entryType: dto.entry_type || 'WEEKLY',
@@ -1444,8 +1528,12 @@ export class ConstructionProjectsService {
       reporterType: dto.reporter_type,
       // GGG-F: WAR fields
       warNumber: dto.war_number,
-      reportingPeriodStart: dto.reporting_period_start ? new Date(dto.reporting_period_start) : undefined,
-      reportingPeriodEnd: dto.reporting_period_end ? new Date(dto.reporting_period_end) : undefined,
+      reportingPeriodStart: dto.reporting_period_start
+        ? new Date(dto.reporting_period_start)
+        : undefined,
+      reportingPeriodEnd: dto.reporting_period_end
+        ? new Date(dto.reporting_period_end)
+        : undefined,
       personnelEquipmentConstraints: dto.personnel_equipment_constraints,
       mitigationMeasures: dto.mitigation_measures,
       lookAheadActivities: dto.look_ahead_activities,
@@ -1453,7 +1541,9 @@ export class ConstructionProjectsService {
       signatories: dto.signatories,
       // GGG-F: MPR fields
       mprNumber: dto.mpr_number,
-      reportingPeriodMonth: dto.reporting_period_month ? new Date(dto.reporting_period_month) : undefined,
+      reportingPeriodMonth: dto.reporting_period_month
+        ? new Date(dto.reporting_period_month)
+        : undefined,
       workItems: dto.work_items,
       accomplishmentSummaryPercent: dto.accomplishment_summary_percent,
       percentTimeElapsed: dto.percent_time_elapsed,
@@ -1485,7 +1575,8 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionTimelineEntry> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, userId, user, 'canEdit');
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
     const entity = await this.timelineEntryRepo.findOne({
       id: entryId,
       projectId,
@@ -1494,7 +1585,8 @@ export class ConstructionProjectsService {
       throw new NotFoundException(`Timeline entry ${entryId} not found`);
 
     if (dto.entry_type !== undefined) entity.entryType = dto.entry_type;
-    if (dto.entry_date !== undefined) entity.entryDate = new Date(dto.entry_date);
+    if (dto.entry_date !== undefined)
+      entity.entryDate = new Date(dto.entry_date);
     if (dto.period_label !== undefined) entity.periodLabel = dto.period_label;
     if (dto.title !== undefined) entity.title = dto.title;
     if (dto.description !== undefined) entity.description = dto.description;
@@ -1512,21 +1604,29 @@ export class ConstructionProjectsService {
     // GGG-F: WAR fields
     if (dto.war_number !== undefined) entity.warNumber = dto.war_number;
     if (dto.reporting_period_start !== undefined)
-      entity.reportingPeriodStart = dto.reporting_period_start ? new Date(dto.reporting_period_start) : undefined;
+      entity.reportingPeriodStart = dto.reporting_period_start
+        ? new Date(dto.reporting_period_start)
+        : undefined;
     if (dto.reporting_period_end !== undefined)
-      entity.reportingPeriodEnd = dto.reporting_period_end ? new Date(dto.reporting_period_end) : undefined;
+      entity.reportingPeriodEnd = dto.reporting_period_end
+        ? new Date(dto.reporting_period_end)
+        : undefined;
     if (dto.personnel_equipment_constraints !== undefined)
-      entity.personnelEquipmentConstraints = dto.personnel_equipment_constraints;
+      entity.personnelEquipmentConstraints =
+        dto.personnel_equipment_constraints;
     if (dto.mitigation_measures !== undefined)
       entity.mitigationMeasures = dto.mitigation_measures;
     if (dto.look_ahead_activities !== undefined)
       entity.lookAheadActivities = dto.look_ahead_activities;
-    if (dto.accomplishments !== undefined) entity.accomplishments = dto.accomplishments;
+    if (dto.accomplishments !== undefined)
+      entity.accomplishments = dto.accomplishments;
     if (dto.signatories !== undefined) entity.signatories = dto.signatories;
     // GGG-F: MPR fields
     if (dto.mpr_number !== undefined) entity.mprNumber = dto.mpr_number;
     if (dto.reporting_period_month !== undefined)
-      entity.reportingPeriodMonth = dto.reporting_period_month ? new Date(dto.reporting_period_month) : undefined;
+      entity.reportingPeriodMonth = dto.reporting_period_month
+        ? new Date(dto.reporting_period_month)
+        : undefined;
     if (dto.work_items !== undefined) entity.workItems = dto.work_items;
     if (dto.accomplishment_summary_percent !== undefined)
       entity.accomplishmentSummaryPercent = dto.accomplishment_summary_percent;
@@ -1537,10 +1637,14 @@ export class ConstructionProjectsService {
     if (dto.revised_contract_amount !== undefined)
       entity.revisedContractAmount = dto.revised_contract_amount;
     // ZZZ-G: structured Project Concerns list
-    if (dto.concerns_list !== undefined) entity.concernsList = dto.concerns_list;
+    if (dto.concerns_list !== undefined)
+      entity.concernsList = dto.concerns_list;
     // BBB-C: WAR/MPR financial billing fields
-    if (dto.billing_amount_this_period !== undefined) entity.billingAmountThisPeriod = dto.billing_amount_this_period;
-    if (dto.financial_accomplishment_percent !== undefined) entity.financialAccomplishmentPercent = dto.financial_accomplishment_percent;
+    if (dto.billing_amount_this_period !== undefined)
+      entity.billingAmountThisPeriod = dto.billing_amount_this_period;
+    if (dto.financial_accomplishment_percent !== undefined)
+      entity.financialAccomplishmentPercent =
+        dto.financial_accomplishment_percent;
     await this.em.flush();
 
     this.logger.log(
@@ -1559,7 +1663,8 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<void> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, userId, user, 'canDelete');
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canDelete');
     const count = await this.timelineEntryRepo.nativeDelete({
       id: entryId,
       projectId,
@@ -1671,8 +1776,12 @@ export class ConstructionProjectsService {
     userId: string,
   ): Promise<ConstructionMovEntry> {
     await this.findOne(projectId);
-    const entry = await this.movEntryRepo.findOne({ id: movEntryId, projectId });
-    if (!entry) throw new NotFoundException(`MOV entry ${movEntryId} not found`);
+    const entry = await this.movEntryRepo.findOne({
+      id: movEntryId,
+      projectId,
+    });
+    if (!entry)
+      throw new NotFoundException(`MOV entry ${movEntryId} not found`);
     if (!file) throw new BadRequestException('File is required');
 
     const uploadResult = await this.uploadsService.uploadFile(
@@ -1686,7 +1795,9 @@ export class ConstructionProjectsService {
     entry.fileSize = file.size;
     entry.mimeType = file.mimetype;
     await this.em.flush();
-    this.logger.log(`MOV_FILE_UPLOADED: id=${movEntryId}, project=${projectId}, by=${userId}`);
+    this.logger.log(
+      `MOV_FILE_UPLOADED: id=${movEntryId}, project=${projectId}, by=${userId}`,
+    );
     return entry;
   }
 
@@ -1711,7 +1822,11 @@ export class ConstructionProjectsService {
    * Backward-compatible — flat `findDocumentTypes()` remains unchanged.
    */
   async findDocumentTypesGrouped(): Promise<
-    { groupCode: string; groupLabel: string; types: ConstructionDocumentType[] }[]
+    {
+      groupCode: string;
+      groupLabel: string;
+      types: ConstructionDocumentType[];
+    }[]
   > {
     const all = await this.docTypeRepo.find(
       { isActive: true },
@@ -1719,7 +1834,11 @@ export class ConstructionProjectsService {
     );
     const groups = new Map<
       string,
-      { groupCode: string; groupLabel: string; types: ConstructionDocumentType[] }
+      {
+        groupCode: string;
+        groupLabel: string;
+        types: ConstructionDocumentType[];
+      }
     >();
     for (const t of all) {
       if (!groups.has(t.groupCode)) {
@@ -1749,9 +1868,12 @@ export class ConstructionProjectsService {
         WHERE is_active = true
         ORDER BY group_code ASC, sort_order ASC`,
     );
-    return (rows as Array<{ type_code: string; template_url: string | null }>).map(
-      (r) => ({ typeCode: r.type_code, templateUrl: r.template_url ?? null }),
-    );
+    return (
+      rows as Array<{ type_code: string; template_url: string | null }>
+    ).map((r) => ({
+      typeCode: r.type_code,
+      templateUrl: r.template_url ?? null,
+    }));
   }
 
   /**
@@ -1759,8 +1881,14 @@ export class ConstructionProjectsService {
    * project, lazily seeds checklist rows from the active type reference
    * (one row per active document type). Idempotent — re-call is safe.
    */
-  async findDocumentChecklist(projectId: string): Promise<
-    Array<ConstructionDocumentChecklist & { documentType?: ConstructionDocumentType }>
+  async findDocumentChecklist(
+    projectId: string,
+  ): Promise<
+    Array<
+      ConstructionDocumentChecklist & {
+        documentType?: ConstructionDocumentType;
+      }
+    >
   > {
     await this.findOne(projectId);
 
@@ -1837,7 +1965,9 @@ export class ConstructionProjectsService {
     }
     if (dto.review_notes !== undefined) entity.reviewNotes = dto.review_notes;
     if (dto.expiry_date !== undefined)
-      entity.expiryDate = dto.expiry_date ? new Date(dto.expiry_date) : undefined;
+      entity.expiryDate = dto.expiry_date
+        ? new Date(dto.expiry_date)
+        : undefined;
     if (dto.linked_document_id !== undefined)
       entity.linkedDocumentId = dto.linked_document_id;
     if (dto.current_version !== undefined)
@@ -1854,7 +1984,9 @@ export class ConstructionProjectsService {
       remarks: entity.remarks,
     };
     const changedFields = Object.keys(after).filter(
-      (k) => JSON.stringify((before as any)[k]) !== JSON.stringify((after as any)[k]),
+      (k) =>
+        JSON.stringify((before as any)[k]) !==
+        JSON.stringify((after as any)[k]),
     );
     const previousValues: Record<string, unknown> = {};
     const newValues: Record<string, unknown> = {};
@@ -1895,33 +2027,38 @@ export class ConstructionProjectsService {
       entity.documentChecklistRemarks &&
       typeof entity.documentChecklistRemarks === 'object'
     ) {
-      Object.entries(entity.documentChecklistRemarks).forEach(([key, value]) => {
-        if (typeof value === 'string') {
-          current[key] = value;
-          return;
-        }
-        if (Array.isArray(value)) {
-          const entries = value
-            .map((entry: any) => ({
-              text: String(entry?.text ?? '').trim(),
-              author: String(entry?.author ?? ''),
-              timestamp: String(entry?.timestamp ?? ''),
-            }))
-            .filter((entry) => entry.text.length > 0);
-          current[key] = entries;
-        }
-      });
+      Object.entries(entity.documentChecklistRemarks).forEach(
+        ([key, value]) => {
+          if (typeof value === 'string') {
+            current[key] = value;
+            return;
+          }
+          if (Array.isArray(value)) {
+            const entries = value
+              .map((entry: any) => ({
+                text: String(entry?.text ?? '').trim(),
+                author: String(entry?.author ?? ''),
+                timestamp: String(entry?.timestamp ?? ''),
+              }))
+              .filter((entry) => entry.text.length > 0);
+            current[key] = entries;
+          }
+        },
+      );
     }
     const normalizedRemarks = Array.isArray(remarks)
       ? remarks
-        .map((entry: any) => ({
-          text: String(entry?.text ?? '').trim(),
-          author: String(entry?.author ?? user?.email ?? userId),
-          timestamp: String(entry?.timestamp ?? new Date().toISOString()),
-        }))
-        .filter((entry) => entry.text.length > 0)
+          .map((entry: any) => ({
+            text: String(entry?.text ?? '').trim(),
+            author: String(entry?.author ?? user?.email ?? userId),
+            timestamp: String(entry?.timestamp ?? new Date().toISOString()),
+          }))
+          .filter((entry) => entry.text.length > 0)
       : String(remarks ?? '').trim();
-    entity.documentChecklistRemarks = { ...current, [groupCode]: normalizedRemarks };
+    entity.documentChecklistRemarks = {
+      ...current,
+      [groupCode]: normalizedRemarks,
+    };
     await this.em.flush();
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
       section: 'CHECKLIST_REMARKS',
@@ -2020,9 +2157,14 @@ export class ConstructionProjectsService {
 
     // KF-AB: PROFILE category is limited to 3 images per project
     if (dto.category === 'PROFILE') {
-      const profileCount = await this.galleryRepo.count({ projectId, category: 'PROFILE' });
+      const profileCount = await this.galleryRepo.count({
+        projectId,
+        category: 'PROFILE',
+      });
       if (profileCount >= 3) {
-        throw new BadRequestException('Maximum 3 PROFILE images allowed per project');
+        throw new BadRequestException(
+          'Maximum 3 PROFILE images allowed per project',
+        );
       }
     }
 
@@ -2040,7 +2182,9 @@ export class ConstructionProjectsService {
       category: dto.category || 'IN_PROGRESS',
       isFeatured: dto.is_featured || false,
       // LB-C: persist user-supplied photo capture date when provided
-      imageTakenDate: dto.image_taken_date ? new Date(dto.image_taken_date) : undefined,
+      imageTakenDate: dto.image_taken_date
+        ? new Date(dto.image_taken_date)
+        : undefined,
     });
     await this.em.persist(entity).flush();
 
@@ -2066,7 +2210,10 @@ export class ConstructionProjectsService {
     if (dto.caption !== undefined) entity.caption = dto.caption;
     if (dto.category !== undefined) entity.category = dto.category;
     if (dto.is_featured !== undefined) entity.isFeatured = dto.is_featured;
-    if (dto.image_taken_date !== undefined) entity.imageTakenDate = dto.image_taken_date ? new Date(dto.image_taken_date) : undefined;
+    if (dto.image_taken_date !== undefined)
+      entity.imageTakenDate = dto.image_taken_date
+        ? new Date(dto.image_taken_date)
+        : undefined;
     await this.em.flush();
 
     this.logger.log(`GALLERY_UPDATED: id=${galleryId}, by=${userId}`);
@@ -2079,7 +2226,8 @@ export class ConstructionProjectsService {
     userId: string,
     user?: JwtPayload,
   ): Promise<void> {
-    if (user) await this.assertProjectPermission(projectId, userId, user, 'canDelete');
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canDelete');
     const entity = await this.findGalleryItem(projectId, galleryId);
 
     if (entity.imageUrl) {
@@ -2088,7 +2236,10 @@ export class ConstructionProjectsService {
 
     await this.galleryRepo.nativeDelete({ id: galleryId });
     this.logger.log(`GALLERY_DELETED: id=${galleryId}, by=${userId}`);
-    this.fireLog(user, ActivityAction.REMOVE_ATTACHMENT, projectId, { section: 'GALLERY', galleryId });
+    this.fireLog(user, ActivityAction.REMOVE_ATTACHMENT, projectId, {
+      section: 'GALLERY',
+      galleryId,
+    });
   }
 
   // ============================================================
@@ -2104,7 +2255,12 @@ export class ConstructionProjectsService {
   ): Promise<Document> {
     await this.findOne(projectId);
     if (user) {
-      await this.assertProjectPermission(projectId, user.sub, user, 'canUpload');
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canUpload',
+      );
     }
 
     if (!file && !dto.externalLink) {
@@ -2145,8 +2301,12 @@ export class ConstructionProjectsService {
       filePath = dto.externalLink!;
       fileName = dto.title || 'External Link';
       fileSize = 0;
-      const isGDriveLink = /drive\.google\.com|docs\.google\.com/i.test(dto.externalLink!);
-      mimeType = isGDriveLink ? 'application/x-google-drive-link' : 'application/x-external-link';
+      const isGDriveLink = /drive\.google\.com|docs\.google\.com/i.test(
+        dto.externalLink!,
+      );
+      mimeType = isGDriveLink
+        ? 'application/x-google-drive-link'
+        : 'application/x-external-link';
     }
 
     // OOO-A: version auto-increment for folder submissions. Each new upload into a
@@ -2184,18 +2344,22 @@ export class ConstructionProjectsService {
     // the checklist (linkedDocumentId, submittedAt, currentVersion). This ensures the
     // Compliance Checklist always reflects the latest file without manual intervention.
     if (dto.documentType) {
-      const docType = await this.docTypeRepo.findOne({ typeCode: dto.documentType });
+      const docType = await this.docTypeRepo.findOne({
+        typeCode: dto.documentType,
+      });
       if (docType) {
         const checklistItem = await this.docChecklistRepo.findOne({
           projectId,
           documentTypeId: docType.id,
         });
         if (checklistItem) {
-          const wasFirstSubmission = checklistItem.submissionStatus === 'NOT_SUBMITTED';
+          const wasFirstSubmission =
+            checklistItem.submissionStatus === 'NOT_SUBMITTED';
           checklistItem.linkedDocumentId = doc.id;
           checklistItem.submittedAt = new Date();
           checklistItem.submittedBy = userId;
-          checklistItem.currentVersion = (checklistItem.currentVersion ?? 0) + 1;
+          checklistItem.currentVersion =
+            (checklistItem.currentVersion ?? 0) + 1;
           checklistItem.submissionStatus = 'SUBMITTED';
           await this.em.persistAndFlush(checklistItem);
           this.logger.log(
@@ -2207,12 +2371,21 @@ export class ConstructionProjectsService {
       }
     }
 
-    const KEY_DOC_TYPECODES = ['PROJECT_PROFILE', 'FEASIBILITY_STUDY', 'HGDG_FORM', 'FLOOR_PLAN', 'POW'];
+    const KEY_DOC_TYPECODES = [
+      'PROJECT_PROFILE',
+      'FEASIBILITY_STUDY',
+      'HGDG_FORM',
+      'FLOOR_PLAN',
+      'POW',
+    ];
     this.logger.log(
       `DOCUMENT_UPLOADED: project=${projectId}, doc=${doc.id}, type=${dto.documentType}, by=${userId}`,
     );
     this.fireLog(user, ActivityAction.UPLOAD, projectId, {
-      section: dto.documentType && KEY_DOC_TYPECODES.includes(dto.documentType) ? 'KEY_DOC' : 'DOCUMENT',
+      section:
+        dto.documentType && KEY_DOC_TYPECODES.includes(dto.documentType)
+          ? 'KEY_DOC'
+          : 'DOCUMENT',
       documentId: doc.id,
       fileName,
       documentType: dto.documentType,
@@ -2220,13 +2393,17 @@ export class ConstructionProjectsService {
     return doc;
   }
 
-  async listProjectDocuments(projectId: string): Promise<Array<Document & { uploadedByName?: string }>> {
+  async listProjectDocuments(
+    projectId: string,
+  ): Promise<Array<Document & { uploadedByName?: string }>> {
     const docs = await this.documentRepo.find(
       { documentableType: 'CONSTRUCTION_PROJECT', documentableId: projectId },
       { orderBy: { createdAt: 'desc' } },
     );
     if (!docs.length) return docs;
-    const uploaderIds = [...new Set(docs.map((d) => d.uploadedBy).filter(Boolean))];
+    const uploaderIds = [
+      ...new Set(docs.map((d) => d.uploadedBy).filter(Boolean)),
+    ];
     // VVV-A: MikroORM conn.execute uses Knex positional '?' placeholders, which
     // FLATTEN an array binding. `WHERE id = ANY(?)` therefore expanded to
     // `ANY($1, $2, ...)` (invalid SQL) → HTTP 500 whenever a project had documents.
@@ -2235,12 +2412,16 @@ export class ConstructionProjectsService {
       return docs.map((d) => Object.assign(d, { uploadedByName: undefined }));
     }
     const placeholders = uploaderIds.map(() => '?').join(', ');
-    const userRows = await this.em.getConnection().execute(
-      `SELECT id, COALESCE(display_name, first_name || ' ' || last_name, email) AS display_name FROM users WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
-      uploaderIds,
-    ) as Array<{ id: string; display_name: string }>;
+    const userRows = (await this.em
+      .getConnection()
+      .execute(
+        `SELECT id, COALESCE(display_name, first_name || ' ' || last_name, email) AS display_name FROM users WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+        uploaderIds,
+      )) as Array<{ id: string; display_name: string }>;
     const nameMap = new Map(userRows.map((r) => [r.id, r.display_name]));
-    return docs.map((d) => Object.assign(d, { uploadedByName: nameMap.get(d.uploadedBy) }));
+    return docs.map((d) =>
+      Object.assign(d, { uploadedByName: nameMap.get(d.uploadedBy) }),
+    );
   }
 
   // UUU-C: Dynamic template discovery. Scans the static templates directory at
@@ -2393,7 +2574,10 @@ export class ConstructionProjectsService {
   ): Promise<ConstructionDocumentFolder> {
     await this.findOne(projectId);
     await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
-    const entity = await this.docFolderRepo.findOne({ id: folderId, projectId });
+    const entity = await this.docFolderRepo.findOne({
+      id: folderId,
+      projectId,
+    });
     if (!entity) {
       throw new NotFoundException(
         `Folder ${folderId} not found for project ${projectId}`,
@@ -2416,7 +2600,8 @@ export class ConstructionProjectsService {
       entity.parentId = dto.parent_id;
     }
 
-    if (dto.folder_name !== undefined) entity.folderName = dto.folder_name.trim();
+    if (dto.folder_name !== undefined)
+      entity.folderName = dto.folder_name.trim();
     if (dto.group_code !== undefined)
       entity.groupCode = dto.group_code?.trim() || undefined;
     if (dto.node_type !== undefined) entity.nodeType = dto.node_type;
@@ -2438,14 +2623,20 @@ export class ConstructionProjectsService {
   ): Promise<void> {
     await this.findOne(projectId);
     await this.assertProjectPermission(projectId, user.sub, user, 'canDelete');
-    const entity = await this.docFolderRepo.findOne({ id: folderId, projectId });
+    const entity = await this.docFolderRepo.findOne({
+      id: folderId,
+      projectId,
+    });
     if (!entity) {
       throw new NotFoundException(
         `Folder ${folderId} not found for project ${projectId}`,
       );
     }
 
-    const childCount = await this.docFolderRepo.count({ parentId: folderId, projectId });
+    const childCount = await this.docFolderRepo.count({
+      parentId: folderId,
+      projectId,
+    });
     if (childCount > 0) {
       throw new ConflictException(
         'Cannot delete a folder that still has child folders',
@@ -2485,15 +2676,19 @@ export class ConstructionProjectsService {
       documentableId: projectId,
     });
     if (!doc) {
-      throw new NotFoundException(`Document ${docId} not found for project ${projectId}`);
+      throw new NotFoundException(
+        `Document ${docId} not found for project ${projectId}`,
+      );
     }
     if (doc.mimeType === 'application/x-google-drive-link') {
       throw new BadRequestException('External links are not downloadable');
     }
-    if (!this.uploadsService.fileExists(doc.filePath)) {
-      throw new NotFoundException('Physical file is missing on the server');
-    }
-    const absolutePath = this.uploadsService.getFilePath(doc.filePath);
+    // MINIO-4: storage-agnostic read. Opened before the headers and the audit
+    // entry so a missing object still 404s without logging a DOWNLOAD that never
+    // happened — every driver's getStream() throws NotFoundException carrying
+    // the same 'Physical file is missing on the server' message the old
+    // fileExists() guard produced, so this needs no separate existence probe.
+    const stream = await this.uploadsService.getStream(doc.filePath);
     res.set({
       'Content-Type': doc.mimeType || 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(doc.fileName)}"`,
@@ -2504,13 +2699,23 @@ export class ConstructionProjectsService {
       fileName: doc.fileName,
       documentType: doc.documentType,
     });
-    return new StreamableFile(createReadStream(absolutePath));
+    return new StreamableFile(stream);
   }
 
   // ZT-3: Soft-delete activation — never hard-deletes; never destroys physical files.
   // Deletion guard: if the doc has submission history, the checklist link is preserved.
-  async removeDocument(projectId: string, docId: string, user?: JwtPayload): Promise<void> {
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canDelete');
+  async removeDocument(
+    projectId: string,
+    docId: string,
+    user?: JwtPayload,
+  ): Promise<void> {
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canDelete',
+      );
     const doc = await this.documentRepo.findOne({
       id: docId,
       documentableType: 'CONSTRUCTION_PROJECT',
@@ -2566,7 +2771,10 @@ export class ConstructionProjectsService {
   }
 
   // ZT-5: List all submission versions for a checklist item (immutable ledger)
-  async getDocumentSubmissions(projectId: string, checklistItemId: string): Promise<unknown[]> {
+  async getDocumentSubmissions(
+    projectId: string,
+    checklistItemId: string,
+  ): Promise<unknown[]> {
     await this.findOne(projectId);
     const conn = this.em.getConnection();
     return conn.execute(
@@ -2591,12 +2799,25 @@ export class ConstructionProjectsService {
     file: Express.Multer.File,
     notes: string | undefined,
     user: JwtPayload,
-  ): Promise<{ submission: ConstructionDocumentSubmission; document: Document }> {
+  ): Promise<{
+    submission: ConstructionDocumentSubmission;
+    document: Document;
+  }> {
     await this.findOne(projectId);
-    const checklistItem = await this.docChecklistRepo.findOne({ id: checklistItemId, projectId });
-    if (!checklistItem) throw new NotFoundException(`Checklist item ${checklistItemId} not found`);
+    const checklistItem = await this.docChecklistRepo.findOne({
+      id: checklistItemId,
+      projectId,
+    });
+    if (!checklistItem)
+      throw new NotFoundException(
+        `Checklist item ${checklistItemId} not found`,
+      );
 
-    const upload = await this.uploadsService.uploadFile(file, user.sub, 'coi-submissions');
+    const upload = await this.uploadsService.uploadFile(
+      file,
+      user.sub,
+      'coi-submissions',
+    );
     const doc = this.documentRepo.create({
       documentableType: 'CONSTRUCTION_PROJECT',
       documentableId: projectId,
@@ -2654,8 +2875,13 @@ export class ConstructionProjectsService {
     userId: string,
   ): Promise<ConstructionDocumentType> {
     const docType = await this.docTypeRepo.findOne({ id: typeId });
-    if (!docType) throw new NotFoundException(`Document type ${typeId} not found`);
-    const upload = await this.uploadsService.uploadFile(file, userId, 'coi-templates');
+    if (!docType)
+      throw new NotFoundException(`Document type ${typeId} not found`);
+    const upload = await this.uploadsService.uploadFile(
+      file,
+      userId,
+      'coi-templates',
+    );
     docType.templateUrl = upload.filePath;
     await this.em.flush();
     return docType;
@@ -2732,7 +2958,9 @@ export class ConstructionProjectsService {
       content: entry.content,
     };
     const changedFields = Object.keys(after).filter(
-      (k) => JSON.stringify((before as any)[k]) !== JSON.stringify((after as any)[k]),
+      (k) =>
+        JSON.stringify((before as any)[k]) !==
+        JSON.stringify((after as any)[k]),
     );
     this.fireLog(user, ActivityAction.UPDATE, entryId, {
       entityType: 'diary_entry',
@@ -2773,7 +3001,9 @@ export class ConstructionProjectsService {
   // Phase ND — Revision Orders (audit-tracked)
   // ────────────────────────────────────────────────────────────────────────
 
-  async findRevisionOrders(projectId: string): Promise<ConstructionRevisionOrder[]> {
+  async findRevisionOrders(
+    projectId: string,
+  ): Promise<ConstructionRevisionOrder[]> {
     await this.findOne(projectId);
     return this.revisionOrderRepo.find(
       { projectId },
@@ -2782,7 +3012,9 @@ export class ConstructionProjectsService {
   }
 
   /** Re-derive project's revised_* mirror fields from latest APPROVED revision. */
-  private async mirrorLatestApprovedRevisionToProject(projectId: string): Promise<void> {
+  private async mirrorLatestApprovedRevisionToProject(
+    projectId: string,
+  ): Promise<void> {
     const latest = await this.revisionOrderRepo.findOne(
       { projectId, approvalStatus: 'APPROVED' },
       { orderBy: { revisionDate: 'desc', revisionNumber: 'desc' } },
@@ -2808,12 +3040,20 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionRevisionOrder> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canCreate');
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canCreate',
+      );
     // Auto-increment revision_number per project
-    const maxRow = await this.em.getConnection().execute(
-      `SELECT COALESCE(MAX(revision_number), 0) AS max FROM construction_revision_orders WHERE project_id = ?`,
-      [projectId],
-    );
+    const maxRow = await this.em
+      .getConnection()
+      .execute(
+        `SELECT COALESCE(MAX(revision_number), 0) AS max FROM construction_revision_orders WHERE project_id = ?`,
+        [projectId],
+      );
     const nextNumber = Number(maxRow[0]?.max ?? 0) + 1;
 
     const entity = this.revisionOrderRepo.create({
@@ -2821,10 +3061,15 @@ export class ConstructionProjectsService {
       revisionNumber: nextNumber,
       revisionType: dto.revision_type,
       revisionDate: new Date(dto.revision_date),
-      newStartDate: dto.new_start_date ? new Date(dto.new_start_date) : undefined,
-      newCompletionDate: dto.new_completion_date ? new Date(dto.new_completion_date) : undefined,
+      newStartDate: dto.new_start_date
+        ? new Date(dto.new_start_date)
+        : undefined,
+      newCompletionDate: dto.new_completion_date
+        ? new Date(dto.new_completion_date)
+        : undefined,
       newDuration: dto.new_duration,
-      costAdjustment: dto.cost_adjustment != null ? String(dto.cost_adjustment) : undefined,
+      costAdjustment:
+        dto.cost_adjustment != null ? String(dto.cost_adjustment) : undefined,
       justification: dto.justification,
       approvalStatus: dto.approval_status ?? 'DRAFT',
       movDocumentId: dto.mov_document_id,
@@ -2848,22 +3093,37 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionRevisionOrder> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
-    const entity = await this.revisionOrderRepo.findOne({ id: roId, projectId });
-    if (!entity) throw new NotFoundException(`Revision order ${roId} not found`);
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
+    const entity = await this.revisionOrderRepo.findOne({
+      id: roId,
+      projectId,
+    });
+    if (!entity)
+      throw new NotFoundException(`Revision order ${roId} not found`);
 
-    if (dto.revision_type !== undefined) entity.revisionType = dto.revision_type;
-    if (dto.revision_date !== undefined) entity.revisionDate = new Date(dto.revision_date);
+    if (dto.revision_type !== undefined)
+      entity.revisionType = dto.revision_type;
+    if (dto.revision_date !== undefined)
+      entity.revisionDate = new Date(dto.revision_date);
     if (dto.new_start_date !== undefined)
-      entity.newStartDate = dto.new_start_date ? new Date(dto.new_start_date) : undefined;
+      entity.newStartDate = dto.new_start_date
+        ? new Date(dto.new_start_date)
+        : undefined;
     if (dto.new_completion_date !== undefined)
-      entity.newCompletionDate = dto.new_completion_date ? new Date(dto.new_completion_date) : undefined;
+      entity.newCompletionDate = dto.new_completion_date
+        ? new Date(dto.new_completion_date)
+        : undefined;
     if (dto.new_duration !== undefined) entity.newDuration = dto.new_duration;
     if (dto.cost_adjustment !== undefined)
-      entity.costAdjustment = dto.cost_adjustment != null ? String(dto.cost_adjustment) : undefined;
-    if (dto.justification !== undefined) entity.justification = dto.justification;
-    if (dto.approval_status !== undefined) entity.approvalStatus = dto.approval_status;
-    if (dto.mov_document_id !== undefined) entity.movDocumentId = dto.mov_document_id;
+      entity.costAdjustment =
+        dto.cost_adjustment != null ? String(dto.cost_adjustment) : undefined;
+    if (dto.justification !== undefined)
+      entity.justification = dto.justification;
+    if (dto.approval_status !== undefined)
+      entity.approvalStatus = dto.approval_status;
+    if (dto.mov_document_id !== undefined)
+      entity.movDocumentId = dto.mov_document_id;
     if (dto.mov_link !== undefined) entity.movLink = dto.mov_link;
     entity.updatedBy = user?.sub;
     await this.em.flush();
@@ -2876,11 +3136,25 @@ export class ConstructionProjectsService {
     return entity;
   }
 
-  async removeRevisionOrder(projectId: string, roId: string, user?: JwtPayload): Promise<void> {
+  async removeRevisionOrder(
+    projectId: string,
+    roId: string,
+    user?: JwtPayload,
+  ): Promise<void> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canDelete');
-    const entity = await this.revisionOrderRepo.findOne({ id: roId, projectId });
-    if (!entity) throw new NotFoundException(`Revision order ${roId} not found`);
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canDelete',
+      );
+    const entity = await this.revisionOrderRepo.findOne({
+      id: roId,
+      projectId,
+    });
+    if (!entity)
+      throw new NotFoundException(`Revision order ${roId} not found`);
     await this.em.removeAndFlush(entity);
     await this.mirrorLatestApprovedRevisionToProject(projectId);
     this.fireLog(user, ActivityAction.DELETE, projectId, {
@@ -2893,7 +3167,9 @@ export class ConstructionProjectsService {
   // Phase NE — Progress Reports (chronological, MPR/WAR-aligned)
   // ────────────────────────────────────────────────────────────────────────
 
-  async findProgressReports(projectId: string): Promise<ConstructionProgressReport[]> {
+  async findProgressReports(
+    projectId: string,
+  ): Promise<ConstructionProgressReport[]> {
     await this.findOne(projectId);
     return this.progressReportRepo.find(
       { projectId },
@@ -2927,19 +3203,40 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionProgressReport> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canCreate');
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canCreate',
+      );
     const entity = this.progressReportRepo.create({
       projectId,
       reportType: dto.report_type,
       reportDate: new Date(dto.report_date),
       reportNumber: dto.report_number,
-      percentageCompletion: dto.percentage_completion != null ? String(dto.percentage_completion) : '0.00',
-      plannedAccomplishment: dto.planned_accomplishment != null ? String(dto.planned_accomplishment) : undefined,
+      percentageCompletion:
+        dto.percentage_completion != null
+          ? String(dto.percentage_completion)
+          : '0.00',
+      plannedAccomplishment:
+        dto.planned_accomplishment != null
+          ? String(dto.planned_accomplishment)
+          : undefined,
       slippage: dto.slippage != null ? String(dto.slippage) : undefined,
-      costIncurredToDate: dto.cost_incurred_to_date != null ? String(dto.cost_incurred_to_date) : undefined,
-      costIncurredThisPeriod: dto.cost_incurred_this_period != null ? String(dto.cost_incurred_this_period) : undefined,
+      costIncurredToDate:
+        dto.cost_incurred_to_date != null
+          ? String(dto.cost_incurred_to_date)
+          : undefined,
+      costIncurredThisPeriod:
+        dto.cost_incurred_this_period != null
+          ? String(dto.cost_incurred_this_period)
+          : undefined,
       calendarDaysElapsed: dto.calendar_days_elapsed,
-      percentTimeElapsed: dto.percent_time_elapsed != null ? String(dto.percent_time_elapsed) : undefined,
+      percentTimeElapsed:
+        dto.percent_time_elapsed != null
+          ? String(dto.percent_time_elapsed)
+          : undefined,
       remarks: dto.remarks,
       issuesEncountered: dto.issues_encountered,
       mitigationActions: dto.mitigation_actions,
@@ -2950,7 +3247,11 @@ export class ConstructionProjectsService {
     // OS-D: stamp list fields with timestamp + author
     const now = new Date().toISOString();
     const stampList = (items: any[] | undefined) =>
-      (items || []).map(e => ({ text: e.text || '', author: e.author || user?.email || 'System', createdAt: e.created_at || e.createdAt || now }));
+      (items || []).map((e) => ({
+        text: e.text || '',
+        author: e.author || user?.email || 'System',
+        createdAt: e.created_at || e.createdAt || now,
+      }));
     entity.narrativeList = stampList(dto.narrative_list);
     entity.remarksList = stampList(dto.remarks_list);
     entity.issuesEncounteredList = stampList(dto.issues_encountered_list);
@@ -2973,36 +3274,63 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionProgressReport> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
-    const entity = await this.progressReportRepo.findOne({ id: reportId, projectId });
-    if (!entity) throw new NotFoundException(`Progress report ${reportId} not found`);
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
+    const entity = await this.progressReportRepo.findOne({
+      id: reportId,
+      projectId,
+    });
+    if (!entity)
+      throw new NotFoundException(`Progress report ${reportId} not found`);
 
     if (dto.report_type !== undefined) entity.reportType = dto.report_type;
-    if (dto.report_date !== undefined) entity.reportDate = new Date(dto.report_date);
-    if (dto.report_number !== undefined) entity.reportNumber = dto.report_number;
+    if (dto.report_date !== undefined)
+      entity.reportDate = new Date(dto.report_date);
+    if (dto.report_number !== undefined)
+      entity.reportNumber = dto.report_number;
     if (dto.percentage_completion !== undefined)
       entity.percentageCompletion = String(dto.percentage_completion);
     if (dto.planned_accomplishment !== undefined)
-      entity.plannedAccomplishment = dto.planned_accomplishment != null ? String(dto.planned_accomplishment) : undefined;
+      entity.plannedAccomplishment =
+        dto.planned_accomplishment != null
+          ? String(dto.planned_accomplishment)
+          : undefined;
     if (dto.slippage !== undefined)
       entity.slippage = dto.slippage != null ? String(dto.slippage) : undefined;
     if (dto.cost_incurred_to_date !== undefined)
-      entity.costIncurredToDate = dto.cost_incurred_to_date != null ? String(dto.cost_incurred_to_date) : undefined;
+      entity.costIncurredToDate =
+        dto.cost_incurred_to_date != null
+          ? String(dto.cost_incurred_to_date)
+          : undefined;
     if (dto.cost_incurred_this_period !== undefined)
-      entity.costIncurredThisPeriod = dto.cost_incurred_this_period != null ? String(dto.cost_incurred_this_period) : undefined;
-    if (dto.calendar_days_elapsed !== undefined) entity.calendarDaysElapsed = dto.calendar_days_elapsed;
+      entity.costIncurredThisPeriod =
+        dto.cost_incurred_this_period != null
+          ? String(dto.cost_incurred_this_period)
+          : undefined;
+    if (dto.calendar_days_elapsed !== undefined)
+      entity.calendarDaysElapsed = dto.calendar_days_elapsed;
     if (dto.percent_time_elapsed !== undefined)
-      entity.percentTimeElapsed = dto.percent_time_elapsed != null ? String(dto.percent_time_elapsed) : undefined;
+      entity.percentTimeElapsed =
+        dto.percent_time_elapsed != null
+          ? String(dto.percent_time_elapsed)
+          : undefined;
     if (dto.remarks !== undefined) entity.remarks = dto.remarks;
-    if (dto.issues_encountered !== undefined) entity.issuesEncountered = dto.issues_encountered;
-    if (dto.mitigation_actions !== undefined) entity.mitigationActions = dto.mitigation_actions;
-    if (dto.mov_document_id !== undefined) entity.movDocumentId = dto.mov_document_id;
+    if (dto.issues_encountered !== undefined)
+      entity.issuesEncountered = dto.issues_encountered;
+    if (dto.mitigation_actions !== undefined)
+      entity.mitigationActions = dto.mitigation_actions;
+    if (dto.mov_document_id !== undefined)
+      entity.movDocumentId = dto.mov_document_id;
     if (dto.mov_link !== undefined) entity.movLink = dto.mov_link;
     // OS-D: update list fields if provided
     if (dto.narrative_list !== undefined) {
       const now = new Date().toISOString();
       const stampList = (items: any[] | undefined) =>
-        (items || []).map(e => ({ text: e.text || '', author: e.author || user?.email || 'System', createdAt: e.created_at || e.createdAt || now }));
+        (items || []).map((e) => ({
+          text: e.text || '',
+          author: e.author || user?.email || 'System',
+          createdAt: e.created_at || e.createdAt || now,
+        }));
       entity.narrativeList = stampList(dto.narrative_list);
       entity.remarksList = stampList(dto.remarks_list);
       entity.issuesEncounteredList = stampList(dto.issues_encountered_list);
@@ -3019,11 +3347,25 @@ export class ConstructionProjectsService {
     return entity;
   }
 
-  async removeProgressReport(projectId: string, reportId: string, user?: JwtPayload): Promise<void> {
+  async removeProgressReport(
+    projectId: string,
+    reportId: string,
+    user?: JwtPayload,
+  ): Promise<void> {
     await this.findOne(projectId);
-    if (user) await this.assertProjectPermission(projectId, user.sub, user, 'canDelete');
-    const entity = await this.progressReportRepo.findOne({ id: reportId, projectId });
-    if (!entity) throw new NotFoundException(`Progress report ${reportId} not found`);
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canDelete',
+      );
+    const entity = await this.progressReportRepo.findOne({
+      id: reportId,
+      projectId,
+    });
+    if (!entity)
+      throw new NotFoundException(`Progress report ${reportId} not found`);
     await this.em.removeAndFlush(entity);
     await this.mirrorLatestReportToProject(projectId);
     this.fireLog(user, ActivityAction.DELETE, projectId, {

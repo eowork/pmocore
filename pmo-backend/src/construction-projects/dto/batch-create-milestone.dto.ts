@@ -1,5 +1,10 @@
 import { Type } from 'class-transformer';
-import { IsArray, ArrayMaxSize, ValidateNested, ArrayMinSize } from 'class-validator';
+import {
+  IsArray,
+  ArrayMaxSize,
+  ValidateNested,
+  ArrayMinSize,
+} from 'class-validator';
 import { CreateMilestoneDto } from './create-milestone.dto';
 
 export class BatchCreateMilestoneDto {

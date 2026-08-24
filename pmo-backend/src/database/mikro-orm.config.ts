@@ -22,7 +22,9 @@ const config: Options<PostgreSqlDriver> = {
   // activity_logs and the contractor tables on a fresh deploy.
   entities: ['./dist/**/*.entity.js'],
   entitiesTs: ['./src/**/*.entity.ts'],
-  metadataProvider: isProduction ? ReflectMetadataProvider : TsMorphMetadataProvider,
+  metadataProvider: isProduction
+    ? ReflectMetadataProvider
+    : TsMorphMetadataProvider,
   migrations: {
     tableName: 'mikro_orm_migrations',
     // Runtime image ships only ./dist; migrations are compiled to dist/database/mikro-migrations.

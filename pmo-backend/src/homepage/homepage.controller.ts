@@ -53,7 +53,9 @@ export class HomepageController {
   }
 
   @Get('items')
-  @ApiOperation({ summary: 'List homepage items, optionally by section (admin)' })
+  @ApiOperation({
+    summary: 'List homepage items, optionally by section (admin)',
+  })
   findAllItems(
     @Query('section_key') sectionKey?: string,
     @Query('page_key') pageKey?: string,

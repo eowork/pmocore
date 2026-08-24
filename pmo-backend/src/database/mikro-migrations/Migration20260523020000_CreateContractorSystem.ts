@@ -51,8 +51,12 @@ export class Migration20260523020000_CreateContractorSystem extends Migration {
       )
     `);
 
-    await this.execute(`CREATE INDEX IF NOT EXISTS idx_contractor_invite_token ON contractor_invite_tokens(token)`);
-    await this.execute(`CREATE INDEX IF NOT EXISTS idx_contractor_assignments_project ON project_contractor_assignments(project_id)`);
+    await this.execute(
+      `CREATE INDEX IF NOT EXISTS idx_contractor_invite_token ON contractor_invite_tokens(token)`,
+    );
+    await this.execute(
+      `CREATE INDEX IF NOT EXISTS idx_contractor_assignments_project ON project_contractor_assignments(project_id)`,
+    );
   }
 
   async down(): Promise<void> {

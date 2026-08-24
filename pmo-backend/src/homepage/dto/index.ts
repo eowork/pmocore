@@ -39,7 +39,14 @@ export const HOMEPAGE_VALUE_SOURCES = [
 
 // T-HOME-CMS-5 (TH5-11): closed CSU-approved palette — never a freeform picker.
 // Empty string is valid (clears the override, falls back to the theme accent).
-export const HOMEPAGE_COLOR_TOKENS = ['', 'green', 'gold', 'orange', 'emerald', 'gray'] as const;
+export const HOMEPAGE_COLOR_TOKENS = [
+  '',
+  'green',
+  'gold',
+  'orange',
+  'emerald',
+  'gray',
+] as const;
 
 export class UpdateHomepageSettingDto {
   @IsString()

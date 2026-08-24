@@ -53,8 +53,14 @@ export class Migration20260710010000_AddFourthHighlightAndTransparencyContent ex
   }
 
   async down(): Promise<void> {
-    this.addSql(`DELETE FROM homepage_items WHERE section_key IN ('about_facet', 'transparency_pillar')`);
-    this.addSql(`DELETE FROM homepage_items WHERE section_key = 'highlight' AND title = 'University-Wide Reach'`);
-    this.addSql(`DELETE FROM homepage_settings WHERE setting_key IN ('transparency_title', 'transparency_body')`);
+    this.addSql(
+      `DELETE FROM homepage_items WHERE section_key IN ('about_facet', 'transparency_pillar')`,
+    );
+    this.addSql(
+      `DELETE FROM homepage_items WHERE section_key = 'highlight' AND title = 'University-Wide Reach'`,
+    );
+    this.addSql(
+      `DELETE FROM homepage_settings WHERE setting_key IN ('transparency_title', 'transparency_body')`,
+    );
   }
 }

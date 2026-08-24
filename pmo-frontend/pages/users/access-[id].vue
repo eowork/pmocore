@@ -151,11 +151,13 @@ function getOverrideAccess(moduleKey: string): boolean | null {
   return override ? override.can_access : null
 }
 
-// Check if module is checked (granted or role default)
+// Check if module is checked.
+// Backend ModuleAccessGuard is default-DENY (PHASE BBBA): with no row in
+// user_permission_overrides the user has no module access. The checkbox must
+// mirror that, otherwise an ungranted module renders checked and the admin's
+// first click emits `false` — revoking instead of granting.
 function isModuleChecked(moduleKey: string): boolean {
-  const access = getOverrideAccess(moduleKey)
-  if (access !== null) return access
-  return true
+  return getOverrideAccess(moduleKey) === true
 }
 
 // Phase HV: Pillar tab requires parent UO access AND at least one sub-module accessible (Directive 219)
@@ -176,11 +178,22 @@ watch(showPillarTab, (visible) => {
 async function handlePermissionChange(moduleKey: string, checked: boolean) {
   try {
     if (checked) {
-      const currentOverride = getOverrideAccess(moduleKey)
-      if (currentOverride === false) {
-        await api.del(`/api/users/${userId}/permissions/${moduleKey}`)
-        toast.success('Override removed')
-      } else if (currentOverride === null) {
+      // Granting always writes can_access=true. It must NOT delete the override:
+      // under default-deny a missing row means no access, so deleting a revoke
+      // row revokes rather than grants.
+      if (moduleKey === 'university_operations') {
+        // Inverse of the Directive 221 cascade below — without this, a parent
+        // revoked earlier can never be restored: the sub-module deny rows survive
+        // and University Operations stays inaccessible.
+        await api.post(`/api/users/${userId}/permissions/bulk`, {
+          updates: [
+            { module_key: 'university_operations', can_access: true },
+            { module_key: 'university-operations-physical', can_access: true },
+            { module_key: 'university-operations-financial', can_access: true },
+          ]
+        })
+        toast.success('University Operations and sub-modules granted')
+      } else {
         await api.post(`/api/users/${userId}/permissions`, { module_key: moduleKey, can_access: true })
         toast.success('Access granted')
       }
@@ -249,7 +262,7 @@ async function resetAllOverrides() {
     }
     const updates = modulesWithOverrides.map(m => ({ module_key: m.key, can_access: null }))
     await api.post(`/api/users/${userId}/permissions/bulk`, { updates })
-    toast.success('All overrides reset to role defaults')
+    toast.success('All overrides cleared — modules are no longer granted')
     await fetchPermissions()
   } catch (err: unknown) {
     const apiError = err as { message?: string; status?: number }
@@ -257,10 +270,12 @@ async function resetAllOverrides() {
   }
 }
 
-// Get permission state label
+// Get permission state label.
+// No override is not "role default" — the backend denies module access without an
+// explicit grant, so label it for what it is.
 function getPermissionLabel(moduleKey: string): string {
   const access = getOverrideAccess(moduleKey)
-  if (access === null) return 'Role Default'
+  if (access === null) return 'Not Granted'
   return access ? 'Granted' : 'Revoked'
 }
 
@@ -293,13 +308,18 @@ async function fetchPillarAssignments() {
   }
 }
 
-async function handlePillarToggle(pillarType: string, checked: boolean | unknown[]) {
+// In array mode (v-model bound to selectedPillars with :value), Vuetify emits the new
+// selection array — or null when the selection is cleared. Both must be accepted.
+async function handlePillarToggle(pillarType: string, checked: string[] | boolean | null) {
   const isChecked = Array.isArray(checked) ? checked.includes(pillarType) : !!checked
+  const pillarLabel = PILLAR_OPTIONS.find(p => p.value === pillarType)?.label || pillarType
   try {
     if (isChecked) {
       await api.post(`/api/users/${userId}/pillar-assignments`, { pillar_type: pillarType })
+      toast.success(`${pillarLabel} access granted`)
     } else {
       await api.del(`/api/users/${userId}/pillar-assignments/${pillarType}`)
+      toast.success(`${pillarLabel} access revoked`)
     }
   } catch (err: any) {
     toast.error(err.message || 'Failed to update pillar access')
@@ -440,9 +460,10 @@ onMounted(async () => {
             <v-alert type="info" variant="tonal" density="compact" icon="mdi-shield-account" class="mb-4">
               <div class="text-subtitle-2 mb-1">Page Access Overrides</div>
               <div class="text-caption">
-                Override default role permissions to grant or restrict access to specific modules.
-                This controls what the user can see in navigation and which routes they can access.
-                Checked = access granted, unchecked = access denied.
+                Grant or restrict access to specific modules. This controls which routes the
+                user can access. Access is <strong>denied by default</strong> — a module is
+                only accessible once explicitly granted.
+                Checked = granted; unchecked = not granted (either never granted, or explicitly revoked).
               </div>
             </v-alert>
 
@@ -502,8 +523,8 @@ onMounted(async () => {
             <v-divider class="my-4" />
             <div class="text-caption text-grey">
               <strong>Status Legend:</strong>
-              <v-chip size="x-small" color="grey" variant="tonal" class="ml-2">Role Default</v-chip>
-              <span class="ml-1">= Uses role permissions</span>
+              <v-chip size="x-small" color="grey" variant="tonal" class="ml-2">Not Granted</v-chip>
+              <span class="ml-1">= No override — access denied by default</span>
               <v-chip size="x-small" color="success" variant="tonal" class="ml-3">Granted</v-chip>
               <span class="ml-1">= Explicit access override</span>
               <v-chip size="x-small" color="error" variant="tonal" class="ml-3">Revoked</v-chip>

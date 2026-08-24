@@ -21,16 +21,25 @@ async function testDraftGovernance() {
     // Test 1: Verify publication_status column exists in all 3 tables
     console.log('Test 1: Verify publication_status column exists');
 
-    const tables = ['construction_projects', 'repair_projects', 'university_operations'];
+    const tables = [
+      'construction_projects',
+      'repair_projects',
+      'university_operations',
+    ];
     for (const table of tables) {
-      const result = await pool.query(`
+      const result = await pool.query(
+        `
         SELECT column_name, data_type
         FROM information_schema.columns
         WHERE table_name = $1 AND column_name = 'publication_status'
-      `, [table]);
+      `,
+        [table],
+      );
 
       if (result.rows.length > 0) {
-        console.log(`  ✓ ${table}: publication_status exists (${result.rows[0].data_type})`);
+        console.log(
+          `  ✓ ${table}: publication_status exists (${result.rows[0].data_type})`,
+        );
       } else {
         console.log(`  ✗ ${table}: publication_status NOT FOUND`);
         throw new Error(`Missing publication_status in ${table}`);
@@ -41,16 +50,27 @@ async function testDraftGovernance() {
     // Test 2: Verify draft governance columns exist
     console.log('Test 2: Verify governance metadata columns');
 
-    const governanceColumns = ['submitted_by', 'submitted_at', 'reviewed_by', 'reviewed_at', 'review_notes'];
+    const governanceColumns = [
+      'submitted_by',
+      'submitted_at',
+      'reviewed_by',
+      'reviewed_at',
+      'review_notes',
+    ];
     for (const table of tables) {
-      const result = await pool.query(`
+      const result = await pool.query(
+        `
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = $1 AND column_name = ANY($2)
-      `, [table, governanceColumns]);
+      `,
+        [table, governanceColumns],
+      );
 
-      const foundColumns = result.rows.map(r => r.column_name);
-      const missing = governanceColumns.filter(c => !foundColumns.includes(c));
+      const foundColumns = result.rows.map((r) => r.column_name);
+      const missing = governanceColumns.filter(
+        (c) => !foundColumns.includes(c),
+      );
 
       if (missing.length === 0) {
         console.log(`  ✓ ${table}: All governance columns present`);
@@ -76,7 +96,7 @@ async function testDraftGovernance() {
       if (result.rows.length === 0) {
         console.log('    (no records)');
       } else {
-        result.rows.forEach(row => {
+        result.rows.forEach((row) => {
           console.log(`    ${row.publication_status || 'NULL'}: ${row.count}`);
         });
       }
@@ -84,7 +104,9 @@ async function testDraftGovernance() {
     console.log();
 
     // Test 4: Verify record_assignments doesn't interfere with governance queries
-    console.log('Test 4: Verify governance queries work with record_assignments');
+    console.log(
+      'Test 4: Verify governance queries work with record_assignments',
+    );
 
     const govQuery = await pool.query(`
       SELECT cp.id, cp.title, cp.publication_status,
@@ -99,15 +121,18 @@ async function testDraftGovernance() {
       LIMIT 3
     `);
 
-    console.log(`  ✓ Governance + assignment query works (${govQuery.rows.length} rows)`);
+    console.log(
+      `  ✓ Governance + assignment query works (${govQuery.rows.length} rows)`,
+    );
     if (govQuery.rows.length > 0) {
       const sample = govQuery.rows[0];
-      console.log(`  Sample: status=${sample.publication_status}, assigned_users=${JSON.stringify(sample.assigned_users)}`);
+      console.log(
+        `  Sample: status=${sample.publication_status}, assigned_users=${JSON.stringify(sample.assigned_users)}`,
+      );
     }
     console.log();
 
     console.log('=== All Draft Governance Tests PASSED ===');
-
   } catch (error) {
     console.error('Test failed:', error.message);
     process.exit(1);

@@ -25,9 +25,11 @@ async function createTestUsers() {
 
   try {
     // Get role IDs
-    const rolesResult = await pool.query('SELECT id, name FROM roles WHERE deleted_at IS NULL');
+    const rolesResult = await pool.query(
+      'SELECT id, name FROM roles WHERE deleted_at IS NULL',
+    );
     const roles = {};
-    rolesResult.rows.forEach(row => {
+    rolesResult.rows.forEach((row) => {
       roles[row.name] = row.id;
     });
 
@@ -43,12 +45,12 @@ async function createTestUsers() {
     // Check if users already exist
     const existingAdmin = await pool.query(
       'SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL',
-      ['admin@test.com']
+      ['admin@test.com'],
     );
 
     const existingStaff = await pool.query(
       'SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL',
-      ['staff@test.com']
+      ['staff@test.com'],
     );
 
     // Create admin user if doesn't exist
@@ -58,7 +60,15 @@ async function createTestUsers() {
         `INSERT INTO users (username, email, password_hash, first_name, last_name, campus, rank_level, is_active, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
          RETURNING id`,
-        ['admin', 'admin@test.com', adminPasswordHash, 'Test', 'Admin', 'Butuan Campus', 10]
+        [
+          'admin',
+          'admin@test.com',
+          adminPasswordHash,
+          'Test',
+          'Admin',
+          'Butuan Campus',
+          10,
+        ],
       );
       adminUserId = result.rows[0].id;
 
@@ -66,7 +76,7 @@ async function createTestUsers() {
       await pool.query(
         `INSERT INTO user_roles (user_id, role_id, is_superadmin, assigned_at, created_at)
          VALUES ($1, $2, false, NOW(), NOW())`,
-        [adminUserId, roles['Admin']]
+        [adminUserId, roles['Admin']],
       );
 
       console.log('✅ Created admin@test.com (password: admin123)');
@@ -74,7 +84,7 @@ async function createTestUsers() {
       // Update password for existing user
       await pool.query(
         'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2',
-        [adminPasswordHash, 'admin@test.com']
+        [adminPasswordHash, 'admin@test.com'],
       );
       console.log('✅ Updated admin@test.com (password: admin123)');
     }
@@ -86,7 +96,15 @@ async function createTestUsers() {
         `INSERT INTO users (username, email, password_hash, first_name, last_name, campus, rank_level, is_active, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
          RETURNING id`,
-        ['staff', 'staff@test.com', staffPasswordHash, 'Test', 'Staff', 'Cabadbaran', 70]
+        [
+          'staff',
+          'staff@test.com',
+          staffPasswordHash,
+          'Test',
+          'Staff',
+          'Cabadbaran',
+          70,
+        ],
       );
       staffUserId = result.rows[0].id;
 
@@ -94,7 +112,7 @@ async function createTestUsers() {
       await pool.query(
         `INSERT INTO user_roles (user_id, role_id, is_superadmin, assigned_at, created_at)
          VALUES ($1, $2, false, NOW(), NOW())`,
-        [staffUserId, roles['Staff']]
+        [staffUserId, roles['Staff']],
       );
 
       console.log('✅ Created staff@test.com (password: staff123)');
@@ -102,14 +120,15 @@ async function createTestUsers() {
       // Update password for existing user
       await pool.query(
         'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2',
-        [staffPasswordHash, 'staff@test.com']
+        [staffPasswordHash, 'staff@test.com'],
       );
       console.log('✅ Updated staff@test.com (password: staff123)');
     }
 
     console.log('\n=== Test Users Ready ===');
-    console.log('You can now run: node scripts/test-authorization-cm-cn-co.js\n');
-
+    console.log(
+      'You can now run: node scripts/test-authorization-cm-cn-co.js\n',
+    );
   } catch (error) {
     console.error('Error creating test users:', error.message);
     process.exit(1);

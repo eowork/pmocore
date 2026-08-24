@@ -35,7 +35,9 @@ export class Migration20260527010000_TemplateUrlAndSubmissionsTable extends Migr
   async down(): Promise<void> {
     await this.execute(`DROP INDEX IF EXISTS idx_doc_submissions_project;`);
     await this.execute(`DROP INDEX IF EXISTS idx_doc_submissions_checklist;`);
-    await this.execute(`DROP TABLE IF EXISTS construction_document_submissions;`);
+    await this.execute(
+      `DROP TABLE IF EXISTS construction_document_submissions;`,
+    );
     await this.execute(`
       ALTER TABLE construction_document_types DROP COLUMN IF EXISTS template_url;
     `);

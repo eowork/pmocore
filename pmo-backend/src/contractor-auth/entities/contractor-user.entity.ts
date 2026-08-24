@@ -41,6 +41,10 @@ export class ContractorUser {
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();
 
-  @Property({ defaultRaw: 'NOW()', onUpdate: () => new Date(), columnType: 'timestamptz' })
+  @Property({
+    defaultRaw: 'NOW()',
+    onUpdate: () => new Date(),
+    columnType: 'timestamptz',
+  })
   updatedAt: Date = new Date();
 }

@@ -52,9 +52,7 @@ export class Migration20260507190000_EnhanceConstructionPowItems extends Migrati
   }
 
   override async down(): Promise<void> {
-    this.addSql(
-      `DROP INDEX IF EXISTS idx_construction_pow_items_order;`,
-    );
+    this.addSql(`DROP INDEX IF EXISTS idx_construction_pow_items_order;`);
     this.addSql(
       `ALTER TABLE construction_pow_items
          DROP COLUMN IF EXISTS updated_at,

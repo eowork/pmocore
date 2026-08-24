@@ -150,46 +150,54 @@ const totalAlignmentCount = computed(() =>
         <v-col cols="12">
           <v-text-field
             v-model="form.title"
-            label="Project Title *"
+            label="Project Title"
             placeholder="e.g., College of Engineering Building"
             :rules="[r.required]"
             density="compact"
             variant="outlined"
             hide-details="auto"
-          />
+          >
+            <template #label>Project Title <span class="required-star">*</span></template>
+          </v-text-field>
         </v-col>
         <v-col cols="12" sm="4">
           <v-text-field
             v-model="form.project_code"
-            label="Project Code *"
+            label="Project Code"
             placeholder="e.g., CP-2026-001"
             :rules="[r.required]"
             density="compact"
             variant="outlined"
             hide-details="auto"
-          />
+          >
+            <template #label>Project Code <span class="required-star">*</span></template>
+          </v-text-field>
         </v-col>
         <v-col cols="12" sm="4">
           <v-select
             v-model="form.campus"
-            label="Campus *"
+            label="Campus"
             :items="campusOptions"
             :rules="[r.required]"
             density="compact"
             variant="outlined"
             hide-details="auto"
-          />
+          >
+            <template #label>Campus <span class="required-star">*</span></template>
+          </v-select>
         </v-col>
         <v-col cols="12" sm="4">
           <v-select
             v-model="form.status"
-            label="Project Status *"
+            label="Project Status"
             :items="statusOptions"
             :rules="[r.required]"
             density="compact"
             variant="outlined"
             hide-details="auto"
-          />
+          >
+            <template #label>Project Status <span class="required-star">*</span></template>
+          </v-select>
         </v-col>
         <v-col cols="12">
           <v-textarea
@@ -371,7 +379,9 @@ const totalAlignmentCount = computed(() =>
                 density="compact"
                 variant="outlined"
                 hide-details="auto"
-              />
+              >
+                <template #label>Funding Source <span class="required-star">*</span></template>
+              </v-select>
             </v-col>
             <!-- AAAK: Two-Level Funding — Level 2 (free-text description, optional) -->
             <v-col cols="12">
@@ -880,3 +890,19 @@ const totalAlignmentCount = computed(() =>
     </v-col>
   </v-row>
 </template>
+
+<style scoped>
+/*
+ * Required-field marker. The asterisk previously lived inside the `label` string,
+ * so it inherited Vuetify's muted label colour (~38% opacity) and was effectively
+ * invisible. Rendering it through the #label slot lets it carry its own colour.
+ * !important is needed because Vuetify sets the label colour on the wrapping
+ * .v-label at a higher specificity than a plain scoped class.
+ */
+:deep(.required-star) {
+  color: rgb(var(--v-theme-error)) !important;
+  font-weight: 700;
+  opacity: 1 !important;
+  margin-left: 1px;
+}
+</style>

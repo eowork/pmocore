@@ -128,7 +128,11 @@ export class UniversityOperationsService {
     });
     if (userIds.length > 0) {
       const assignments = userIds.map((userId) =>
-        this.em.create(RecordAssignment, { module: 'OPERATIONS', recordId, userId }),
+        this.em.create(RecordAssignment, {
+          module: 'OPERATIONS',
+          recordId,
+          userId,
+        }),
       );
       await this.em.persistAndFlush(assignments);
     }
@@ -136,7 +140,9 @@ export class UniversityOperationsService {
 
   // ─── Phase IJ: Assignment CRUD ──────────────────────────────────────────────
 
-  async getOperationAssignments(operationId: string): Promise<RecordAssignment[]> {
+  async getOperationAssignments(
+    operationId: string,
+  ): Promise<RecordAssignment[]> {
     return this.em.find(RecordAssignment, {
       module: 'OPERATIONS',
       recordId: operationId,
@@ -185,10 +191,12 @@ export class UniversityOperationsService {
     recordId: string,
     userId: string,
   ): Promise<boolean> {
-    const result = await this.em.getConnection().execute(
-      `SELECT 1 FROM record_assignments WHERE module = 'OPERATIONS' AND record_id = ? AND user_id = ?`,
-      [recordId, userId],
-    );
+    const result = await this.em
+      .getConnection()
+      .execute(
+        `SELECT 1 FROM record_assignments WHERE module = 'OPERATIONS' AND record_id = ? AND user_id = ?`,
+        [recordId, userId],
+      );
     return result.length > 0;
   }
 
@@ -248,14 +256,18 @@ export class UniversityOperationsService {
     // Viewer without a level grant cannot write (already blocked by ModuleAccessGuard, but
     // belt-and-suspenders: deny here too so the service is self-contained).
     if (!grantedLevel || grantedLevel === 'Viewer') {
-      throw new ForbiddenException('Insufficient module level to modify this operation.');
+      throw new ForbiddenException(
+        'Insufficient module level to modify this operation.',
+      );
     }
 
     // Contributor: must be the record creator or an assigned user.
-    const result = await this.em.getConnection().execute(
-      `SELECT created_by FROM university_operations WHERE id = ? AND deleted_at IS NULL`,
-      [operationId],
-    );
+    const result = await this.em
+      .getConnection()
+      .execute(
+        `SELECT created_by FROM university_operations WHERE id = ? AND deleted_at IS NULL`,
+        [operationId],
+      );
 
     if (result.length === 0) {
       throw new NotFoundException('Operation not found');
@@ -284,10 +296,12 @@ export class UniversityOperationsService {
   ): Promise<any> {
     // Admins always have access
     if (!this.isAdmin(user)) {
-      const moduleCheck = await this.em.getConnection().execute(
-        `SELECT 1 FROM user_module_assignments WHERE user_id = ? AND (module = 'OPERATIONS' OR module = 'ALL')`,
-        [user.sub],
-      );
+      const moduleCheck = await this.em
+        .getConnection()
+        .execute(
+          `SELECT 1 FROM user_module_assignments WHERE user_id = ? AND (module = 'OPERATIONS' OR module = 'ALL')`,
+          [user.sub],
+        );
       if (moduleCheck.length === 0) {
         return null;
       }
@@ -519,9 +533,7 @@ export class UniversityOperationsService {
         user &&
         !this.isAdmin(user)
       ) {
-        conditions.push(
-          `(uo.publication_status = ? AND uo.created_by = ?)`,
-        );
+        conditions.push(`(uo.publication_status = ? AND uo.created_by = ?)`);
         params.push(queryAny.publication_status, user.sub);
       } else {
         conditions.push(`uo.publication_status = ?`);
@@ -570,10 +582,12 @@ export class UniversityOperationsService {
     const whereClause = conditions.join(' AND ');
 
     // Get total count (uses alias for consistency with data query)
-    const countResult = await this.em.getConnection().execute(
-      `SELECT COUNT(*) FROM university_operations uo LEFT JOIN users submitter ON uo.submitted_by = submitter.id WHERE ${whereClause}`,
-      params,
-    );
+    const countResult = await this.em
+      .getConnection()
+      .execute(
+        `SELECT COUNT(*) FROM university_operations uo LEFT JOIN users submitter ON uo.submitted_by = submitter.id WHERE ${whereClause}`,
+        params,
+      );
     const total = parseInt(countResult[0].count, 10);
 
     // Get paginated data
@@ -630,22 +644,28 @@ export class UniversityOperationsService {
     }
 
     // Get organizational info
-    const orgInfo = await this.em.getConnection().execute(
-      `SELECT * FROM operation_organizational_info WHERE operation_id = ? AND deleted_at IS NULL`,
-      [id],
-    );
+    const orgInfo = await this.em
+      .getConnection()
+      .execute(
+        `SELECT * FROM operation_organizational_info WHERE operation_id = ? AND deleted_at IS NULL`,
+        [id],
+      );
 
     // Get indicators
-    const indicators = await this.em.getConnection().execute(
-      `SELECT * FROM operation_indicators WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC`,
-      [id],
-    );
+    const indicators = await this.em
+      .getConnection()
+      .execute(
+        `SELECT * FROM operation_indicators WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC`,
+        [id],
+      );
 
     // Get financials
-    const financials = await this.em.getConnection().execute(
-      `SELECT * FROM operation_financials WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC, quarter`,
-      [id],
-    );
+    const financials = await this.em
+      .getConnection()
+      .execute(
+        `SELECT * FROM operation_financials WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC, quarter`,
+        [id],
+      );
 
     return {
       ...operation,
@@ -662,10 +682,12 @@ export class UniversityOperationsService {
   ): Promise<any> {
     // Check for duplicate code
     if (dto.code) {
-      const existing = await this.em.getConnection().execute(
-        `SELECT id FROM university_operations WHERE code = ? AND deleted_at IS NULL`,
-        [dto.code],
-      );
+      const existing = await this.em
+        .getConnection()
+        .execute(
+          `SELECT id FROM university_operations WHERE code = ? AND deleted_at IS NULL`,
+          [dto.code],
+        );
       if (existing.length > 0) {
         throw new ConflictException(
           `Operation code ${dto.code} already exists`,
@@ -746,10 +768,12 @@ export class UniversityOperationsService {
     // Check for duplicate code if updating
     const dtoAny = dto as any;
     if (dtoAny.code) {
-      const existing = await this.em.getConnection().execute(
-        `SELECT id FROM university_operations WHERE code = ? AND id != ? AND deleted_at IS NULL`,
-        [dtoAny.code, id],
-      );
+      const existing = await this.em
+        .getConnection()
+        .execute(
+          `SELECT id FROM university_operations WHERE code = ? AND id != ? AND deleted_at IS NULL`,
+          [dtoAny.code, id],
+        );
       if (existing.length > 0) {
         throw new ConflictException(
           `Operation code ${dtoAny.code} already exists`,
@@ -845,10 +869,12 @@ export class UniversityOperationsService {
   async remove(id: string, userId: string): Promise<void> {
     await this.findOne(id);
 
-    await this.em.getConnection().execute(
-      `UPDATE university_operations SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
-      [userId, id],
-    );
+    await this.em
+      .getConnection()
+      .execute(
+        `UPDATE university_operations SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
+        [userId, id],
+      );
 
     this.logger.log(`OPERATION_DELETED: id=${id}, by=${userId}`);
   }
@@ -1333,9 +1359,7 @@ export class UniversityOperationsService {
     );
 
     // Phase DK-B: Log orphan count for admin awareness
-    const orphanCount = result.filter(
-      (r) => !r.pillar_indicator_id,
-    ).length;
+    const orphanCount = result.filter((r) => !r.pillar_indicator_id).length;
     if (orphanCount > 0) {
       this.logger.warn(
         `[findIndicatorsByPillarAndYear] Found ${orphanCount} orphaned indicators for ${pillarType} FY${fiscalYear}`,
@@ -1645,10 +1669,9 @@ export class UniversityOperationsService {
     } else {
       existingCheckQuery += ` AND reported_quarter IS NULL`;
     }
-    const existingCheck = await this.em.getConnection().execute(
-      existingCheckQuery,
-      existingCheckParams,
-    );
+    const existingCheck = await this.em
+      .getConnection()
+      .execute(existingCheckQuery, existingCheckParams);
 
     if (existingCheck.length > 0) {
       throw new ConflictException(
@@ -1869,10 +1892,12 @@ export class UniversityOperationsService {
     // Prevent pillar_indicator_id changes only for linked indicators
     if (dto.pillar_indicator_id && indicator.pillar_indicator_id) {
       if (dto.pillar_indicator_id !== indicator.pillar_indicator_id) {
-        const taxonomyCheck = await this.em.getConnection().execute(
-          `SELECT pillar_type FROM pillar_indicator_taxonomy WHERE id = ? AND is_active = true`,
-          [dto.pillar_indicator_id],
-        );
+        const taxonomyCheck = await this.em
+          .getConnection()
+          .execute(
+            `SELECT pillar_type FROM pillar_indicator_taxonomy WHERE id = ? AND is_active = true`,
+            [dto.pillar_indicator_id],
+          );
         if (taxonomyCheck.length === 0) {
           throw new BadRequestException(
             'Invalid pillar_indicator_id: not found in taxonomy',
@@ -1890,7 +1915,10 @@ export class UniversityOperationsService {
     // reported_quarter is also excluded: it is an immutable partitioning key set at CREATE time;
     // mutating it via PATCH on a NULL-quarter row triggers the uq_oi_quarterly_per_quarter constraint.
     const fields = Object.keys(dto).filter(
-      (k) => dto[k] !== undefined && k !== 'pillar_indicator_id' && k !== 'reported_quarter',
+      (k) =>
+        dto[k] !== undefined &&
+        k !== 'pillar_indicator_id' &&
+        k !== 'reported_quarter',
     );
     if (fields.length === 0) {
       // No changes, return current state with metrics
@@ -2001,20 +2029,23 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const check = await this.em.getConnection().execute(
-      `SELECT id FROM operation_indicators WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [indicatorId, operationId],
-    );
+    const check = await this.em
+      .getConnection()
+      .execute(
+        `SELECT id FROM operation_indicators WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
+        [indicatorId, operationId],
+      );
     if (check.length === 0) {
       throw new NotFoundException(`Indicator ${indicatorId} not found`);
     }
 
     const fields = Object.keys(dto).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) {
-      const current = await this.em.getConnection().execute(
-        `SELECT * FROM operation_indicators WHERE id = ?`,
-        [indicatorId],
-      );
+      const current = await this.em
+        .getConnection()
+        .execute(`SELECT * FROM operation_indicators WHERE id = ?`, [
+          indicatorId,
+        ]);
       return current[0];
     }
 
@@ -2163,10 +2194,12 @@ export class UniversityOperationsService {
     await this.validateFinancialAccess(userId, user);
 
     // Phase FA-B: Fetch existing record to get its quarter for governance validation
-    const existing = await this.em.getConnection().execute(
-      `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [financialId, operationId],
-    );
+    const existing = await this.em
+      .getConnection()
+      .execute(
+        `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
+        [financialId, operationId],
+      );
     if (existing.length === 0) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
@@ -2178,10 +2211,11 @@ export class UniversityOperationsService {
 
     const fields = Object.keys(dto).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) {
-      const current = await this.em.getConnection().execute(
-        `SELECT * FROM operation_financials WHERE id = ?`,
-        [financialId],
-      );
+      const current = await this.em
+        .getConnection()
+        .execute(`SELECT * FROM operation_financials WHERE id = ?`, [
+          financialId,
+        ]);
       // Phase CP: Return record with computed metrics
       return this.computeFinancialMetrics(current[0]);
     }
@@ -2222,10 +2256,12 @@ export class UniversityOperationsService {
     await this.validateFinancialAccess(userId, user);
 
     // Phase FA-B: Fetch existing record to get its quarter for governance validation
-    const existing = await this.em.getConnection().execute(
-      `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [financialId, operationId],
-    );
+    const existing = await this.em
+      .getConnection()
+      .execute(
+        `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
+        [financialId, operationId],
+      );
     if (existing.length === 0) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
@@ -2274,7 +2310,10 @@ export class UniversityOperationsService {
     // Verify operation exists
     await this.findOne(operationId);
 
-    const existing = await this.orgInfoRepo.findOne({ operationId, deletedAt: null });
+    const existing = await this.orgInfoRepo.findOne({
+      operationId,
+      deletedAt: null,
+    });
     if (!existing) {
       const info = this.em.create(OperationOrganizationalInfo, {
         operationId,
@@ -2310,7 +2349,10 @@ export class UniversityOperationsService {
   async findOrganizationalInfo(operationId: string): Promise<any> {
     await this.findOne(operationId);
 
-    const info = await this.orgInfoRepo.findOne({ operationId, deletedAt: null });
+    const info = await this.orgInfoRepo.findOne({
+      operationId,
+      deletedAt: null,
+    });
     if (!info) {
       return {
         department: '',
@@ -2341,12 +2383,16 @@ export class UniversityOperationsService {
     orphansByPillar: { pillar_type: string; count: number }[];
   }> {
     const [totalRes, linkedRes, orphansByPillarRes] = await Promise.all([
-      this.em.getConnection().execute(
-        `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL`,
-      ),
-      this.em.getConnection().execute(
-        `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL AND pillar_indicator_id IS NOT NULL`,
-      ),
+      this.em
+        .getConnection()
+        .execute(
+          `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL`,
+        ),
+      this.em
+        .getConnection()
+        .execute(
+          `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL AND pillar_indicator_id IS NOT NULL`,
+        ),
       this.em.getConnection().execute(`
         SELECT o.operation_type AS pillar_type, COUNT(i.id) AS count
         FROM operation_indicators i
@@ -2740,7 +2786,9 @@ export class UniversityOperationsService {
       GROUP BY deduped.pillar_type
     `;
 
-    const result = await this.em.getConnection().execute(query, [...params, fiscalYear]);
+    const result = await this.em
+      .getConnection()
+      .execute(query, [...params, fiscalYear]);
 
     // Phase AAAG-A: build one per-quarter rate array per pillar (formula unchanged,
     // now scoped within a single pillar).
@@ -3813,7 +3861,9 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any[]> {
     if (!this.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can view quarterly report history');
+      throw new ForbiddenException(
+        'Only Admin can view quarterly report history',
+      );
     }
 
     return this.em.getConnection().execute(

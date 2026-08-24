@@ -84,6 +84,8 @@ openssl rand -hex 20
 # Example output: a3f9c2e817b4d056f1209e3c7a8b4d1f2c09e3a1
 ```
 
+Docker Compose reads this file automatically (it lives next to `docker-compose.yml`) — no `--env-file` flag is needed for any `docker compose` command in this guide.
+
 ### 2b — Backend `.env`
 
 ```bash
@@ -111,6 +113,8 @@ FRONTEND_URL=http://localhost:3001
 SEED_PMOADMIN_PASSWORD=<choose a strong password>
 SEED_ADMIN_PASSWORD=<choose a strong password>
 ```
+
+> `DATABASE_PASSWORD` here and `POSTGRES_PASSWORD` in the root `.env` are two separate variables in two separate files and are **not** kept in sync automatically — you must set them to the same value by hand. If they drift apart, the backend container will fail to authenticate against Postgres (see Troubleshooting below).
 
 Generate `AUTH_JWT_SECRET`:
 
@@ -289,6 +293,7 @@ docker compose exec -T postgres psql -U postgres -d pmo_dashboard -c \
 | `FRONTEND_URL` | `pmo-backend/.env` | Yes | CORS origin — set to the URL users browse to |
 | `SEED_PMOADMIN_PASSWORD` | `pmo-backend/.env` | First deploy only | SuperAdmin initial password |
 | `SEED_ADMIN_PASSWORD` | `pmo-backend/.env` | First deploy only | Admin initial password |
+| `BACKEND_PORT` / `FRONTEND_PORT` | root `.env` | Optional (default `3000`/`3001`) | Host-side port mapping, read by Docker Compose |
 | `GOOGLE_CLIENT_ID/SECRET` | `pmo-backend/.env` | Optional | Enable Google OAuth login |
 | `LDAP_URL` | `pmo-backend/.env` | Optional | Enable LDAP/AD login (see MIS_CHECKLIST.md) |
 

@@ -68,9 +68,15 @@ async function runTests() {
     testData.assignee = users.rows[1];
     testData.unassigned = users.rows[2] || users.rows[0]; // Fallback if only 2 users
 
-    console.log(`  Creator: ${testData.creator.username} (${testData.creator.role_name})`);
-    console.log(`  Assignee: ${testData.assignee.username} (${testData.assignee.role_name})`);
-    console.log(`  Unassigned: ${testData.unassigned.username} (${testData.unassigned.role_name})\n`);
+    console.log(
+      `  Creator: ${testData.creator.username} (${testData.creator.role_name})`,
+    );
+    console.log(
+      `  Assignee: ${testData.assignee.username} (${testData.assignee.role_name})`,
+    );
+    console.log(
+      `  Unassigned: ${testData.unassigned.username} (${testData.unassigned.role_name})\n`,
+    );
 
     // =================================================================
     // BX1-BX3: CONSTRUCTION MODULE TESTS
@@ -80,7 +86,8 @@ async function runTests() {
 
     await runTest('BX1: Creator can submit COI record', async () => {
       // Create DRAFT record
-      const record = await pool.query(`
+      const record = await pool.query(
+        `
         INSERT INTO construction_projects (
           project_code, title, funding_source_id, campus, status,
           created_by, publication_status
@@ -95,17 +102,22 @@ async function runTests() {
           'DRAFT'
         FROM funding_sources LIMIT 1
         RETURNING id, publication_status
-      `, [testData.creator.id]);
+      `,
+        [testData.creator.id],
+      );
 
       testData.coi_creator = record.rows[0];
 
-      assert(testData.coi_creator.publication_status === 'DRAFT', 'Should start as DRAFT');
+      assert(
+        testData.coi_creator.publication_status === 'DRAFT',
+        'Should start as DRAFT',
+      );
 
       // Simulate submit authorization check (backend logic)
       const isOwner = testData.coi_creator.id !== null; // Creator exists
       const assignmentCheck = await pool.query(
         'SELECT 1 FROM record_assignments WHERE module = $1 AND record_id = $2 AND user_id = $3',
-        ['CONSTRUCTION', testData.coi_creator.id, testData.creator.id]
+        ['CONSTRUCTION', testData.coi_creator.id, testData.creator.id],
       );
       const isAssigned = assignmentCheck.rows.length > 0;
 
@@ -115,7 +127,8 @@ async function runTests() {
 
     await runTest('BX2: Assigned user can submit COI record', async () => {
       // Create DRAFT record
-      const record = await pool.query(`
+      const record = await pool.query(
+        `
         INSERT INTO construction_projects (
           project_code, title, funding_source_id, campus, status,
           created_by, publication_status
@@ -130,26 +143,31 @@ async function runTests() {
           'DRAFT'
         FROM funding_sources LIMIT 1
         RETURNING id, publication_status
-      `, [testData.creator.id]);
+      `,
+        [testData.creator.id],
+      );
 
       testData.coi_assigned = record.rows[0];
 
       // Assign to another user via junction table
       await pool.query(
         'INSERT INTO record_assignments (module, record_id, user_id) VALUES ($1, $2, $3)',
-        ['CONSTRUCTION', testData.coi_assigned.id, testData.assignee.id]
+        ['CONSTRUCTION', testData.coi_assigned.id, testData.assignee.id],
       );
 
       // Simulate submit authorization check for assignee
       const isOwner = testData.creator.id === testData.assignee.id;
       const assignmentCheck = await pool.query(
         'SELECT 1 FROM record_assignments WHERE module = $1 AND record_id = $2 AND user_id = $3',
-        ['CONSTRUCTION', testData.coi_assigned.id, testData.assignee.id]
+        ['CONSTRUCTION', testData.coi_assigned.id, testData.assignee.id],
       );
       const isAssigned = assignmentCheck.rows.length > 0;
 
       const canSubmit = isOwner || isAssigned;
-      assert(canSubmit, 'Assigned user should be able to submit (isAssigned = true)');
+      assert(
+        canSubmit,
+        'Assigned user should be able to submit (isAssigned = true)',
+      );
     });
 
     await runTest('BX3: Unassigned user CANNOT submit COI record', async () => {
@@ -160,7 +178,7 @@ async function runTests() {
       const isOwner = testData.creator.id === testData.unassigned.id;
       const assignmentCheck = await pool.query(
         'SELECT 1 FROM record_assignments WHERE module = $1 AND record_id = $2 AND user_id = $3',
-        ['CONSTRUCTION', recordId, testData.unassigned.id]
+        ['CONSTRUCTION', recordId, testData.unassigned.id],
       );
       const isAssigned = assignmentCheck.rows.length > 0;
 
@@ -176,7 +194,8 @@ async function runTests() {
 
     await runTest('BX4: Assigned user can submit Repair record', async () => {
       // Create DRAFT record
-      const record = await pool.query(`
+      const record = await pool.query(
+        `
         INSERT INTO repair_projects (
           project_code, title, campus, status,
           created_by, publication_status
@@ -190,20 +209,22 @@ async function runTests() {
           'DRAFT'
         )
         RETURNING id, publication_status
-      `, [testData.creator.id]);
+      `,
+        [testData.creator.id],
+      );
 
       testData.repair_assigned = record.rows[0];
 
       // Assign to another user
       await pool.query(
         'INSERT INTO record_assignments (module, record_id, user_id) VALUES ($1, $2, $3)',
-        ['REPAIR', testData.repair_assigned.id, testData.assignee.id]
+        ['REPAIR', testData.repair_assigned.id, testData.assignee.id],
       );
 
       // Check authorization for assignee
       const assignmentCheck = await pool.query(
         'SELECT 1 FROM record_assignments WHERE module = $1 AND record_id = $2 AND user_id = $3',
-        ['REPAIR', testData.repair_assigned.id, testData.assignee.id]
+        ['REPAIR', testData.repair_assigned.id, testData.assignee.id],
       );
       const isAssigned = assignmentCheck.rows.length > 0;
 
@@ -216,9 +237,12 @@ async function runTests() {
 
     console.log('\n=== UNIVERSITY OPERATIONS MODULE (BX5) ===');
 
-    await runTest('BX5: Assigned user can submit University Ops record', async () => {
-      // Create DRAFT record
-      const record = await pool.query(`
+    await runTest(
+      'BX5: Assigned user can submit University Ops record',
+      async () => {
+        // Create DRAFT record
+        const record = await pool.query(
+          `
         INSERT INTO university_operations (
           project_code, title, operation_type, campus, status,
           created_by, publication_status
@@ -233,25 +257,28 @@ async function runTests() {
           'DRAFT'
         )
         RETURNING id, publication_status
-      `, [testData.creator.id]);
+      `,
+          [testData.creator.id],
+        );
 
-      testData.univops_assigned = record.rows[0];
+        testData.univops_assigned = record.rows[0];
 
-      // Assign to another user
-      await pool.query(
-        'INSERT INTO record_assignments (module, record_id, user_id) VALUES ($1, $2, $3)',
-        ['OPERATIONS', testData.univops_assigned.id, testData.assignee.id]
-      );
+        // Assign to another user
+        await pool.query(
+          'INSERT INTO record_assignments (module, record_id, user_id) VALUES ($1, $2, $3)',
+          ['OPERATIONS', testData.univops_assigned.id, testData.assignee.id],
+        );
 
-      // Check authorization for assignee
-      const assignmentCheck = await pool.query(
-        'SELECT 1 FROM record_assignments WHERE module = $1 AND record_id = $2 AND user_id = $3',
-        ['OPERATIONS', testData.univops_assigned.id, testData.assignee.id]
-      );
-      const isAssigned = assignmentCheck.rows.length > 0;
+        // Check authorization for assignee
+        const assignmentCheck = await pool.query(
+          'SELECT 1 FROM record_assignments WHERE module = $1 AND record_id = $2 AND user_id = $3',
+          ['OPERATIONS', testData.univops_assigned.id, testData.assignee.id],
+        );
+        const isAssigned = assignmentCheck.rows.length > 0;
 
-      assert(isAssigned, 'Univ Ops assignee should be able to submit');
-    });
+        assert(isAssigned, 'Univ Ops assignee should be able to submit');
+      },
+    );
 
     // =================================================================
     // BX6-BX7: STATE MACHINE VALIDATION
@@ -259,29 +286,33 @@ async function runTests() {
 
     console.log('\n=== STATE MACHINE VALIDATION (BX6-BX7) ===');
 
-    await runTest('BX6: Cannot submit record in PENDING_REVIEW status', async () => {
-      // Update one record to PENDING_REVIEW
-      await pool.query(
-        `UPDATE construction_projects
+    await runTest(
+      'BX6: Cannot submit record in PENDING_REVIEW status',
+      async () => {
+        // Update one record to PENDING_REVIEW
+        await pool.query(
+          `UPDATE construction_projects
          SET publication_status = 'PENDING_REVIEW', submitted_by = $1, submitted_at = NOW()
          WHERE id = $2`,
-        [testData.creator.id, testData.coi_creator.id]
-      );
+          [testData.creator.id, testData.coi_creator.id],
+        );
 
-      const record = await pool.query(
-        'SELECT publication_status FROM construction_projects WHERE id = $1',
-        [testData.coi_creator.id]
-      );
+        const record = await pool.query(
+          'SELECT publication_status FROM construction_projects WHERE id = $1',
+          [testData.coi_creator.id],
+        );
 
-      assert(
-        record.rows[0].publication_status === 'PENDING_REVIEW',
-        'State machine should prevent submission of PENDING_REVIEW records'
-      );
-    });
+        assert(
+          record.rows[0].publication_status === 'PENDING_REVIEW',
+          'State machine should prevent submission of PENDING_REVIEW records',
+        );
+      },
+    );
 
     await runTest('BX7: Cannot submit record in PUBLISHED status', async () => {
       // Create a PUBLISHED record
-      const record = await pool.query(`
+      const record = await pool.query(
+        `
         INSERT INTO construction_projects (
           project_code, title, funding_source_id, campus, status,
           created_by, publication_status
@@ -296,11 +327,13 @@ async function runTests() {
           'PUBLISHED'
         FROM funding_sources LIMIT 1
         RETURNING id, publication_status
-      `, [testData.creator.id]);
+      `,
+        [testData.creator.id],
+      );
 
       assert(
         record.rows[0].publication_status === 'PUBLISHED',
-        'State machine should prevent submission of PUBLISHED records'
+        'State machine should prevent submission of PUBLISHED records',
       );
     });
 
@@ -319,10 +352,11 @@ async function runTests() {
       process.exit(1);
     } else {
       console.log('\n✅ PHASE BX: ALL AUTHORIZATION TESTS PASSED\n');
-      console.log('Submit authorization correctly uses junction table assignments.');
+      console.log(
+        'Submit authorization correctly uses junction table assignments.',
+      );
       console.log('State machine integrity preserved.\n');
     }
-
   } catch (error) {
     console.error('\n❌ Test execution failed:', error.message);
     console.error(error.stack);
@@ -331,9 +365,15 @@ async function runTests() {
     // Cleanup: Delete test records
     console.log('CLEANUP: Removing test records...');
     try {
-      await pool.query("DELETE FROM construction_projects WHERE project_code LIKE 'CP-2026-TEST%'");
-      await pool.query("DELETE FROM repair_projects WHERE project_code LIKE 'RP-2026-TEST%'");
-      await pool.query("DELETE FROM university_operations WHERE project_code LIKE 'UO-2026-TEST%'");
+      await pool.query(
+        "DELETE FROM construction_projects WHERE project_code LIKE 'CP-2026-TEST%'",
+      );
+      await pool.query(
+        "DELETE FROM repair_projects WHERE project_code LIKE 'RP-2026-TEST%'",
+      );
+      await pool.query(
+        "DELETE FROM university_operations WHERE project_code LIKE 'UO-2026-TEST%'",
+      );
       console.log('  ✅ Test records cleaned up');
     } catch (cleanupError) {
       console.error('  ⚠️  Cleanup warning:', cleanupError.message);

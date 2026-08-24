@@ -25,7 +25,9 @@ export class Migration20260711000000_HomepageCms5Additions extends Migration {
   }
 
   async down(): Promise<void> {
-    this.addSql(`ALTER TABLE homepage_items DROP COLUMN IF EXISTS color_token;`);
+    this.addSql(
+      `ALTER TABLE homepage_items DROP COLUMN IF EXISTS color_token;`,
+    );
     this.addSql(`
       UPDATE homepage_settings
       SET setting_value = (

@@ -161,10 +161,10 @@ export class MediaService {
   async remove(id: string, userId: string): Promise<void> {
     const entity = await this.findOne(id);
 
-    if (entity.filePath) {
-      await this.uploadsService.deleteFile(entity.filePath);
-    }
-
+    // Soft-delete: set deletedAt; do NOT call uploadsService.deleteFile().
+    // The stored file is retained for compliance so the record stays auditable
+    // and restorable — a row marked recoverable whose bytes were destroyed is
+    // not recoverable. Same rule as construction-projects removeDocument().
     entity.deletedAt = new Date();
     entity.deletedBy = userId;
     await this.em.flush();

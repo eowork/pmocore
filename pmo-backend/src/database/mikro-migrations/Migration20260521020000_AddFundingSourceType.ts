@@ -2,7 +2,9 @@ import { Migration } from '@mikro-orm/migrations';
 
 export class Migration20260521020000_AddFundingSourceType extends Migration {
   async up(): Promise<void> {
-    this.addSql(`ALTER TABLE funding_sources ADD COLUMN IF NOT EXISTS type VARCHAR(20)`);
+    this.addSql(
+      `ALTER TABLE funding_sources ADD COLUMN IF NOT EXISTS type VARCHAR(20)`,
+    );
 
     this.addSql(`
       INSERT INTO funding_sources (id, name, type, created_at, updated_at)

@@ -218,11 +218,16 @@ export class ConstructionProject {
 
   // AAA-F-3: per-project custom Key Document repository sections
   @Property({ columnType: 'jsonb', default: '[]' })
-  customKeySections: Array<{ id: string; label: string; typeCode: string }> = [];
+  customKeySections: Array<{ id: string; label: string; typeCode: string }> =
+    [];
 
   // SSS-B: per-project custom Supporting Document repository folders (cards)
   @Property({ columnType: 'jsonb', default: '[]' })
-  customSupportingSections: Array<{ id: string; label: string; typeCode: string }> = [];
+  customSupportingSections: Array<{
+    id: string;
+    label: string;
+    typeCode: string;
+  }> = [];
 
   // KW-F2: project monitoring logs
   @Property({ columnType: 'jsonb', default: '[]' })
@@ -300,7 +305,11 @@ export class ConstructionProject {
 
   // Explicit fieldName: default naming strategy would map to "point_agenda10"
   // (no underscore before "10"), but the migration column is "point_agenda_10".
-  @Property({ nullable: true, columnType: 'jsonb', fieldName: 'point_agenda_10' })
+  @Property({
+    nullable: true,
+    columnType: 'jsonb',
+    fieldName: 'point_agenda_10',
+  })
   pointAgenda10?: any;
 
   // MC: Beneficiaries dynamic list

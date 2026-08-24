@@ -25,7 +25,7 @@ export function usePublicProjects() {
     try {
       const api = useApi()
       const response = await api.get<{ data: BackendProject[] }>(
-        '/api/public/construction-projects?publication_status=PUBLISHED',
+        '/api/public/construction-projects',
       )
       projects.value = adaptProjects(response.data || [])
     } catch {

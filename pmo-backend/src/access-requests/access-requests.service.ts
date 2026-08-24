@@ -71,13 +71,20 @@ export class AccessRequestsService {
   }
 
   // PHASE BBBF (Track 4): admin list with status/search/date filters.
-  async list(filters: { status?: string; q?: string; from?: string; to?: string }) {
+  async list(filters: {
+    status?: string;
+    q?: string;
+    from?: string;
+    to?: string;
+  }) {
     const where: Record<string, any> = {};
-    if (filters.status && filters.status !== 'ALL') where.status = filters.status;
+    if (filters.status && filters.status !== 'ALL')
+      where.status = filters.status;
     if (filters.from || filters.to) {
       where.requestedAt = {};
       if (filters.from) where.requestedAt.$gte = new Date(filters.from);
-      if (filters.to) where.requestedAt.$lte = new Date(`${filters.to}T23:59:59`);
+      if (filters.to)
+        where.requestedAt.$lte = new Date(`${filters.to}T23:59:59`);
     }
     const rows = await this.em.find(AccessRequest, where, {
       orderBy: { requestedAt: 'DESC' },
@@ -103,7 +110,11 @@ export class AccessRequestsService {
   // PHASE BBBF (Track 4): bulk approve/deny (skips non-pending; atomic per row, audited via decide()).
   async bulkDecide(
     ids: string[],
-    dto: { decision: 'APPROVE' | 'DENY'; granted_level?: string; decision_note?: string },
+    dto: {
+      decision: 'APPROVE' | 'DENY';
+      granted_level?: string;
+      decision_note?: string;
+    },
     admin: JwtPayload,
   ): Promise<{ approved: number; denied: number; skipped: number }> {
     let approved = 0;
@@ -149,7 +160,9 @@ export class AccessRequestsService {
       }
     }
     await this.em.flush();
-    this.logger.log(`ACCESS_REQUEST_BULK_ARCHIVE: count=${archived}, by=${admin.sub}`);
+    this.logger.log(
+      `ACCESS_REQUEST_BULK_ARCHIVE: count=${archived}, by=${admin.sub}`,
+    );
     return { archived };
   }
 
@@ -269,7 +282,11 @@ export class AccessRequestsService {
     if (!req) {
       throw new NotFoundException('Access request not found');
     }
-    if (req.status !== 'DENIED' && req.status !== 'REVOKED' && req.status !== 'EXPIRED') {
+    if (
+      req.status !== 'DENIED' &&
+      req.status !== 'REVOKED' &&
+      req.status !== 'EXPIRED'
+    ) {
       throw new BadRequestException(
         'Only denied, revoked, or expired requests can be reopened.',
       );

@@ -2,7 +2,7 @@ const http = require('http');
 
 const data = JSON.stringify({
   identifier: 'admin@test.com',
-  password: 'admin123'
+  password: 'admin123',
 });
 
 const options = {
@@ -12,8 +12,8 @@ const options = {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Content-Length': data.length
-  }
+    'Content-Length': data.length,
+  },
 };
 
 const req = http.request(options, (res) => {

@@ -69,7 +69,10 @@ export class UsersController {
 
   @Get('eligible-contractors')
   @Roles('Admin', 'Staff')
-  @ApiOperation({ summary: 'List users with Contractor role — for Quick Assign Existing Contractor feature' })
+  @ApiOperation({
+    summary:
+      'List users with Contractor role — for Quick Assign Existing Contractor feature',
+  })
   findEligibleContractors() {
     return this.service.findEligibleContractors();
   }
@@ -213,7 +216,9 @@ export class UsersController {
   @Post(':id/activate')
   @Roles('SuperAdmin', 'Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Activate a pending self-registered user (Admin only)' })
+  @ApiOperation({
+    summary: 'Activate a pending self-registered user (Admin only)',
+  })
   async activateUser(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -225,7 +230,9 @@ export class UsersController {
   @Post(':id/reject-registration')
   @Roles('SuperAdmin', 'Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reject a pending self-registered user (Admin only)' })
+  @ApiOperation({
+    summary: 'Reject a pending self-registered user (Admin only)',
+  })
   async rejectRegistration(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -392,7 +399,7 @@ export class UsersController {
 
   @Delete(':id/pillar-assignments/:pillarType')
   @Roles('Admin')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke pillar access from user (Admin only)' })
   revokePillar(
     @Param('id', ParseUUIDPipe) id: string,

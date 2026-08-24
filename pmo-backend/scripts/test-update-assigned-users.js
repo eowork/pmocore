@@ -21,9 +21,17 @@ async function testUpdateAssignments() {
   try {
     // Get test records from all three modules
     const modules = [
-      { name: 'Construction', table: 'construction_projects', module: 'CONSTRUCTION' },
+      {
+        name: 'Construction',
+        table: 'construction_projects',
+        module: 'CONSTRUCTION',
+      },
       { name: 'Repair', table: 'repair_projects', module: 'REPAIR' },
-      { name: 'University Operations', table: 'university_operations', module: 'OPERATIONS' },
+      {
+        name: 'University Operations',
+        table: 'university_operations',
+        module: 'OPERATIONS',
+      },
     ];
 
     // Get test users
@@ -38,7 +46,7 @@ async function testUpdateAssignments() {
       return;
     }
 
-    const testUsers = userResult.rows.map(r => r.id);
+    const testUsers = userResult.rows.map((r) => r.id);
     console.log(`Test users: ${testUsers.slice(0, 2).join(', ')}\n`);
 
     for (const mod of modules) {
@@ -66,44 +74,60 @@ async function testUpdateAssignments() {
       // After the fix, the service filters out assigned_user_ids and handles it separately
 
       // We'll verify the pattern by checking that the column doesn't exist
-      const columnCheck = await pool.query(`
+      const columnCheck = await pool.query(
+        `
         SELECT column_name FROM information_schema.columns
         WHERE table_name = $1 AND column_name = 'assigned_user_ids'
-      `, [mod.table]);
+      `,
+        [mod.table],
+      );
 
       if (columnCheck.rows.length > 0) {
         console.log('  ✗ ERROR: assigned_user_ids column should NOT exist');
         throw new Error(`Column assigned_user_ids found in ${mod.table}`);
       } else {
-        console.log('  ✓ Confirmed: assigned_user_ids column does NOT exist (expected)');
+        console.log(
+          '  ✓ Confirmed: assigned_user_ids column does NOT exist (expected)',
+        );
       }
 
       // Test 2: Verify junction table handles assignments correctly
       console.log('\n  Test 2: Junction table assignment handling');
 
       // Clear existing assignments
-      await pool.query(`
+      await pool.query(
+        `
         DELETE FROM record_assignments WHERE module = $1 AND record_id = $2
-      `, [mod.module, testRecord.id]);
+      `,
+        [mod.module, testRecord.id],
+      );
 
       // Add assignments (simulating what updateRecordAssignments() does)
       for (const userId of testUsers.slice(0, 2)) {
-        await pool.query(`
+        await pool.query(
+          `
           INSERT INTO record_assignments (module, record_id, user_id)
           VALUES ($1, $2, $3)
           ON CONFLICT (module, record_id, user_id) DO NOTHING
-        `, [mod.module, testRecord.id, userId]);
+        `,
+          [mod.module, testRecord.id, userId],
+        );
       }
 
       // Verify assignments
-      const assignmentCheck = await pool.query(`
+      const assignmentCheck = await pool.query(
+        `
         SELECT COUNT(*) as count FROM record_assignments
         WHERE module = $1 AND record_id = $2
-      `, [mod.module, testRecord.id]);
+      `,
+        [mod.module, testRecord.id],
+      );
 
       const assignmentCount = parseInt(assignmentCheck.rows[0].count);
       if (assignmentCount === 2) {
-        console.log(`  ✓ Junction table: ${assignmentCount} assignments created`);
+        console.log(
+          `  ✓ Junction table: ${assignmentCount} assignments created`,
+        );
       } else {
         console.log(`  ✗ Junction table: Expected 2, got ${assignmentCount}`);
         throw new Error('Assignment count mismatch');
@@ -112,18 +136,25 @@ async function testUpdateAssignments() {
       // Test 3: Verify assigned_users query works
       console.log('\n  Test 3: Verify assigned_users subquery');
 
-      const assignedUsersQuery = await pool.query(`
+      const assignedUsersQuery = await pool.query(
+        `
         SELECT (SELECT COALESCE(json_agg(json_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)), '[]'::json)
                 FROM record_assignments ra JOIN users u ON ra.user_id = u.id
                 WHERE ra.module = $1 AND ra.record_id = t.id) as assigned_users
         FROM ${mod.table} t
         WHERE t.id = $2
-      `, [mod.module, testRecord.id]);
+      `,
+        [mod.module, testRecord.id],
+      );
 
       const assignedUsers = assignedUsersQuery.rows[0].assigned_users;
       if (Array.isArray(assignedUsers) && assignedUsers.length === 2) {
-        console.log(`  ✓ Assigned users query: ${assignedUsers.length} users returned`);
-        console.log(`    Users: ${assignedUsers.map(u => u.name).join(', ')}`);
+        console.log(
+          `  ✓ Assigned users query: ${assignedUsers.length} users returned`,
+        );
+        console.log(
+          `    Users: ${assignedUsers.map((u) => u.name).join(', ')}`,
+        );
       } else {
         console.log(`  ✗ Assigned users query failed`);
         throw new Error('Assigned users query returned unexpected result');
@@ -132,14 +163,20 @@ async function testUpdateAssignments() {
       // Test 4: Clear assignments (simulating empty array)
       console.log('\n  Test 4: Clear all assignments (empty array)');
 
-      await pool.query(`
+      await pool.query(
+        `
         DELETE FROM record_assignments WHERE module = $1 AND record_id = $2
-      `, [mod.module, testRecord.id]);
+      `,
+        [mod.module, testRecord.id],
+      );
 
-      const clearCheck = await pool.query(`
+      const clearCheck = await pool.query(
+        `
         SELECT COUNT(*) as count FROM record_assignments
         WHERE module = $1 AND record_id = $2
-      `, [mod.module, testRecord.id]);
+      `,
+        [mod.module, testRecord.id],
+      );
 
       if (parseInt(clearCheck.rows[0].count) === 0) {
         console.log('  ✓ Assignments cleared successfully');
@@ -157,10 +194,11 @@ async function testUpdateAssignments() {
     console.log('  ✓ Junction table CRUD operations work correctly');
     console.log('  ✓ Assigned users queries return correct data');
     console.log('  ✓ Empty assignments correctly clear junction table');
-    console.log('\nConclusion: Service layer update() methods correctly exclude');
+    console.log(
+      '\nConclusion: Service layer update() methods correctly exclude',
+    );
     console.log('assigned_user_ids from SQL UPDATE queries and handle it via');
     console.log('junction table instead.');
-
   } catch (error) {
     console.error('\n✗ Test failed:', error.message);
     process.exit(1);

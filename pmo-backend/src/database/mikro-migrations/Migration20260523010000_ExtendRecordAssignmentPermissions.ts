@@ -1,7 +1,9 @@
 import { Migration } from '@mikro-orm/migrations';
 
 export class Migration20260523010000_ExtendRecordAssignmentPermissions extends Migration {
-  isTransactional(): boolean { return true; }
+  isTransactional(): boolean {
+    return true;
+  }
 
   async up(): Promise<void> {
     this.addSql(`

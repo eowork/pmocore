@@ -1,7 +1,9 @@
 import { Migration } from '@mikro-orm/migrations';
 
 export class Migration20260522040000_AddProgressReportRemarksList extends Migration {
-  isTransactional(): boolean { return true; }
+  isTransactional(): boolean {
+    return true;
+  }
 
   async up(): Promise<void> {
     this.addSql(`

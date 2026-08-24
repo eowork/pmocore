@@ -19,16 +19,32 @@ import { Migration } from '@mikro-orm/migrations';
  */
 export class Migration20260521050000_NormalizeProjectStatusData extends Migration {
   async up(): Promise<void> {
-    this.addSql(`UPDATE construction_projects SET status = 'PROPOSAL' WHERE status = 'PLANNING'`);
-    this.addSql(`UPDATE construction_projects SET status = 'COMPLETE' WHERE status = 'COMPLETED'`);
-    this.addSql(`UPDATE projects SET status = 'PROPOSAL' WHERE status = 'PLANNING'`);
-    this.addSql(`UPDATE projects SET status = 'COMPLETE' WHERE status = 'COMPLETED'`);
+    this.addSql(
+      `UPDATE construction_projects SET status = 'PROPOSAL' WHERE status = 'PLANNING'`,
+    );
+    this.addSql(
+      `UPDATE construction_projects SET status = 'COMPLETE' WHERE status = 'COMPLETED'`,
+    );
+    this.addSql(
+      `UPDATE projects SET status = 'PROPOSAL' WHERE status = 'PLANNING'`,
+    );
+    this.addSql(
+      `UPDATE projects SET status = 'COMPLETE' WHERE status = 'COMPLETED'`,
+    );
   }
 
   async down(): Promise<void> {
-    this.addSql(`UPDATE construction_projects SET status = 'PLANNING' WHERE status = 'PROPOSAL'`);
-    this.addSql(`UPDATE construction_projects SET status = 'COMPLETED' WHERE status = 'COMPLETE'`);
-    this.addSql(`UPDATE projects SET status = 'PLANNING' WHERE status = 'PROPOSAL'`);
-    this.addSql(`UPDATE projects SET status = 'COMPLETED' WHERE status = 'COMPLETE'`);
+    this.addSql(
+      `UPDATE construction_projects SET status = 'PLANNING' WHERE status = 'PROPOSAL'`,
+    );
+    this.addSql(
+      `UPDATE construction_projects SET status = 'COMPLETED' WHERE status = 'COMPLETE'`,
+    );
+    this.addSql(
+      `UPDATE projects SET status = 'PLANNING' WHERE status = 'PROPOSAL'`,
+    );
+    this.addSql(
+      `UPDATE projects SET status = 'COMPLETED' WHERE status = 'COMPLETE'`,
+    );
   }
 }

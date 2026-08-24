@@ -45,7 +45,11 @@ export class ConstructionMilestone {
   @Property({ nullable: true, length: 36 })
   createdBy?: string;
 
-  @Property({ nullable: true, columnType: 'timestamptz', onUpdate: () => new Date() })
+  @Property({
+    nullable: true,
+    columnType: 'timestamptz',
+    onUpdate: () => new Date(),
+  })
   updatedAt?: Date;
 
   @Property({ nullable: true, length: 36 })

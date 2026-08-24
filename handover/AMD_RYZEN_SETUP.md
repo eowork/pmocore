@@ -59,7 +59,7 @@ Expected output includes `TcpTestSucceeded : True`. If False, check Wi-Fi connec
 | Free disk space | 10 GB minimum | |
 | Windows build | 19041 or higher | |
 | Internet | Active and stable | |
-| USB drive with `.env` files | From dev machine | |
+| USB drive with `.env` files (root `.env`, `pmo-backend/.env`, `pmo-frontend/.env`) | From dev machine | |
 | `pmoadmin` password | Written down | |
 
 **Only proceed when all boxes are checked.**
@@ -164,24 +164,16 @@ The laptop restarts into Windows.
 
 ### Step 1D — Confirm SVM Is Now Active
 
-After Windows loads, open PowerShell (no Admin needed) and run:
+After Windows loads, open PowerShell and run:
 
 ```powershell
-systeminfo | findstr /i "Virtualization Enabled In Firmware"
+# Check if virtualization is enabled
+(Get-ComputerInfo).HyperVRequirementVirtualizationFirmwareEnabled
 ```
 
-Expected output:
-```
-Virtualization Enabled In Firmware: Yes
-```
+Expected output: `True`
 
-If it shows `No`, SVM is still disabled — return to BIOS and try again.
-
-If the line does not appear at all, run the broader Hyper-V check:
-```powershell
-systeminfo | findstr /i "Hyper-V"
-```
-Look for `Virtualization Enabled In Firmware: Yes` among the results.
+If it shows `False`, SVM is still disabled — return to BIOS and try again.
 
 ---
 

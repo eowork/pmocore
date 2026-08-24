@@ -23,8 +23,12 @@ export class Migration20260522010000_CreateConstructionRevisionOrders extends Mi
         updated_by UUID
       )
     `);
-    this.addSql(`CREATE INDEX IF NOT EXISTS idx_cro_project_date ON construction_revision_orders(project_id, revision_date DESC)`);
-    this.addSql(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cro_project_revnum ON construction_revision_orders(project_id, revision_number)`);
+    this.addSql(
+      `CREATE INDEX IF NOT EXISTS idx_cro_project_date ON construction_revision_orders(project_id, revision_date DESC)`,
+    );
+    this.addSql(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_cro_project_revnum ON construction_revision_orders(project_id, revision_number)`,
+    );
   }
 
   async down(): Promise<void> {

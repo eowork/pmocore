@@ -8,8 +8,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { LdapStrategy } from './strategies/ldap.strategy';
 import { JwtAuthGuard, RolesGuard } from './guards';
-import { numberFromConfig } from '../common/config.util';
 import { ActivityLogModule } from '../activity-logs/activity-log.module';
+import { numberFromConfig } from '../common/config.util';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import {
   User,
@@ -44,9 +44,13 @@ import {
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('AUTH_JWT_SECRET'),
         signOptions: {
-          // T-JWT-EXPIRY: coerce to a real number. A raw string from .env (e.g. "28800") is read
-          // by jsonwebtoken as milliseconds (~29s), not seconds — see common/config.util.ts.
-          expiresIn: numberFromConfig(configService, 'AUTH_JWT_EXPIRES_IN', 28800), // 8h in seconds
+          // T-JWT-EXPIRY: numberFromConfig falls back on a missing/empty/non-numeric
+          // value instead of yielding NaN, which jsonwebtoken rejects at sign() time.
+          expiresIn: numberFromConfig(
+            configService,
+            'AUTH_JWT_EXPIRES_IN',
+            28800,
+          ), // 8h in seconds
         },
       }),
     }),

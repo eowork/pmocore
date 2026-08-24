@@ -57,7 +57,6 @@ async function listUsers() {
     });
 
     console.log('=== END OF USER LIST ===\n');
-
   } catch (error) {
     console.error('✗ Failed to list users:', error.message);
     process.exit(1);

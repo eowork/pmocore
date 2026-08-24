@@ -16,6 +16,8 @@ export class Migration20260712000000_AddLinkedProjectToHomepageItems extends Mig
   }
 
   async down(): Promise<void> {
-    this.addSql(`ALTER TABLE homepage_items DROP COLUMN IF EXISTS linked_project_id;`);
+    this.addSql(
+      `ALTER TABLE homepage_items DROP COLUMN IF EXISTS linked_project_id;`,
+    );
   }
 }
