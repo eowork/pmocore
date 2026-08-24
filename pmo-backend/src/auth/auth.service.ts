@@ -794,20 +794,44 @@ export class AuthService implements OnModuleInit {
       },
     });
 
+    // LdapAuth is an EventEmitter and ldapjs re-emits connection failures on its
+    // backoff timer, AFTER the authenticate callback has already run. An 'error'
+    // event with no listener is fatal in Node ("Unhandled 'error' event"), which
+    // took the whole API process down on every login attempt while the directory
+    // was unreachable (e.g. EAI_AGAIN when the openldap container is not running).
+    // Swallow it here: the authenticate callback below is the only path that
+    // decides the outcome.
+    auth.on('error', (err: any) => {
+      this.logger.warn(
+        `LDAP_CLIENT_ERROR: code=${err?.code ?? ''}, message=${err?.message ?? err}`,
+      );
+    });
+
     // T-LDAP-JIT: resolve the directory entry (not just a boolean) so the caller can
     // auto-provision from mail/givenName/sn/uid. Resolves null on any bind failure.
     return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: LdapProfile | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
       auth.authenticate(username, password, (err: any, _user: any) => {
-        auth.close(() => {});
+        try {
+          auth.close(() => {});
+        } catch {
+          // close() can throw if the client never connected — outcome already decided.
+        }
         if (err || !_user) {
           // T-LDAP-ROOT (RF-5): surface the reason so a 401 is diagnosable in the logs.
           this.logger.warn(
             `LDAP_AUTH_ERROR: name=${err?.name ?? 'NO_ENTRY'}, code=${err?.code ?? ''}, message=${err?.message ?? 'no matching directory entry / bad credentials'}`,
           );
-          resolve(null);
+          finish(null);
           return;
         }
-        resolve({
+        finish({
           email: _user.mail || _user.userPrincipalName,
           firstName: _user.givenName,
           lastName: _user.sn,
