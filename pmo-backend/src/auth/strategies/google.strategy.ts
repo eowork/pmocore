@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, Profile, VerifyCallback } from 'passport-google-oauth20';
 import { EntityManager } from '@mikro-orm/core';
-import { User } from '../../database/entities';
+import { User, UserPermissionOverride } from '../../database/entities';
+import { VALID_MODULE_KEYS } from '../../users/dto/permission-override.dto';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -113,6 +114,16 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         }
         return done(err as Error, false);
       }
+      // PHASE BBBA (BBBA-0b) parity: explicit can_access=false row per module — default-DENY
+      // made explicit/auditable from creation, mirroring register()/findOrCreateLdapUser().
+      const overrides = VALID_MODULE_KEYS.map((moduleKey) =>
+        this.em.create(UserPermissionOverride, {
+          userId: newUser.id,
+          moduleKey,
+          canAccess: false,
+        }),
+      );
+      await this.em.persistAndFlush(overrides);
       this.logger.log(
         `GOOGLE_AUTO_CREATED: user_id=${newUser.id}, email=${email}`,
       );
