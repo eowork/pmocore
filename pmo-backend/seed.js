@@ -168,6 +168,32 @@ async function seedFreshDatabase(orm) {
     WHERE NOT EXISTS (SELECT 1 FROM system_settings);
   `);
 
+  // Layer 1.5 (Role Permission) — see technical-reference/architecture.md and
+  // Migration20260907000000_SeedPermissionsCatalog (existing DBs get it from there;
+  // this duplicates the same idempotent inserts for the fresh-DB path).
+  console.log('[seed] Seeding permission catalog...');
+  await conn.execute(`
+    INSERT INTO permissions (name, display_name, description, module, resource, action, is_system) VALUES
+      ('users.bulk_access_update', 'Bulk Update User Access', 'Mass grant/revoke module, permission, or pillar access across multiple selected users at once.', 'users', 'access', 'bulk_update', true),
+      ('users.unlock_account', 'Unlock User Account', 'Manually clear a failed-login lockout on a user account.', 'users', 'account', 'unlock', true),
+      ('access_requests.bulk_decide', 'Bulk Decide Access Requests', 'Approve or deny multiple pending access requests in one action.', 'access_requests', 'request', 'bulk_decide', true),
+      ('access_requests.bulk_archive', 'Bulk Archive Access Requests', 'Archive multiple access requests in one action.', 'access_requests', 'request', 'bulk_archive', true),
+      ('university_operations.export_report', 'Export University Operations Report', 'Export BAR No. 1/2 Physical or Financial Accomplishment data to PDF or Excel.', 'university_operations', 'report', 'export', true),
+      ('system.manage_homepage', 'Manage Public Homepage', 'Edit the public-facing homepage CMS content (hero, highlights, FAQ, announcements).', 'system', 'homepage', 'manage', true)
+    ON CONFLICT (name) DO NOTHING;
+  `);
+  await conn.execute(`
+    INSERT INTO role_permissions (role_id, permission_id)
+    SELECT r.id, p.id FROM roles r, permissions p
+    WHERE r.name = 'Admin'
+      AND p.name IN (
+        'users.bulk_access_update', 'users.unlock_account',
+        'access_requests.bulk_decide', 'access_requests.bulk_archive',
+        'university_operations.export_report', 'system.manage_homepage'
+      )
+    ON CONFLICT (role_id, permission_id) DO NOTHING;
+  `);
+
   // T-HOME-CMS (THC-1): default public-homepage content. Fresh DBs fake-mark
   // Migration20260707000000_CreateHomepageContent (ADR-023), so its seed rows
   // must be duplicated here. Idempotent: inserts only when the tables are empty.
