@@ -66,6 +66,21 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
     return typeof role === 'string' && role.toLowerCase() === 'contractor'
   })
 
+  // FIX: mirrors construction-projects.service.ts's assertProjectPermission(), the
+  // backend's actual authority for every CRUD action (milestones, documents, gallery,
+  // etc.) — it has an explicit "Owner bypass" (created_by === userId ⇒ allow,
+  // unconditionally) BEFORE checking record_assignments.permissions; that permission
+  // check only applies to non-owner assigned users. The gates below previously
+  // required effectivePermissions.X for owner and assigned alike, so an owner with no
+  // explicit permissions.canEdit on their (often nonexistent) record_assignments row
+  // saw no Edit button at all, even though the backend would have allowed the edit.
+  const isOwner = computed(() => {
+    if (!project.value) return false
+    const userId = authStore.user?.id
+    if (!userId) return false
+    return (project.value as any).createdBy === userId
+  })
+
   const isOwnerOrAssigned = computed(() => {
     if (!project.value) return false
     const userId = authStore.user?.id
@@ -190,7 +205,7 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
 
   const canEditCurrentProject = computed(() => {
     if (!project.value) return false
-    if (isAdmin.value) return true
+    if (isAdmin.value || isOwner.value) return true
     return isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false)
   })
 
@@ -219,27 +234,29 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
     })
   }
 
-  // PQ-B: Per-tab edit flags — Admin always allowed; assigned users use project-level effectivePermissions
+  // PQ-B: Per-tab edit flags — Admin/owner always allowed; non-owner assigned users
+  // need the explicit per-assignment permission (mirrors assertProjectPermission's
+  // owner bypass on the backend).
   const canEditMilestones = computed(() =>
-    isAdmin.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false))
+    isAdmin.value || isOwner.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false))
   )
   const canEditWorkLog = computed(() => canEditCurrentProject.value)
   const canEditFinancial = computed(() => canEditCurrentProject.value)
   const canEditPow = computed(() =>
-    isAdmin.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false))
+    isAdmin.value || isOwner.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false))
   )
   const canEditPersonnel = computed(() =>
-    isAdmin.value || (isOwnerOrAssigned.value && (effectivePermissions.value.tabPersonnel ?? false))
+    isAdmin.value || isOwner.value || (isOwnerOrAssigned.value && (effectivePermissions.value.tabPersonnel ?? false))
   )
   const canUploadDocuments = computed(() =>
-    isAdmin.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canUpload ?? false))
+    isAdmin.value || isOwner.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canUpload ?? false))
   )
   // PS-B: granular action permissions for sub-resource CRUD buttons
   const canDeleteResources = computed(() =>
-    isAdmin.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canDelete ?? false))
+    isAdmin.value || isOwner.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canDelete ?? false))
   )
   const canCreateResources = computed(() =>
-    isAdmin.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canCreate ?? false))
+    isAdmin.value || isOwner.value || (isOwnerOrAssigned.value && (effectivePermissions.value.canCreate ?? false))
   )
 
   return {
@@ -247,6 +264,7 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
     canViewTab,
     canViewCoiTab,
     canEditCurrentProject,
+    isOwner,
     isOwnerOrAssigned,
     myAssignment,
     effectivePermissions,

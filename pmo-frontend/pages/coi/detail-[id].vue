@@ -19,7 +19,7 @@ const router = useRouter()
 const api = useApi()
 const { public: { apiBase } } = useRuntimeConfig()
 const toast = useToast()
-const { isAdmin, isStaff, canEdit, canApprove } = usePermissions()
+const { isAdmin, canApprove } = usePermissions()
 const authStore = useAuthStore()
 
 const project = ref<UIProjectDetail | null>(null)
@@ -145,22 +145,25 @@ const workflowAction = ref<'submit' | 'publish' | 'reject' | 'withdraw'>('submit
 const rejectionNotes = ref('')
 const workflowProcessing = ref(false)
 
-// Check if current user is the owner, delegate, or assigned (Phase BK)
-// Show Submit/Resubmit for Review: Staff or assigned user who owns/is assigned to a DRAFT or REJECTED record
-// PHASE BBCH (Track 1, R-372): submit authority is system role Staff+ OR a contribute-capable
-// module level (canEdit('coi') is true for Contributor/Approver/Manager), AND owner/assigned.
+// Show Submit/Resubmit for Review: Approver/Manager module level only (or Admin).
+// FIX (was `isStaff.value || canEdit('coi')`): isStaff is role-based and true for ANY
+// Staff user regardless of level, so it short-circuited the level check entirely —
+// a Contributor (or even Viewer, if isOwnerOrAssigned) could submit. Contributor may
+// input/edit data but does not submit; only Approver/Manager may. Mirrors
+// canPublishOrReject below — Approver/Manager bypass record/owner scope (Layer 3).
 const canSubmitForReview = computed(() => {
   if (!project.value) return false
   const status = project.value.publicationStatus
   if (status !== 'DRAFT' && status !== 'REJECTED') return false
-  if (!isOwnerOrAssigned.value) return false
-  return isStaff.value || canEdit('coi')
+  return canApprove('coi')
 })
 
-// Show Withdraw button: Original submitter viewing PENDING_REVIEW
+// Show Withdraw button: Approver/Manager (any pending submission in this module) OR
+// the original submitter — mirrors canSubmitForReview's authority.
 const canWithdraw = computed(() => {
   if (!project.value) return false
   if (project.value.publicationStatus !== 'PENDING_REVIEW') return false
+  if (canApprove('coi')) return true
   return project.value.approvalMetadata?.submittedBy === authStore.user?.id
 })
 
