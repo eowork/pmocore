@@ -22,7 +22,7 @@ const route = useRoute()
 const api = useApi()
 const toast = useToast()
 const authStore = useAuthStore()
-const { isAdmin, isStaff, canAdd, isSuperAdmin } = usePermissions()
+const { isAdmin, isStaff, canAdd, canApprove, isSuperAdmin } = usePermissions()
 
 // Phase DW-C: Centralized fiscal year store
 import { useFiscalYearStore } from '~/stores/fiscalYear'
@@ -94,6 +94,27 @@ const PILLARS = [
   },
 ] as const
 
+// Phase HN parity (Directive 159/222) — same convention as financial/index.vue's
+// visiblePillars: Admin/SuperAdmin bypass, otherwise membership in pillar_assignments
+// is required. FIX: an empty list means NO pillars granted (default-deny) — a user
+// with zero assignments has simply never been given pillar access, not "no
+// restriction"; see hasAnyPillarAccess below, which redirects that case away entirely.
+// Disables rather than hides (per this page's spec) — the tab stays visible so the
+// restriction is legible, it just can't be activated.
+function isPillarAccessible(pillarId: string): boolean {
+  if (isAdmin.value || isSuperAdmin.value) return true
+  const assignments = authStore.user?.pillarAssignments ?? []
+  return assignments.includes(pillarId)
+}
+
+// Whether the user has ANY reason to be on this page — Admin/SuperAdmin bypass,
+// otherwise at least one pillar assignment is required. Zero assignments ⇒ redirect
+// with a toast (handled in onMounted) rather than rendering a page with every tab disabled.
+const hasAnyPillarAccess = computed(() => {
+  if (isAdmin.value || isSuperAdmin.value) return true
+  return (authStore.user?.pillarAssignments ?? []).length > 0
+})
+
 // State
 // Phase DW-C: selectedFiscalYear now comes from fiscalYearStore (storeToRefs)
 // Phase DW-A: Remove ALL; default to Q1; Q4 = Final Year Projection
@@ -104,9 +125,9 @@ const selectedQuarter = ref<string>(
     : 'Q1'
 )
 const activePillar = ref<string>(
-  (route.query.pillar as string) && PILLARS.some(p => p.id === route.query.pillar)
+  (route.query.pillar as string) && PILLARS.some(p => p.id === route.query.pillar) && isPillarAccessible(route.query.pillar as string)
     ? (route.query.pillar as string)
-    : PILLARS[0].id
+    : (PILLARS.find(p => isPillarAccessible(p.id))?.id ?? PILLARS[0].id)
 )
 const loading = ref(true)
 const actionLoading = ref(false)
@@ -373,7 +394,7 @@ async function findCurrentOperation() {
 
     // Phase EK-C: Add filters to avoid pagination miss
     const response = await api.get<any>(
-      `/api/university-operations?type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
+      `/api/university-operations?operation_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
     )
     const data = Array.isArray(response) ? response : (response?.data || [])
 
@@ -512,7 +533,10 @@ function isOwnerOrAssigned(op: any): boolean {
 }
 
 function canEditData(): boolean {
-  if (!currentOperation.value) return canAdd('operations')
+  // Phase HU: gate by the Physical sub-module's own granted level, not the stale
+  // 'operations' key (which matched no moduleLevels entry and silently fell through
+  // to the plain role table, letting any Staff user add data regardless of level).
+  if (!currentOperation.value) return canAdd('university-operations-physical')
   // Phase GOV-C: Admin on PUBLISHED quarterly must have explicit unlock approval
   if (isAdmin.value) {
     if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') {
@@ -523,6 +547,11 @@ function canEditData(): boolean {
   if (currentOperation.value.publication_status === 'PUBLISHED') return false
   // Phase ER-A: Published quarterly report locks indicator/financial edits for non-admin users
   if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') return false
+  // Layer 3 enforcement order (technical-reference/architecture.md): Approver/Manager get
+  // full module CRUD with record scope bypassed; Contributor is scoped to owned/assigned
+  // records only; Viewer/no grant is denied outright even if flagged owner/assigned.
+  if (canApprove('university-operations-physical')) return true
+  if (!canAdd('university-operations-physical')) return false
   return isOwnerOrAssigned(currentOperation.value)
 }
 
@@ -532,17 +561,16 @@ function canSubmitAllPillars(): boolean {
   if (isLoadingQuarterlyReport.value) return false
   // Phase EP-D: Block Submit when quarterly report state is unknown (fetch failed)
   if (quarterlyReportFetchFailed.value) return false
+  // Submitting for admin review requires Approver/Manager module level (or Admin) —
+  // Contributor may create/edit quarterly data but does not submit the batch for review.
+  if (!isAdmin.value && !canApprove('university-operations-physical')) return false
   // If we have a quarterly report, check its status
   if (currentQuarterlyReport.value) {
     const status = currentQuarterlyReport.value.publication_status
-    if (status !== 'DRAFT' && status !== 'REJECTED') return false
-    if (isAdmin.value) return true
-    return currentQuarterlyReport.value.created_by === authStore.user?.id
+    return status === 'DRAFT' || status === 'REJECTED'
   }
   // No quarterly report yet — allow creating one if there are pillar operations
-  if (allPillarOperations.value.length === 0) return false
-  if (isAdmin.value) return true
-  return allPillarOperations.value.some(op => isOwnerOrAssigned(op))
+  return allPillarOperations.value.length > 0
 }
 
 // Phase EM-C: Withdraw guard — checks quarterly report status
@@ -550,6 +578,10 @@ function canWithdrawAllPillars(): boolean {
   if (!currentQuarterlyReport.value) return false
   if (currentQuarterlyReport.value.publication_status !== 'PENDING_REVIEW') return false
   if (isAdmin.value) return true
+  // Approver/Manager may withdraw any pending submission in this module, not just the
+  // one they personally submitted — mirrors canSubmitAllPillars' authority. The
+  // submitted_by fallback covers historical rows submitted before this rule existed.
+  if (canApprove('university-operations-physical')) return true
   return currentQuarterlyReport.value.submitted_by === authStore.user?.id
 }
 
@@ -1042,6 +1074,13 @@ watch(selectedQuarter, async () => {
 
 // Phase DW-C: Fix race condition - await fiscal year fetch before indicator data
 onMounted(async () => {
+  // Zero pillar assignments ⇒ nothing on this page is accessible — bounce back to
+  // the UO landing page instead of rendering with every tab disabled.
+  if (!hasAnyPillarAccess.value) {
+    toast.error('No pillar access assigned. Contact your administrator.')
+    router.push('/university-operations')
+    return
+  }
   // Ensure fiscal year is initialized before fetching pillar data
   await fiscalYearStore.fetchFiscalYears()
   await fetchPillarData()
@@ -1289,9 +1328,22 @@ onMounted(async () => {
     <!-- Phase DR-C: Pillar Tabs with Full Program Names -->
     <v-card class="mb-4">
       <v-tabs v-model="activePillar" bg-color="primary" show-arrows class="pillar-tabs">
-        <v-tab v-for="pillar in PILLARS" :key="pillar.id" :value="pillar.id" class="pillar-tab">
+        <v-tab
+          v-for="pillar in PILLARS"
+          :key="pillar.id"
+          :value="pillar.id"
+          :disabled="!isPillarAccessible(pillar.id)"
+          class="pillar-tab"
+        >
           <v-icon start>{{ pillar.icon }}</v-icon>
           {{ pillar.fullName }}
+          <v-tooltip
+            v-if="!isPillarAccessible(pillar.id)"
+            activator="parent"
+            location="bottom"
+          >
+            You are not assigned to this pillar
+          </v-tooltip>
         </v-tab>
       </v-tabs>
     </v-card>

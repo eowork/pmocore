@@ -159,4 +159,23 @@ export class PermissionResolverService {
     );
     return result[0]?.has_access ?? false;
   }
+
+  /**
+   * Phase BBCH (Track 1, backend enforcement): approval authority is Layer 1
+   * (Admin/SuperAdmin) OR Layer 3 (an Approver/Manager grant on moduleKey in
+   * user_permission_overrides). Mirrors the frontend's usePermissions().canApprove()
+   * exactly, so the publish/reject/approve/unlock endpoints accept precisely the
+   * users the UI already shows those actions to — no more, no less.
+   */
+  async canApproveModule(user: JwtPayload, moduleKey: string): Promise<boolean> {
+    if (this.isAdmin(user)) return true;
+
+    const rows = await this.em.getConnection().execute(
+      `SELECT granted_level FROM user_permission_overrides
+       WHERE user_id = ? AND module_key = ? AND can_access = true`,
+      [user.sub, moduleKey],
+    );
+    const level: string | null = rows[0]?.granted_level ?? null;
+    return level === 'Approver' || level === 'Manager';
+  }
 }

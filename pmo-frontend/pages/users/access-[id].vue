@@ -17,6 +17,9 @@ if (!userId) {
 
 const loading = ref(true)
 const userDisplayName = ref('')
+// The 'users' module row only makes sense for Admin/SuperAdmin target users — a
+// Staff/Viewer/Contractor account has no User Management screen to gate.
+const targetUserIsAdmin = ref(false)
 
 // Tab state
 const activeTab = ref('modules')
@@ -27,7 +30,12 @@ interface PermissionOverride {
   user_id: string
   module_key: string
   can_access: boolean
+  granted_level: string | null
 }
+
+// Layer 3 module CRUD tiers (technical-reference/architecture.md) — mirrors
+// pmo-backend/src/common/enums/access-level.enum.ts AccessLevel.
+const LEVEL_OPTIONS = ['Viewer', 'Contributor', 'Approver', 'Manager']
 
 const permissionOverrides = ref<PermissionOverride[]>([])
 const permissionsLoading = ref(false)
@@ -73,14 +81,29 @@ const modules = [
 async function fetchUserName() {
   try {
     loading.value = true
-    const response = await api.get<{ first_name: string; last_name: string }>(`/api/users/${userId}`)
+    const response = await api.get<{
+      first_name: string
+      last_name: string
+      roles?: Array<{ name: string; is_superadmin: boolean }>
+    }>(`/api/users/${userId}`)
     userDisplayName.value = `${response.first_name} ${response.last_name}`
+    targetUserIsAdmin.value = (response.roles ?? []).some(
+      r => r.is_superadmin || r.name === 'Admin' || r.name === 'SuperAdmin'
+    )
   } catch {
     userDisplayName.value = 'User'
   } finally {
     loading.value = false
   }
 }
+
+// Page Access rows — 'users' (User Management) is meaningless for a non-Admin target
+// user, so hide it rather than let an admin grant page access to a screen the target
+// user's role can never reach (canAccessModule() gates 'users' on role, not override).
+const visibleModules = computed(() => {
+  if (targetUserIsAdmin.value) return modules
+  return modules.filter(m => m.key !== 'users')
+})
 
 // Fetch permission overrides
 async function fetchPermissions() {
@@ -149,6 +172,13 @@ function hasOverride(moduleKey: string): boolean {
 function getOverrideAccess(moduleKey: string): boolean | null {
   const override = permissionOverrides.value.find(p => p.module_key === moduleKey)
   return override ? override.can_access : null
+}
+
+// Get override CRUD level. Backend defaults a fresh grant to Viewer server-side
+// (users.service.ts), so mirror that fallback here for display purposes.
+function getOverrideLevel(moduleKey: string): string {
+  const override = permissionOverrides.value.find(p => p.module_key === moduleKey)
+  return override?.granted_level || 'Viewer'
 }
 
 // Check if module is checked.
@@ -220,10 +250,23 @@ async function handlePermissionChange(moduleKey: string, checked: boolean) {
   }
 }
 
+// Handle CRUD level change for a granted module (Layer 3 tier — Viewer/Contributor/Approver/Manager)
+async function handleLevelChange(moduleKey: string, level: string) {
+  try {
+    await api.post(`/api/users/${userId}/permissions`, { module_key: moduleKey, can_access: true, granted_level: level })
+    toast.success(`${level} level set`)
+    await fetchPermissions()
+  } catch (err: unknown) {
+    const apiError = err as { message?: string }
+    toast.error(apiError.message || 'Failed to update access level')
+    await fetchPermissions()
+  }
+}
+
 // Bulk grant all modules
 async function grantAllModules() {
   try {
-    const updates = modules.map(m => ({ module_key: m.key, can_access: true }))
+    const updates = visibleModules.value.map(m => ({ module_key: m.key, can_access: true }))
     await api.post(`/api/users/${userId}/permissions/bulk`, { updates })
     toast.success('All modules granted')
     await fetchPermissions()
@@ -242,7 +285,7 @@ function confirmRevokeAll() {
 async function revokeAllModules() {
   revokeConfirmDialog.value = false
   try {
-    const updates = modules.map(m => ({ module_key: m.key, can_access: false }))
+    const updates = visibleModules.value.map(m => ({ module_key: m.key, can_access: false }))
     await api.post(`/api/users/${userId}/permissions/bulk`, { updates })
     toast.success('All modules revoked')
     await fetchPermissions()
@@ -255,7 +298,7 @@ async function revokeAllModules() {
 // Reset all overrides
 async function resetAllOverrides() {
   try {
-    const modulesWithOverrides = modules.filter(m => hasOverride(m.key))
+    const modulesWithOverrides = visibleModules.value.filter(m => hasOverride(m.key))
     if (modulesWithOverrides.length === 0) {
       toast.info('No overrides to reset')
       return
@@ -492,11 +535,12 @@ onMounted(async () => {
                   <th class="text-left" style="width: 60px">Access</th>
                   <th class="text-left">Module</th>
                   <th class="text-left">Description</th>
+                  <th class="text-left" style="width: 160px">Level</th>
                   <th class="text-left" style="width: 120px">Status</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="mod in modules" :key="mod.key">
+                <tr v-for="mod in visibleModules" :key="mod.key">
                   <td>
                     <v-checkbox
                       :model-value="isModuleChecked(mod.key)"
@@ -511,6 +555,17 @@ onMounted(async () => {
                     <span v-if="mod.parentKey" class="text-caption mr-1 text-grey">↳</span>{{ mod.name }}
                   </td>
                   <td class="text-grey-darken-1">{{ mod.description }}</td>
+                  <td>
+                    <v-select
+                      :model-value="getOverrideLevel(mod.key)"
+                      :items="LEVEL_OPTIONS"
+                      :disabled="!isModuleChecked(mod.key)"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      @update:model-value="(val: string) => handleLevelChange(mod.key, val)"
+                    />
+                  </td>
                   <td>
                     <v-chip :color="getPermissionColor(mod.key)" size="small" variant="tonal">
                       {{ getPermissionLabel(mod.key) }}
@@ -539,7 +594,9 @@ onMounted(async () => {
             <v-card-title class="text-subtitle-1">Pillar Access Control</v-card-title>
             <v-card-subtitle class="text-caption mb-2">
               Restrict which BAR No. 1/2 pillar tabs this user can access.
-              Leave all unchecked to grant access to all pillars (no restriction).
+              At least one pillar must be checked — leaving all unchecked denies this
+              user access to Physical/Financial Accomplishments entirely (they'll be
+              redirected with a "contact your administrator" message).
             </v-card-subtitle>
             <v-card-text>
               <!-- Phase HV: Directive 222 — Warn when sub-module access is partially revoked -->

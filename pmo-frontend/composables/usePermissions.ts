@@ -261,6 +261,20 @@ export function usePermissions() {
       return { canView: false, canAdd: false, canEdit: false, canDelete: false }
     }
 
+    // 'users' (User Management) is the one Admin-only module where Admin does NOT bypass the
+    // level check — unlike coi/repairs/university_operations (Admins administer every project
+    // module), user-account writes (reset password, manage access, edit profile) require an
+    // explicit Contributor+ grant even for an Admin; a Viewer-level Admin gets read-only.
+    // SuperAdmin already bypassed above. Mirrors users.controller.ts's own SuperAdmin-only
+    // lockdown on create/update/delete/assignRole/unlockAccount — Admin alone isn't enough there
+    // either, so the frontend shouldn't hand an Admin full CRUD here by role alone.
+    if (normalizedId === 'users') {
+      const level = moduleLevels.value['users']
+      return (
+        LEVEL_PERMISSIONS[level] || { canView: true, canAdd: false, canEdit: false, canDelete: false }
+      )
+    }
+
     // PHASE BBBC (Track 8d) + BBBE (Track 2): for non-admins, a granted module's LEVEL governs CRUD —
     // module entry never implies write. On gated modules, NO level ⇒ view-only (write needs a grant,
     // aligning with the backend ModuleAccessGuard). Admins/SuperAdmins bypass (role matrix below).

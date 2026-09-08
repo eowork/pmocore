@@ -95,10 +95,12 @@ export class RepairProjectsController {
     return this.service.submitForReview(id, user.sub);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'repairs' module-level grant, enforced inside the service via
+  // permissionResolver.canApproveModule().
   @Post(':id/publish')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Publish (approve) a draft (Admin only)' })
+  @ApiOperation({ summary: 'Publish (approve) a draft (Admin, or Approver/Manager module level)' })
   publish(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -107,9 +109,8 @@ export class RepairProjectsController {
   }
 
   @Post(':id/reject')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reject a draft with notes (Admin only)' })
+  @ApiOperation({ summary: 'Reject a draft with notes (Admin, or Approver/Manager module level)' })
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('notes') notes: string,

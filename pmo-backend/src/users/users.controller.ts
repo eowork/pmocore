@@ -152,11 +152,21 @@ export class UsersController {
     return this.service.findOne(id);
   }
 
-  // --- Write Operations: SuperAdmin only (enforced via guard bypass) ---
-  // Note: @Roles() with no matching role means only SuperAdmin can access
+  // --- Write Operations: SuperAdmin only ---
+  // FIX: bare @Roles() sets metadata to [] — RolesGuard treats an empty/absent
+  // roles array as "no restriction, allow any authenticated user"
+  // (roles.guard.ts: `if (!requiredRoles || requiredRoles.length === 0) return true`).
+  // These routes were therefore reachable by ANY authenticated role (Staff/Viewer/
+  // Contractor), not "SuperAdmin only" as this section's own comment claimed.
+  // @Roles('SuperAdmin') is a non-empty array containing a role name no user ever
+  // literally holds (SuperAdmins are the 'Admin' role + is_superadmin flag, per
+  // auth.service.ts / seed.js) — real SuperAdmins pass via RolesGuard's explicit
+  // `user.is_superadmin` bypass (checked before the array match), everyone else
+  // fails the match unconditionally. Same pattern already relied on at
+  // @Roles('SuperAdmin', 'Admin') below (activate/reject-registration).
 
   @Post()
-  @Roles()
+  @Roles('SuperAdmin')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create user (SuperAdmin only)' })
   create(@Body() dto: CreateUserDto, @CurrentUser() user: JwtPayload) {
@@ -164,7 +174,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles()
+  @Roles('SuperAdmin')
   @ApiOperation({ summary: 'Update user (SuperAdmin only)' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -175,7 +185,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles()
+  @Roles('SuperAdmin')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete user (SuperAdmin only)' })
   remove(
@@ -188,7 +198,7 @@ export class UsersController {
   // --- Role Management: SuperAdmin only ---
 
   @Post(':id/roles')
-  @Roles()
+  @Roles('SuperAdmin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Assign role to user (SuperAdmin only)' })
   assignRole(
@@ -200,7 +210,7 @@ export class UsersController {
   }
 
   @Delete(':id/roles/:roleId')
-  @Roles()
+  @Roles('SuperAdmin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Remove role from user (SuperAdmin only)' })
   removeRole(
@@ -244,7 +254,7 @@ export class UsersController {
   // --- Account Management: SuperAdmin only ---
 
   @Post(':id/unlock')
-  @Roles()
+  @Roles('SuperAdmin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Unlock user account (SuperAdmin only)' })
   unlockAccount(
