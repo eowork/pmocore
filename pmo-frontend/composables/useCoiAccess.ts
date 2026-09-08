@@ -53,7 +53,7 @@ const TAB_ACTION_MATRIX: Record<string, Partial<Record<TabAction, string[]>>> = 
 
 export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
   const authStore = useAuthStore()
-  const { isAdmin, moduleLevels } = usePermissions()
+  const { isAdmin, moduleLevels, canAdd, canApprove } = usePermissions()
 
   // PHASE BBBF (Track 2): the user's COI access level (institutional users with COI view access but
   // no explicit grant default to Viewer — view-only Overview).
@@ -174,7 +174,7 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
   // WA-A: SINGLE tab-authorization engine. Both edit and detail pages call this with
   // the COI_PROJECT_TABS permKey for each tab. No duplicated decision logic.
   function canViewTab(permKey: string): boolean {
-    if (isAdmin.value) return true
+    if (isAdmin.value || isOwner.value) return true
     const ep = effectivePermissions.value
     const hasExplicitPerms = isOwnerOrAssigned.value && !!myAssignment.value?.permissions
     if (hasExplicitPerms) return !!(ep as any)[permKey]
@@ -187,8 +187,14 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
   function canViewCoiTab(tabValue: string): boolean {
     if (isAdmin.value) return true
     const role = (authStore.user?.roleName ?? (authStore.user as any)?.role) as string | undefined
-    // Audit log tab: Auditor role (admins handled above).
+    // Audit log tab: Auditor role (admins handled above). Owner bypass does NOT apply
+    // here — audit-log visibility is a role concern, not a project-CRUD one, and has
+    // no equivalent in assertProjectPermission on the backend.
     if (tabValue === 'audit') return role === 'Auditor'
+    // Owner bypass (mirrors assertProjectPermission's unconditional owner allowance) —
+    // an owner with no record_assignments row (so no explicit permissions to check)
+    // must still see their own project's tabs instead of fail-closing on isContractor.
+    if (isOwner.value) return true
     // Assigned users with explicit project permissions → per-assignment overrides (unchanged engine).
     const hasExplicitPerms = isOwnerOrAssigned.value && !!myAssignment.value?.permissions
     if (hasExplicitPerms) {
@@ -203,9 +209,19 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
     return rank >= min
   }
 
+  // Edit authority (Layer 3/4, mirrors physical/index.vue's canEditData and
+  // architecture.md's Contributor/Approver/Manager tiers):
+  //   - Admin / project owner: always allowed (owner parity with assertProjectPermission).
+  //   - Approver/Manager 'coi' module level: full edit authority, record scope bypassed.
+  //   - Contributor 'coi' module level: allowed ONLY on owned/assigned records (Layer 4).
+  //   - Viewer / no module level: denied UNLESS an explicit per-project permissions.canEdit
+  //     grant exists (record_assignments) — the path Contractors and ad-hoc grants use,
+  //     since Contractors aren't necessarily given a generic 'coi' module level at all.
   const canEditCurrentProject = computed(() => {
     if (!project.value) return false
     if (isAdmin.value || isOwner.value) return true
+    if (canApprove('coi')) return true
+    if (canAdd('coi') && isOwnerOrAssigned.value) return true
     return isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false)
   })
 
