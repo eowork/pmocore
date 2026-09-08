@@ -64,7 +64,7 @@ export class ConstructionProjectsController {
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
   @ApiOperation({
     summary:
-      'List all construction projects (non-Admin only see PUBLISHED; Contractors see only assigned)',
+      'List construction projects (Admin/SuperAdmin see all; everyone else sees only created/assigned)',
   })
   findAll(
     @Query() query: QueryConstructionProjectDto,

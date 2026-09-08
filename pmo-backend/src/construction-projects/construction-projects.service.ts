@@ -305,19 +305,22 @@ export class ConstructionProjectsService {
     const params: any[] = [];
 
     const queryAny = query as any;
-    // PHASE BBBF (Track 1 / Task B1, R-353): the COI list is universally viewable — all authenticated
-    // institutional users (any role/level with COI access) see/search/filter ALL projects, incl. DRAFT
-    // (operator decision). Per-project edit restrictions apply only INSIDE a project. Contractors remain
-    // scoped to assigned records (security). The former campus/PUBLISHED/own list filter was removed.
+    // Visibility scope (supersedes PHASE BBBF Track 1/R-353's "universally viewable" policy):
+    // Admin/SuperAdmin see everything. Everyone else — any role/level, Contractor included —
+    // sees ONLY projects they created or are explicitly assigned to. Scoped server-side off the
+    // JWT-authenticated user id (not left to the frontend), and ANDed with any other filter
+    // below rather than short-circuited by one (the prior `else if` let a publication_status
+    // filter bypass the Contractor-only scoping entirely).
+    if (user && !this.permissionResolver.isAdmin(user)) {
+      conditions.push(
+        `(cp.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?))`,
+      );
+      params.push(user.sub, user.sub);
+    }
+
     if (queryAny.publication_status) {
       conditions.push(`cp.publication_status = ?`);
       params.push(queryAny.publication_status);
-    } else if (user && this.permissionResolver.isContractor(user)) {
-      // Contractors see ONLY records they are explicitly assigned to.
-      conditions.push(
-        `EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?)`,
-      );
-      params.push(user.sub);
     }
 
     if (query.status) {
