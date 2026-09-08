@@ -594,7 +594,9 @@ onMounted(async () => {
             <v-card-title class="text-subtitle-1">Pillar Access Control</v-card-title>
             <v-card-subtitle class="text-caption mb-2">
               Restrict which BAR No. 1/2 pillar tabs this user can access.
-              Leave all unchecked to grant access to all pillars (no restriction).
+              At least one pillar must be checked — leaving all unchecked denies this
+              user access to Physical/Financial Accomplishments entirely (they'll be
+              redirected with a "contact your administrator" message).
             </v-card-subtitle>
             <v-card-text>
               <!-- Phase HV: Directive 222 — Warn when sub-module access is partially revoked -->

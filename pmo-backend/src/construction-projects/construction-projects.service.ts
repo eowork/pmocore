@@ -1155,8 +1155,11 @@ export class ConstructionProjectsService {
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can publish records');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'coi' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, 'coi'))) {
+      throw new ForbiddenException(
+        'Insufficient module level to publish records',
+      );
     }
 
     const project = await this.findOne(id);
@@ -1200,8 +1203,11 @@ export class ConstructionProjectsService {
     notes: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can reject records');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'coi' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, 'coi'))) {
+      throw new ForbiddenException(
+        'Insufficient module level to reject records',
+      );
     }
 
     const project = await this.findOne(id);
