@@ -14,7 +14,7 @@ const router = useRouter()
 const api = useApi()
 const toast = useToast()
 const authStore = useAuthStore()
-const { canAdd, canEdit, canDelete, isAdmin, isStaff, isSuperAdmin, canApprove } = usePermissions()
+const { canAdd, canDelete, isAdmin, isSuperAdmin, canApprove } = usePermissions()
 
 const projects = ref<UIProject[]>([])
 const search = ref('')
@@ -154,24 +154,50 @@ function isOwnerOrAssigned(project: UIProject): boolean {
   )
 }
 
-// Edit: Owner/assigned can edit own record, Admin can edit any. Editing PENDING_REVIEW auto-reverts to DRAFT.
+// FIX: this used to show Edit to anyone owner/assigned, but edit-[id].vue's actual
+// gate (useCoiAccess.canEditCurrentProject) also requires the per-assignment
+// permissions.canEdit flag from record_assignments for non-owner assigned users —
+// mirrors construction-projects.service.ts's assertProjectPermission(), which has an
+// explicit owner bypass (created_by === userId ⇒ allow unconditionally) BEFORE
+// checking record_assignments.permissions; only non-owner assigned users need that
+// explicit grant. Mirror useCoiAccess's own preference order for the assigned-user
+// path: the session-loaded permStore (fresh at login) first, then the project's
+// embedded assignedUsers[].permissions as fallback.
+const permStore = useProjectPermissionsStore()
+function effectiveCanEdit(project: UIProject): boolean {
+  const userId = authStore.user?.id
+  if (!userId) return false
+  if (project.createdBy === userId) return true // owner bypass
+  if (permStore.loaded) {
+    const storePerms = permStore.get(project.id)
+    if (storePerms !== null) return storePerms.canEdit === true
+  }
+  const assignment = project.assignedUsers?.find(u => u.id === userId)
+  return !!assignment?.permissions?.canEdit
+}
+
+// Edit: Owner can always edit; assigned non-owner needs the explicit per-assignment
+// canEdit grant; Admin can edit any. Editing PENDING_REVIEW auto-reverts to DRAFT.
 function canEditItem(project: UIProject): boolean {
   if (isAdmin.value) return true
-  return isOwnerOrAssigned(project)
+  return isOwnerOrAssigned(project) && effectiveCanEdit(project)
 }
 
-// Submit/Resubmit for Review: Owner/assigned + DRAFT or REJECTED status
-// PHASE BBCH (Track 1, R-372): owner/assigned + (Staff system role OR contribute-capable level).
+// Submit/Resubmit for Review: Approver/Manager module level only (or Admin).
+// FIX (was `isStaff.value || canEdit('coi')`, same bug as detail-[id].vue): isStaff is
+// role-based and true for any Staff user regardless of level, so it short-circuited
+// the level check — Contributor could submit. Only Approver/Manager may; they bypass
+// owner/assigned scope entirely (Layer 3), matching detail-[id].vue's canSubmitForReview.
 function canSubmitForReview(project: UIProject): boolean {
-  if (!isOwnerOrAssigned(project)) return false
-  if (!(isStaff.value || canEdit('coi'))) return false
-  return project.publicationStatus === 'DRAFT' || project.publicationStatus === 'REJECTED'
+  if (project.publicationStatus !== 'DRAFT' && project.publicationStatus !== 'REJECTED') return false
+  return canApprove('coi')
 }
 
-// Withdraw: Original submitter + PENDING_REVIEW status only
+// Withdraw: Approver/Manager (any pending submission) OR the original submitter —
+// mirrors canSubmitForReview's authority, consistent with detail-[id].vue.
 function canWithdraw(project: UIProject): boolean {
   if (project.publicationStatus !== 'PENDING_REVIEW') return false
-  // Check if user is the original submitter
+  if (canApprove('coi')) return true
   return project.approvalMetadata?.submittedBy === authStore.user?.id
 }
 
