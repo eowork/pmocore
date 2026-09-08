@@ -373,7 +373,7 @@ async function findCurrentOperation() {
 
     // Phase EK-C: Add filters to avoid pagination miss
     const response = await api.get<any>(
-      `/api/university-operations?type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
+      `/api/university-operations?operation_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
     )
     const data = Array.isArray(response) ? response : (response?.data || [])
 
@@ -512,7 +512,10 @@ function isOwnerOrAssigned(op: any): boolean {
 }
 
 function canEditData(): boolean {
-  if (!currentOperation.value) return canAdd('operations')
+  // Phase HU: gate by the Physical sub-module's own granted level, not the stale
+  // 'operations' key (which matched no moduleLevels entry and silently fell through
+  // to the plain role table, letting any Staff user add data regardless of level).
+  if (!currentOperation.value) return canAdd('university-operations-physical')
   // Phase GOV-C: Admin on PUBLISHED quarterly must have explicit unlock approval
   if (isAdmin.value) {
     if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') {

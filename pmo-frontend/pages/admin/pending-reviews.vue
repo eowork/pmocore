@@ -90,6 +90,13 @@ const rejecting = ref(false)
 // Phase EN-D: Multi-select batch actions
 const selectedItems = ref<PendingItem[]>([])
 const batchLoading = ref<'approve' | 'reject' | null>(null)
+
+// Module-level scoping: batch approve/reject only offered when every selected item's
+// module is within the reviewer's approval authority (Approver/Manager). Mixed
+// selections spanning an unauthorized module default-deny the whole batch action.
+const canActOnSelection = computed(
+  () => selectedItems.value.length > 0 && selectedItems.value.every(i => canApprove(i.module))
+)
 const batchRejectDialog = ref(false)
 const batchRejectNotes = ref('')
 
@@ -331,7 +338,11 @@ async function rejectItem() {
 // Phase EN-D: Batch approve selected items
 async function approveSelected() {
   // Phase GOV-C: Exclude unlock_request items from batch actions
-  const batchItems = selectedItems.value.filter(i => i.source !== 'unlock_request')
+  // Module-level scoping: re-check here too — the toolbar button only shows when
+  // canActOnSelection is true, but selection can change between render and click.
+  const batchItems = selectedItems.value.filter(
+    i => i.source !== 'unlock_request' && canApprove(i.module)
+  )
   if (batchItems.length === 0) {
     toast.warning('Unlock requests must be handled individually')
     return
@@ -367,7 +378,11 @@ function openBatchRejectDialog() {
 // Phase EN-D: Batch reject selected items
 async function batchRejectSelected() {
   // Phase GOV-C: Exclude unlock_request items from batch actions
-  const batchItems = selectedItems.value.filter(i => i.source !== 'unlock_request')
+  // Module-level scoping: re-check here too — the toolbar button only shows when
+  // canActOnSelection is true, but selection can change between render and click.
+  const batchItems = selectedItems.value.filter(
+    i => i.source !== 'unlock_request' && canApprove(i.module)
+  )
   if (batchItems.length === 0) {
     toast.warning('Unlock requests must be handled individually')
     return
@@ -396,6 +411,10 @@ async function batchRejectSelected() {
 
 // Phase GOV-UI: Approve unlock request (revert to DRAFT)
 async function approveUnlockRequest(item: PendingItem) {
+  if (!canApprove(item.module)) {
+    toast.error('You are not authorized to approve unlock requests in this module')
+    return
+  }
   actionLoading.value = item.id
   try {
     await api.post(`/api/university-operations/quarterly-reports/${item.id}/unlock`, {
@@ -413,6 +432,10 @@ async function approveUnlockRequest(item: PendingItem) {
 
 // Phase GOV-UI: Deny unlock request
 async function denyUnlockRequest(item: PendingItem) {
+  if (!canApprove(item.module)) {
+    toast.error('You are not authorized to deny unlock requests in this module')
+    return
+  }
   actionLoading.value = item.id
   try {
     await api.post(`/api/university-operations/quarterly-reports/${item.id}/deny-unlock`, {})
@@ -427,14 +450,17 @@ async function denyUnlockRequest(item: PendingItem) {
 }
 
 onMounted(() => {
-  if (isAdmin.value) {
+  // canReviewAny already covers Admin/SuperAdmin (Layer 1) OR Approver/Manager module
+  // level (Layer 3) — isAdmin alone wrongly excluded the latter (they'd pass the
+  // redirect guard above, then hit the "Access Denied" fallback below for lack of data).
+  if (canReviewAny.value) {
     fetchPendingItems()
   }
 })
 </script>
 
 <template>
-  <div v-if="isAdmin">
+  <div v-if="canReviewAny">
     <!-- Header -->
     <div class="d-flex justify-space-between align-center mb-4">
       <div>
@@ -524,28 +550,33 @@ onMounted(() => {
       <v-toolbar v-if="selectedItems.length > 0" density="compact" color="primary" class="px-2">
         <span class="text-body-2 font-weight-medium ml-2">{{ selectedItems.length }} selected</span>
         <v-spacer />
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-check-circle"
-          size="small"
-          :loading="batchLoading === 'approve'"
-          :disabled="!!batchLoading"
-          @click="approveSelected"
-        >
-          Approve Selected
-        </v-btn>
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-close-circle"
-          size="small"
-          color="error"
-          :loading="batchLoading === 'reject'"
-          :disabled="!!batchLoading"
-          @click="openBatchRejectDialog"
-          class="ml-1"
-        >
-          Reject Selected
-        </v-btn>
+        <template v-if="canActOnSelection">
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-check-circle"
+            size="small"
+            :loading="batchLoading === 'approve'"
+            :disabled="!!batchLoading"
+            @click="approveSelected"
+          >
+            Approve Selected
+          </v-btn>
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-close-circle"
+            size="small"
+            color="error"
+            :loading="batchLoading === 'reject'"
+            :disabled="!!batchLoading"
+            @click="openBatchRejectDialog"
+            class="ml-1"
+          >
+            Reject Selected
+          </v-btn>
+        </template>
+        <span v-else class="text-caption text-grey-lighten-2 mr-2">
+          Selection includes a module outside your approval authority
+        </span>
       </v-toolbar>
       <v-data-table
         v-model="selectedItems"
@@ -631,24 +662,29 @@ onMounted(() => {
                   <v-list-item-title class="text-body-2">{{ item.unlock_request_reason }}</v-list-item-title>
                 </v-list-item>
                 <v-divider v-if="item.unlock_request_reason" class="my-1" />
-                <v-list-item
-                  @click="approveUnlockRequest(item)"
-                  prepend-icon="mdi-lock-open-check"
-                  class="text-success"
-                >
-                  <v-list-item-title>Approve Unlock</v-list-item-title>
-                </v-list-item>
-                <v-list-item
-                  @click="denyUnlockRequest(item)"
-                  prepend-icon="mdi-lock-remove"
-                  class="text-error"
-                >
-                  <v-list-item-title>Deny Unlock</v-list-item-title>
-                </v-list-item>
+                <!-- Module-level scoping: unlock decisions need Approver/Manager
+                     authority on university_operations — Viewer/Contributor never see these. -->
+                <template v-if="canApprove(item.module)">
+                  <v-list-item
+                    @click="approveUnlockRequest(item)"
+                    prepend-icon="mdi-lock-open-check"
+                    class="text-success"
+                  >
+                    <v-list-item-title>Approve Unlock</v-list-item-title>
+                  </v-list-item>
+                  <v-list-item
+                    @click="denyUnlockRequest(item)"
+                    prepend-icon="mdi-lock-remove"
+                    class="text-error"
+                  >
+                    <v-list-item-title>Deny Unlock</v-list-item-title>
+                  </v-list-item>
+                </template>
               </template>
 
-              <!-- Standard review actions -->
-              <template v-else>
+              <!-- Standard review actions — module-level scoping: only Approver/Manager
+                   for this item's module see Approve/Reject (Viewer/Contributor don't). -->
+              <template v-else-if="canApprove(item.module)">
                 <!-- Approve -->
                 <v-list-item
                   @click="approveItem(item)"
@@ -835,7 +871,7 @@ onMounted(() => {
   <div v-else class="pa-6 text-center">
     <v-icon size="64" color="error">mdi-shield-off</v-icon>
     <h2 class="mt-4">Access Denied</h2>
-    <p class="text-grey">Admin role required to view this page.</p>
+    <p class="text-grey">Approval authority required to view this page.</p>
     <v-btn color="primary" to="/dashboard" class="mt-4">
       Return to Dashboard
     </v-btn>
