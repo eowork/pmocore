@@ -182,10 +182,13 @@ export class ConstructionProjectsController {
     return this.service.submitForReview(id, user.sub, user);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'coi' module-level grant, enforced inside the service via
+  // permissionResolver.canApproveModule(). @Roles('Admin') here would have blocked
+  // a module-level Approver/Manager before the service check ever ran.
   @Post(':id/publish')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Publish (approve) a draft (Admin only)' })
+  @ApiOperation({ summary: 'Publish (approve) a draft (Admin, or Approver/Manager module level)' })
   publish(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -194,10 +197,9 @@ export class ConstructionProjectsController {
   }
 
   @Patch(':id/approve')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Approve (publish) a draft (Admin only) — alias for /publish',
+    summary: 'Approve (publish) a draft (Admin, or Approver/Manager module level) — alias for /publish',
   })
   approve(
     @Param('id', ParseUUIDPipe) id: string,
@@ -207,9 +209,8 @@ export class ConstructionProjectsController {
   }
 
   @Post(':id/reject')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reject a draft with notes (Admin only)' })
+  @ApiOperation({ summary: 'Reject a draft with notes (Admin, or Approver/Manager module level)' })
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('notes') notes: string,
