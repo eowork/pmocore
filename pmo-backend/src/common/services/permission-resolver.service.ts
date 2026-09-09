@@ -166,16 +166,29 @@ export class PermissionResolverService {
    * user_permission_overrides). Mirrors the frontend's usePermissions().canApprove()
    * exactly, so the publish/reject/approve/unlock endpoints accept precisely the
    * users the UI already shows those actions to — no more, no less.
+   *
+   * Phase HU (2026-09): moduleKey may be an array — university_operations has 2
+   * independent per-pillar sub-modules (university-operations-physical/-financial)
+   * with their own granted_level; a caller checking only the parent key ignores a
+   * sub-module-scoped Approver/Manager grant entirely. Pass all related keys and
+   * this returns true if ANY of them grants sufficient level (mirrors
+   * ModuleAccessGuard's candidateKeys handling for the same parent/sub-module family).
    */
-  async canApproveModule(user: JwtPayload, moduleKey: string): Promise<boolean> {
+  async canApproveModule(
+    user: JwtPayload,
+    moduleKey: string | string[],
+  ): Promise<boolean> {
     if (this.isAdmin(user)) return true;
 
+    const keys = Array.isArray(moduleKey) ? moduleKey : [moduleKey];
+    const placeholders = keys.map(() => '?').join(',');
     const rows = await this.em.getConnection().execute(
       `SELECT granted_level FROM user_permission_overrides
-       WHERE user_id = ? AND module_key = ? AND can_access = true`,
-      [user.sub, moduleKey],
+       WHERE user_id = ? AND module_key IN (${placeholders}) AND can_access = true`,
+      [user.sub, ...keys],
     );
-    const level: string | null = rows[0]?.granted_level ?? null;
-    return level === 'Approver' || level === 'Manager';
+    return rows.some(
+      (r: any) => r.granted_level === 'Approver' || r.granted_level === 'Manager',
+    );
   }
 }
