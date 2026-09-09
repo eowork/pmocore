@@ -139,6 +139,25 @@ export const COI_PROJECT_TABS = [
 
 export type TabPermKey = typeof COI_PROJECT_TABS[number]['permKey']
 
+// PA/PV: per-assignment record-level permission object stored in
+// record_assignments.permissions (JSONB). This is the Layer 4 authority for a
+// specific project — distinct from the Layer 3 module-level tier (Viewer/
+// Contributor/Approver/Manager in usePermissions.ts) even though the names
+// overlap; accessLevel here has its own 5-value set (Editor/Admin replace
+// Approver in the record-level scheme). Single source of truth — components/
+// pages must import this rather than redeclaring the shape locally.
+export interface FullPermissions {
+  // Section A: Actions
+  canCreate: boolean; canEdit: boolean; canDelete: boolean
+  canUpload: boolean; canReview: boolean; canApprove: boolean
+  // Section B: Tab Access — exactly matches COI_PROJECT_TABS permKeys
+  tabProjectProfile: boolean; tabDatesDuration: boolean
+  tabProgressReport: boolean
+  tabPersonnel: boolean; tabAttachments: boolean; tabOthers: boolean
+  // Section C: preset label
+  accessLevel: 'Viewer' | 'Contributor' | 'Editor' | 'Manager' | 'Admin'
+}
+
 // KV-E1: Key executive document type codes — shared between detail and edit pages
 export const KEY_DOC_TYPECODES = ['PROJECT_PROFILE', 'FEASIBILITY_STUDY', 'HGDG_FORM', 'FLOOR_PLAN', 'POW'] as const
 
