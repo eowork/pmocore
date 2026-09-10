@@ -241,12 +241,15 @@ export class ConstructionProjectsController {
     return this.service.update(id, dto, user.sub, user);
   }
 
-  // --- Delete Operations: Admin only ---
+  // --- Delete Operations: Admin, project owner, or a record-level canDelete grant ---
 
   @Delete(':id')
-  @Roles('Admin')
+  @Roles('Admin', 'Staff')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete construction project (Admin only)' })
+  @ApiOperation({
+    summary:
+      'Delete construction project (Admin, owner, or record-level canDelete)',
+  })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,

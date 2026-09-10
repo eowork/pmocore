@@ -289,6 +289,28 @@ export class ConstructionProjectsService {
     }
   }
 
+  // Approval authority for submit/publish/reject/withdraw: Admin, OR a module-level
+  // Approver/Manager grant on 'coi' (Layer 3 — bypasses record scope org-wide), OR
+  // this specific project's record_assignments.permissions.canApprove (Layer 4 —
+  // a record-level Manager assigned to just this project, per the frontend's
+  // FullPermissions shape / accessLevel: Manager). Deliberately NO owner bypass here
+  // (unlike assertProjectPermission above) — owning a project isn't itself approval
+  // authority; a Contributor/owner may edit but not approve/submit their own work.
+  private async hasApprovalAuthority(
+    projectId: string,
+    userId: string,
+    user: JwtPayload,
+  ): Promise<boolean> {
+    if (await this.permissionResolver.canApproveModule(user, 'coi')) return true;
+    const conn = this.em.getConnection();
+    const rows = await conn.execute(
+      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
+      [projectId, userId],
+    );
+    const perms = rows[0]?.permissions as Record<string, unknown> | null;
+    return !!perms?.canApprove;
+  }
+
   // --- RAW SQL reads (complex JOINs preserved) ---
 
   async findAll(
@@ -1096,6 +1118,9 @@ export class ConstructionProjectsService {
   async remove(id: string, userId: string, user?: JwtPayload): Promise<void> {
     const project = await this.findOne(id);
 
+    // Admin, project owner, or this project's own record_assignments.permissions.canDelete.
+    await this.assertProjectPermission(id, userId, user, 'canDelete');
+
     await this.em.transactional(async (em) => {
       const conn = em.getConnection();
       await conn.execute(
@@ -1130,11 +1155,13 @@ export class ConstructionProjectsService {
       );
     }
 
-    const isOwner = project.created_by === userId;
-    const isAssigned = await this.isUserAssigned(id, userId);
-    if (!isOwner && !isAssigned) {
+    // Submitting requires Approver/Manager authority — module-level 'coi' OR this
+    // project's own record_assignments.permissions.canApprove. Deliberately NOT
+    // owner/assigned alone (that was the prior rule; it let a Viewer/Contributor
+    // submit their own draft, contradicting the frontend's Approver/Manager-only gate).
+    if (user && !(await this.hasApprovalAuthority(id, userId, user))) {
       throw new ForbiddenException(
-        'Only the creator or assigned user can submit this draft for review',
+        'Insufficient approval authority to submit this project for review',
       );
     }
 
@@ -1158,10 +1185,11 @@ export class ConstructionProjectsService {
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
-    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'coi' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, 'coi'))) {
+    // Admin, OR module-level 'coi' Approver/Manager, OR this project's own
+    // record_assignments.permissions.canApprove (record-level Manager).
+    if (!(await this.hasApprovalAuthority(id, adminId, user))) {
       throw new ForbiddenException(
-        'Insufficient module level to publish records',
+        'Insufficient approval authority to publish this project',
       );
     }
 
@@ -1206,10 +1234,11 @@ export class ConstructionProjectsService {
     notes: string,
     user: JwtPayload,
   ): Promise<any> {
-    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'coi' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, 'coi'))) {
+    // Admin, OR module-level 'coi' Approver/Manager, OR this project's own
+    // record_assignments.permissions.canApprove (record-level Manager).
+    if (!(await this.hasApprovalAuthority(id, adminId, user))) {
       throw new ForbiddenException(
-        'Insufficient module level to reject records',
+        'Insufficient approval authority to reject this project',
       );
     }
 
@@ -1251,9 +1280,14 @@ export class ConstructionProjectsService {
       );
     }
 
-    if (project.submitted_by !== userId) {
+    // Original submitter, OR Admin/module-level/record-level approval authority —
+    // mirrors publish/reject/submitForReview's hasApprovalAuthority.
+    if (
+      project.submitted_by !== userId &&
+      !(user && (await this.hasApprovalAuthority(id, userId, user)))
+    ) {
       throw new ForbiddenException(
-        'Only the original submitter can withdraw this submission',
+        'Only the original submitter or an Approver/Manager can withdraw this submission',
       );
     }
 

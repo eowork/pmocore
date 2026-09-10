@@ -287,7 +287,7 @@ export class UniversityOperationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.submitQuarterlyReport(id, user.sub);
+    return this.service.submitQuarterlyReport(id, user.sub, user);
   }
 
   // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
@@ -318,7 +318,7 @@ export class UniversityOperationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.withdrawQuarterlyReport(id, user.sub);
+    return this.service.withdrawQuarterlyReport(id, user.sub, user);
   }
 
   // Phase GOV: Post-Publication Governance Endpoints

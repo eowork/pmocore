@@ -24,7 +24,7 @@ const authStore = useAuthStore()
 
 const project = ref<UIProjectDetail | null>(null)
 // KC-E: per-record access logic delegated to composable (canEditCurrentProject, isOwnerOrAssigned)
-const { canEditCurrentProject, isOwnerOrAssigned, canEditAnyTab, effectivePermissions, myAssignment, isContractor: isContractorUser, accessResolved, canViewCoiTab } = useCoiAccess(project)
+const { canEditCurrentProject, isOwner, isOwnerOrAssigned, canEditAnyTab, effectivePermissions, myAssignment, isContractor: isContractorUser, accessResolved, canViewCoiTab } = useCoiAccess(project)
 const loading = ref(true)
 
 // JR-B: Tab navigation (read-only, freely navigable per JR-D1)
@@ -145,33 +145,46 @@ const workflowAction = ref<'submit' | 'publish' | 'reject' | 'withdraw'>('submit
 const rejectionNotes = ref('')
 const workflowProcessing = ref(false)
 
-// Show Submit/Resubmit for Review: Approver/Manager module level only (or Admin).
-// FIX (was `isStaff.value || canEdit('coi')`): isStaff is role-based and true for ANY
-// Staff user regardless of level, so it short-circuited the level check entirely —
-// a Contributor (or even Viewer, if isOwnerOrAssigned) could submit. Contributor may
-// input/edit data but does not submit; only Approver/Manager may. Mirrors
-// canPublishOrReject below — Approver/Manager bypass record/owner scope (Layer 3).
+// Show Submit/Resubmit for Review: Admin, OR module-level 'coi' Approver/Manager
+// (Layer 3, org-wide), OR this project's own record_assignments.permissions.canApprove
+// (Layer 4 — a record-level Manager assigned to just this project). Deliberately NOT
+// owner/assigned alone: owning a project isn't itself approval authority (Contributor
+// may input/edit data but does not submit; only Approver/Manager-equivalent may).
+// effectivePermissions already bakes in the Admin bypass (adminAll), so checking it
+// alone covers Admin too — canApprove('coi') stays as the org-wide Layer 3 fallback.
 const canSubmitForReview = computed(() => {
   if (!project.value) return false
   const status = project.value.publicationStatus
   if (status !== 'DRAFT' && status !== 'REJECTED') return false
-  return canApprove('coi')
+  return canApprove('coi') || effectivePermissions.value.canApprove
 })
 
-// Show Withdraw button: Approver/Manager (any pending submission in this module) OR
-// the original submitter — mirrors canSubmitForReview's authority.
+// Show Withdraw button: same approval authority as canSubmitForReview, OR the
+// original submitter.
 const canWithdraw = computed(() => {
   if (!project.value) return false
   if (project.value.publicationStatus !== 'PENDING_REVIEW') return false
-  if (canApprove('coi')) return true
+  if (canApprove('coi') || effectivePermissions.value.canApprove) return true
   return project.value.approvalMetadata?.submittedBy === authStore.user?.id
 })
 
-// Show Publish/Reject buttons: approval authority (Admin OR Approver/Manager level) + PENDING_REVIEW.
-// PHASE BBCH (Track 1, R-372): was isAdmin-only — now recognizes Layer 3 module levels.
+// Show Publish/Reject buttons: same approval authority as canSubmitForReview + PENDING_REVIEW.
+// PHASE BBCH (Track 1, R-372): was isAdmin-only — now recognizes Layer 3 module levels
+// AND Layer 4 record-level Manager grants.
 const canPublishOrReject = computed(() => {
   if (!project.value) return false
-  return canApprove('coi') && project.value.publicationStatus === 'PENDING_REVIEW'
+  if (project.value.publicationStatus !== 'PENDING_REVIEW') return false
+  return canApprove('coi') || effectivePermissions.value.canApprove
+})
+
+// Show Delete Project button: Admin, project owner, or this project's own
+// record_assignments.permissions.canDelete — mirrors coi/index.vue's canDeleteItem and
+// the backend's assertProjectPermission owner-bypass. No module-level fallback (delete
+// was never module-level-gated on the list page either; canDelete('coi') was fully
+// replaced there, kept consistent here).
+const canDeleteProject = computed(() => {
+  if (!project.value) return false
+  return isAdmin.value || isOwner.value || effectivePermissions.value.canDelete === true
 })
 
 // Show Edit button: Must be owner/assigned or Admin
@@ -236,6 +249,30 @@ async function executeWorkflowAction() {
     workflowProcessing.value = false
     workflowDialog.value = false
     rejectionNotes.value = ''
+  }
+}
+
+// Delete Project (mirrors coi/index.vue's confirmDelete/deleteProject)
+const deleteDialog = ref(false)
+const deleting = ref(false)
+
+function confirmDeleteProject() {
+  deleteDialog.value = true
+}
+
+async function deleteProject() {
+  deleting.value = true
+  try {
+    await api.del(`/api/construction-projects/${projectId}`)
+    toast.success(`Project "${project.value?.projectName}" deleted successfully`)
+    router.push('/coi')
+  } catch (err: unknown) {
+    const error = err as { message?: string }
+    toast.error(error.message || 'Failed to delete project')
+    console.error('Failed to delete project:', err)
+  } finally {
+    deleting.value = false
+    deleteDialog.value = false
   }
 }
 
@@ -786,6 +823,16 @@ onMounted(() => {
         </v-btn>
         <v-btn v-if="canEditAnyTab" color="primary" prepend-icon="mdi-pencil" :disabled="loading" @click="editProject">
           Edit Project Details
+        </v-btn>
+        <v-btn
+          v-if="canDeleteProject"
+          color="error"
+          variant="outlined"
+          prepend-icon="mdi-delete"
+          :disabled="loading"
+          @click="confirmDeleteProject"
+        >
+          Delete
         </v-btn>
       </div>
     </div>
@@ -2542,6 +2589,22 @@ onMounted(() => {
             <template v-else-if="workflowAction === 'withdraw'">Withdraw</template>
             <template v-else>Reject</template>
           </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <v-dialog v-model="deleteDialog" max-width="400" persistent>
+      <v-card>
+        <v-card-title class="text-h6">Confirm Delete</v-card-title>
+        <v-card-text>
+          Are you sure you want to delete <strong>{{ project?.projectName }}</strong>?
+          This action cannot be undone.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false" :disabled="deleting">Cancel</v-btn>
+          <v-btn color="error" variant="flat" @click="deleteProject" :loading="deleting">Delete</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
