@@ -195,6 +195,15 @@ const unlockRequestDialog = ref(false)
 const unlockRequestReason = ref('')
 const unlockRequestLoading = ref(false)
 
+// In-page reviewer actions — Approve/Reject were previously only reachable from
+// /admin/pending-reviews; a reviewer landing on this page directly (e.g. Submit
+// button owner's own pillar view) had no way to act. approving/rejecting loading
+// flags + reject dialog state, mirroring pending-reviews.vue's pattern.
+const approvingReport = ref(false)
+const rejectReportDialog = ref(false)
+const rejectReportNotes = ref('')
+const rejectingReport = ref(false)
+
 // Phase DT-A: Tab-navigation state removed — dialog now shows all quarters simultaneously
 
 // Phase DW-C: Fiscal year dialog moved to main university-operations page
@@ -571,6 +580,20 @@ function canSubmitAllPillars(): boolean {
   }
   // No quarterly report yet — allow creating one if there are pillar operations
   return allPillarOperations.value.length > 0
+}
+
+// In-page reviewer guard — Approve/Reject buttons on this page itself.
+// This page is scoped to the Physical pillar only — every authorization check here
+// uses the 'university-operations-physical' module level exclusively, never the
+// parent 'university_operations' key (which ORs across Physical + Financial via
+// UO_LEVEL_KEYS on the backend). The parent key is reserved for
+// university-operations/index.vue, the shared landing page that isn't tied to one pillar.
+// A reviewer scoped only to Financial (or only holding the bare parent grant) won't
+// see Approve/Reject here — Admin/SuperAdmin still bypass via isAdmin/isSuperAdmin.
+function canReviewThisReport(): boolean {
+  if (!currentQuarterlyReport.value) return false
+  if (currentQuarterlyReport.value.publication_status !== 'PENDING_REVIEW') return false
+  return isAdmin.value || isSuperAdmin.value || canApprove('university-operations-physical')
 }
 
 // Phase EM-C: Withdraw guard — checks quarterly report status
@@ -1024,6 +1047,53 @@ async function submitUnlockRequest() {
   }
 }
 
+// In-page reviewer action: approve the current FY+quarter report directly from
+// this pillar view. Backend still enforces the PENDING_REVIEW status check and
+// rank-based approval (self-approval / rank hierarchy) — this only gates visibility.
+async function approveThisReport() {
+  if (!currentQuarterlyReport.value) return
+  approvingReport.value = true
+  try {
+    await api.post(`/api/university-operations/quarterly-reports/${currentQuarterlyReport.value.id}/approve`, {})
+    toast.success(`${selectedQuarter.value} report approved`)
+    await fetchQuarterlyReport()
+    await findCurrentOperation()
+  } catch (err: any) {
+    console.error('[Physical] approveThisReport:', err)
+    toast.error(err.message || 'Failed to approve quarterly report')
+  } finally {
+    approvingReport.value = false
+  }
+}
+
+function openRejectReportDialog() {
+  rejectReportNotes.value = ''
+  rejectReportDialog.value = true
+}
+
+async function rejectThisReport() {
+  if (!currentQuarterlyReport.value) return
+  if (!rejectReportNotes.value.trim()) {
+    toast.warning('Please provide rejection notes')
+    return
+  }
+  rejectingReport.value = true
+  try {
+    await api.post(`/api/university-operations/quarterly-reports/${currentQuarterlyReport.value.id}/reject`, {
+      notes: rejectReportNotes.value.trim(),
+    })
+    toast.success(`${selectedQuarter.value} report rejected`)
+    rejectReportDialog.value = false
+    await fetchQuarterlyReport()
+    await findCurrentOperation()
+  } catch (err: any) {
+    console.error('[Physical] rejectThisReport:', err)
+    toast.error(err.message || 'Failed to reject quarterly report')
+  } finally {
+    rejectingReport.value = false
+  }
+}
+
 
 // Phase DQ-B: Decoupled Watch Handlers
 // Pillar changes refetch taxonomy + indicator data
@@ -1218,6 +1288,37 @@ onMounted(async () => {
           Approved
         </v-chip>
         <!-- Phase DW-C: "Add Fiscal Year" button moved to main university-operations page -->
+        <!-- In-page reviewer actions: Admin/SuperAdmin or an Approver/Manager grant scoped
+             to 'university-operations-physical' specifically (this page's own pillar, not
+             the shared parent key). Shown alongside the chain above rather than replacing
+             it — a reviewer may hold both submitter and reviewer authority at once. Backend
+             still enforces PENDING_REVIEW status + rank-based approval on click. -->
+        <v-btn
+          v-if="canReviewThisReport()"
+          color="success"
+          variant="tonal"
+          density="compact"
+          prepend-icon="mdi-check-circle"
+          :loading="approvingReport"
+          @click="approveThisReport"
+          class="flex-sm-0-0-auto"
+        >
+          <span class="d-none d-sm-inline">Approve</span>
+          <v-icon class="d-sm-none">mdi-check-circle</v-icon>
+        </v-btn>
+        <v-btn
+          v-if="canReviewThisReport()"
+          color="error"
+          variant="tonal"
+          density="compact"
+          prepend-icon="mdi-close-circle"
+          :loading="rejectingReport"
+          @click="openRejectReportDialog"
+          class="flex-sm-0-0-auto"
+        >
+          <span class="d-none d-sm-inline">Reject</span>
+          <v-icon class="d-sm-none">mdi-close-circle</v-icon>
+        </v-btn>
       </div>
     </div>
 
@@ -1960,6 +2061,46 @@ onMounted(async () => {
             @click="submitUnlockRequest"
           >
             Submit Request
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- In-page reviewer action: Reject Report Dialog -->
+    <v-dialog v-model="rejectReportDialog" max-width="500">
+      <v-card>
+        <v-card-title class="text-h6">
+          Reject {{ selectedQuarter }} Report
+        </v-card-title>
+        <v-card-text>
+          <p class="mb-4">
+            Are you sure you want to reject the <strong>{{ selectedQuarter }} FY {{ selectedFiscalYear }}</strong> quarterly report?
+          </p>
+          <v-textarea
+            v-model="rejectReportNotes"
+            label="Rejection Notes"
+            placeholder="Provide feedback for the submitter..."
+            rows="3"
+            variant="outlined"
+            hide-details
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            variant="text"
+            @click="rejectReportDialog = false"
+            :disabled="rejectingReport"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            color="error"
+            variant="flat"
+            @click="rejectThisReport"
+            :loading="rejectingReport"
+          >
+            Reject
           </v-btn>
         </v-card-actions>
       </v-card>
