@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { adaptProjects, type UIProject, type BackendProject, type PublicationStatus } from '~/utils/adapters'
+import type { FullPermissions } from '~/utils/coiFormState'
 import { getStatusColor, getPublicationStatusColor, STATUS_HEX } from '~/utils/status-colors'
 import { formatDate } from '~/utils/userFormat'
 import { formatRelativeDate } from '~/utils/date-utils'
@@ -14,7 +15,7 @@ const router = useRouter()
 const api = useApi()
 const toast = useToast()
 const authStore = useAuthStore()
-const { canAdd, canDelete, isAdmin, isSuperAdmin, canApprove } = usePermissions()
+const { canAdd, isAdmin, isSuperAdmin } = usePermissions()
 
 const projects = ref<UIProject[]>([])
 const search = ref('')
@@ -142,72 +143,69 @@ function confirmDelete(project: UIProject) {
 }
 
 // --- Meatball Menu Action Visibility ---
-
-// Check if current user is record owner, delegate, or assigned (Phase BJ)
-function isOwnerOrAssigned(project: UIProject): boolean {
-  const userId = authStore.user?.id
-  if (!userId) return false
-  return (
-    project.createdBy === userId
-    || project.delegatedTo === userId
-    || project.assignedUsers?.some(u => u.id === userId) || false
-  )
-}
-
-// FIX: this used to show Edit to anyone owner/assigned, but edit-[id].vue's actual
-// gate (useCoiAccess.canEditCurrentProject) also requires the per-assignment
-// permissions.canEdit flag from record_assignments for non-owner assigned users —
-// mirrors construction-projects.service.ts's assertProjectPermission(), which has an
-// explicit owner bypass (created_by === userId ⇒ allow unconditionally) BEFORE
-// checking record_assignments.permissions; only non-owner assigned users need that
-// explicit grant. Mirror useCoiAccess's own preference order for the assigned-user
-// path: the session-loaded permStore (fresh at login) first, then the project's
-// embedded assignedUsers[].permissions as fallback.
+// --- Layer 4: per-project record_assignments.permissions (architecture.md) ---
+// Admin/SuperAdmin bypass ALL of the checks below entirely (isAdmin.value covers both —
+// usePermissions.ts's isAdmin already returns true for isSuperAdmin). For everyone else,
+// action authority on a SPECIFIC project comes from that project's own record_assignments
+// row, not the generic Layer 3 module level — mirrors construction-projects.service.ts's
+// assertProjectPermission() (backend authority for every CRUD action), which reads the
+// same JSONB permissions column. Preference order matches useCoiAccess.ts: the
+// session-loaded permStore (fresh at login) first, then the project's embedded
+// assignedUsers[].permissions as fallback. Returns null when the user has no assignment
+// row at all (pure owner, never separately assigned).
 const permStore = useProjectPermissionsStore()
-function effectiveCanEdit(project: UIProject): boolean {
+function myProjectPermissions(project: UIProject): FullPermissions | null {
   const userId = authStore.user?.id
-  if (!userId) return false
-  if (project.createdBy === userId) return true // owner bypass
+  if (!userId) return null
   if (permStore.loaded) {
     const storePerms = permStore.get(project.id)
-    if (storePerms !== null) return storePerms.canEdit === true
+    if (storePerms !== null) return storePerms as FullPermissions
   }
   const assignment = project.assignedUsers?.find(u => u.id === userId)
-  return !!assignment?.permissions?.canEdit
+  return (assignment?.permissions as FullPermissions | undefined) ?? null
 }
 
-// Edit: Owner can always edit; assigned non-owner needs the explicit per-assignment
-// canEdit grant; Admin can edit any. Editing PENDING_REVIEW auto-reverts to DRAFT.
+// Edit: Admin/SuperAdmin → any project. Owner → always (mirrors assertProjectPermission's
+// unconditional owner bypass). Otherwise → this project's own permissions.canEdit.
+// Editing PENDING_REVIEW auto-reverts to DRAFT.
 function canEditItem(project: UIProject): boolean {
   if (isAdmin.value) return true
-  return isOwnerOrAssigned(project) && effectiveCanEdit(project)
+  if (project.createdBy === authStore.user?.id) return true
+  return myProjectPermissions(project)?.canEdit === true
 }
 
-// Submit/Resubmit for Review: Approver/Manager module level only (or Admin).
-// FIX (was `isStaff.value || canEdit('coi')`, same bug as detail-[id].vue): isStaff is
-// role-based and true for any Staff user regardless of level, so it short-circuited
-// the level check — Contributor could submit. Only Approver/Manager may; they bypass
-// owner/assigned scope entirely (Layer 3), matching detail-[id].vue's canSubmitForReview.
+// Delete: Admin/SuperAdmin → any project. Owner → always (same assertProjectPermission
+// bypass, which covers canDelete too). Otherwise → this project's own permissions.canDelete.
+function canDeleteItem(project: UIProject): boolean {
+  if (isAdmin.value) return true
+  if (project.createdBy === authStore.user?.id) return true
+  return myProjectPermissions(project)?.canDelete === true
+}
+
+// Submit/Resubmit for Review: Admin/SuperAdmin, or this project's permissions.canApprove
+// (the record-level analog of module-level Approver/Manager). Deliberately NO owner
+// bypass — an owner without canApprove on their own assignment still cannot submit
+// (established rule: owning a project isn't itself approval authority).
 function canSubmitForReview(project: UIProject): boolean {
   if (project.publicationStatus !== 'DRAFT' && project.publicationStatus !== 'REJECTED') return false
-  return canApprove('coi')
+  if (isAdmin.value) return true
+  return myProjectPermissions(project)?.canApprove === true
 }
 
-// Withdraw: Approver/Manager (any pending submission) OR the original submitter —
-// mirrors canSubmitForReview's authority, consistent with detail-[id].vue.
+// Withdraw: Admin/SuperAdmin, or canApprove on this project, OR the original submitter.
 function canWithdraw(project: UIProject): boolean {
   if (project.publicationStatus !== 'PENDING_REVIEW') return false
-  if (canApprove('coi')) return true
+  if (isAdmin.value) return true
+  if (myProjectPermissions(project)?.canApprove === true) return true
   return project.approvalMetadata?.submittedBy === authStore.user?.id
 }
 
-// Approve: approval authority (Admin OR Approver/Manager level) + PENDING_REVIEW + NOT self-submitted.
-// PHASE BBCH (Track 1, R-372): was isAdmin-only — now recognizes Layer 3 module levels.
-// Self-approval prevention: UI hides button if user is the submitter (backend also enforces).
+// Approve: Admin/SuperAdmin, or this project's permissions.canApprove + PENDING_REVIEW +
+// NOT self-submitted (self-approval prevention; SuperAdmin excluded from that check).
 function canApproveItem(project: UIProject): boolean {
-  if (!canApprove('coi')) return false
   if (project.publicationStatus !== 'PENDING_REVIEW') return false
-  // Prevent self-approval - hide button for own submissions (SuperAdmin excluded from this check)
+  if (isAdmin.value) return true
+  if (myProjectPermissions(project)?.canApprove !== true) return false
   const currentUserId = authStore.user?.id
   if (!isSuperAdmin.value && project.approvalMetadata?.submittedBy === currentUserId) {
     return false
@@ -215,9 +213,11 @@ function canApproveItem(project: UIProject): boolean {
   return true
 }
 
-// Reject: approval authority + PENDING_REVIEW status only
+// Reject: Admin/SuperAdmin, or this project's permissions.canApprove + PENDING_REVIEW.
 function canRejectItem(project: UIProject): boolean {
-  return canApprove('coi') && project.publicationStatus === 'PENDING_REVIEW'
+  if (project.publicationStatus !== 'PENDING_REVIEW') return false
+  if (isAdmin.value) return true
+  return myProjectPermissions(project)?.canApprove === true
 }
 
 // --- Meatball Menu Actions ---
@@ -1310,8 +1310,8 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
                 <v-list-item v-if="canWithdraw(p)" prepend-icon="mdi-undo" title="Withdraw" class="text-orange" @click.stop="withdrawSubmission(p)" />
                 <v-list-item v-if="canApproveItem(p)" prepend-icon="mdi-check-circle" title="Approve" class="text-success" @click.stop="approveItem(p)" />
                 <v-list-item v-if="canRejectItem(p)" prepend-icon="mdi-close-circle" title="Reject" class="text-warning" @click.stop="openRejectDialog(p)" />
-                <v-divider v-if="canDelete('coi')" class="my-1" />
-                <v-list-item v-if="canDelete('coi')" prepend-icon="mdi-delete" title="Delete" class="text-error" @click.stop="confirmDelete(p)" />
+                <v-divider v-if="canDeleteItem(p)" class="my-1" />
+                <v-list-item v-if="canDeleteItem(p)" prepend-icon="mdi-delete" title="Delete" class="text-error" @click.stop="confirmDelete(p)" />
               </v-list>
             </v-menu>
           </v-col>
@@ -1344,8 +1344,8 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
                   <v-list-item v-if="canWithdraw(p)" prepend-icon="mdi-undo" title="Withdraw" class="text-orange" @click="withdrawSubmission(p)" />
                   <v-list-item v-if="canApproveItem(p)" prepend-icon="mdi-check-circle" title="Approve" class="text-success" @click="approveItem(p)" />
                   <v-list-item v-if="canRejectItem(p)" prepend-icon="mdi-close-circle" title="Reject" class="text-warning" @click="openRejectDialog(p)" />
-                  <v-divider v-if="canDelete('coi')" class="my-1" />
-                  <v-list-item v-if="canDelete('coi')" prepend-icon="mdi-delete" title="Delete" class="text-error" @click="confirmDelete(p)" />
+                  <v-divider v-if="canDeleteItem(p)" class="my-1" />
+                  <v-list-item v-if="canDeleteItem(p)" prepend-icon="mdi-delete" title="Delete" class="text-error" @click="confirmDelete(p)" />
                 </v-list>
               </v-menu>
             </v-card-title>
@@ -1524,11 +1524,11 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
               </v-list-item>
 
               <!-- Divider before Delete -->
-              <v-divider v-if="canDelete('coi')" class="my-1" />
+              <v-divider v-if="canDeleteItem(item)" class="my-1" />
 
-              <!-- Delete (Admin only) -->
+              <!-- Delete (owner or record-level permissions.canDelete; Admin bypasses) -->
               <v-list-item
-                v-if="canDelete('coi')"
+                v-if="canDeleteItem(item)"
                 @click="confirmDelete(item)"
                 prepend-icon="mdi-delete"
                 class="text-error"
