@@ -31,17 +31,22 @@ import { ContractorStatus } from '../common/enums';
 export class ContractorsController {
   constructor(private readonly service: ContractorsService) {}
 
-  // --- Read Operations: All authenticated roles can view ---
+  // --- Read Operations: open to any authenticated user (visibility layer) ---
+  // FIX: was @Roles('Admin','Staff','Viewer'), which 403'd any user outside that
+  // exact list even when they hold a valid record_assignments.permissions.canEdit
+  // grant on a COI project and simply need this reference data to populate the edit
+  // form's dropdowns. Reads are harmless — matches the pattern already used
+  // throughout construction-projects.controller.ts.
 
   @Get()
-  @Roles('Admin', 'Staff', 'Viewer')
+  @Roles()
   @ApiOperation({ summary: 'List all contractors' })
   findAll(@Query() query: QueryContractorDto) {
     return this.service.findAll(query);
   }
 
   @Get(':id')
-  @Roles('Admin', 'Staff', 'Viewer')
+  @Roles()
   @ApiOperation({ summary: 'Get contractor details' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOne(id);
