@@ -58,7 +58,7 @@ export class UsersController {
   }
 
   @Get('eligible-for-assignment')
-  @Roles('Admin', 'Staff')
+  @Roles()
   @ApiOperation({
     summary:
       'List users eligible for record delegation (Admin/Staff) — Phase AV: Global, no campus filter',
