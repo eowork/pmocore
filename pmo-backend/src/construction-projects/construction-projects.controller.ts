@@ -94,7 +94,7 @@ export class ConstructionProjectsController {
   }
 
   @Get('pending-review')
-  @Roles('Admin')
+  @Roles()
   @ApiOperation({ summary: 'List drafts pending review (Admin only)' })
   findPendingReview(@CurrentUser() user: JwtPayload) {
     return this.service.findPendingReview(user);

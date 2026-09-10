@@ -17,15 +17,29 @@ const toast = useToast()
 const { isAdmin, isSuperAdmin, canApprove } = usePermissions()
 
 // PHASE BBCH (Track 1, R-372): the review queue is reachable by anyone with approval authority —
-// Admin/SuperAdmin (Layer 1) OR an Approver/Manager module level (Layer 3) in any reviewable module.
-// Per-item actions remain individually gated by canApprove(item.module).
+// Admin/SuperAdmin (Layer 1) OR an Approver/Manager module level (Layer 3) in a reviewable
+// project module (coi/repairs). Per-item actions remain individually gated by canReviewItem(item).
+//
+// University Operations is deliberately EXCLUDED from the module-level branch: UO approval
+// authority is Admin/SuperAdmin only (access-[id].vue no longer offers Approver/Manager on
+// any university_operations* key), because one approve/reject action publishes the shared
+// FY+quarter report across every pillar at once — not a per-project decision a delegated
+// Approver should make. isAdmin/isSuperAdmin below still cover UO reviewers; they just aren't
+// reached via a module-level grant.
 const canReviewAny = computed(
   () =>
     isAdmin.value ||
+    isSuperAdmin.value ||
     canApprove('coi') ||
-    canApprove('repairs') ||
-    canApprove('university_operations'),
+    canApprove('repairs'),
 )
+
+// Per-item reviewer check — see canReviewAny for why university_operations bypasses
+// canApprove() (module-level) entirely and requires the system role directly.
+function canReviewItem(item: PendingItem): boolean {
+  if (item.module === 'university_operations') return isAdmin.value || isSuperAdmin.value
+  return canApprove(item.module)
+}
 
 // Redirect users without any approval authority
 onMounted(() => {
@@ -92,10 +106,11 @@ const selectedItems = ref<PendingItem[]>([])
 const batchLoading = ref<'approve' | 'reject' | null>(null)
 
 // Module-level scoping: batch approve/reject only offered when every selected item's
-// module is within the reviewer's approval authority (Approver/Manager). Mixed
-// selections spanning an unauthorized module default-deny the whole batch action.
+// module is within the reviewer's approval authority (Approver/Manager for coi/repairs;
+// Admin/SuperAdmin only for university_operations — see canReviewItem). Mixed selections
+// spanning an unauthorized module default-deny the whole batch action.
 const canActOnSelection = computed(
-  () => selectedItems.value.length > 0 && selectedItems.value.every(i => canApprove(i.module))
+  () => selectedItems.value.length > 0 && selectedItems.value.every(i => canReviewItem(i))
 )
 const batchRejectDialog = ref(false)
 const batchRejectNotes = ref('')
@@ -274,8 +289,8 @@ function viewItem(item: PendingItem) {
 
 // Approve item
 async function approveItem(item: PendingItem) {
-  // Check module-level approval authority
-  if (!canApprove(item.module)) {
+  // Check approval authority
+  if (!canReviewItem(item)) {
     toast.error('You are not authorized to approve items in this module')
     return
   }
@@ -299,8 +314,8 @@ async function approveItem(item: PendingItem) {
 
 // Open reject dialog
 function openRejectDialog(item: PendingItem) {
-  // Check module-level approval authority
-  if (!canApprove(item.module)) {
+  // Check approval authority
+  if (!canReviewItem(item)) {
     toast.error('You are not authorized to reject items in this module')
     return
   }
@@ -338,10 +353,10 @@ async function rejectItem() {
 // Phase EN-D: Batch approve selected items
 async function approveSelected() {
   // Phase GOV-C: Exclude unlock_request items from batch actions
-  // Module-level scoping: re-check here too — the toolbar button only shows when
-  // canActOnSelection is true, but selection can change between render and click.
+  // Re-check authority here too — the toolbar button only shows when canActOnSelection
+  // is true, but selection can change between render and click.
   const batchItems = selectedItems.value.filter(
-    i => i.source !== 'unlock_request' && canApprove(i.module)
+    i => i.source !== 'unlock_request' && canReviewItem(i)
   )
   if (batchItems.length === 0) {
     toast.warning('Unlock requests must be handled individually')
@@ -378,10 +393,10 @@ function openBatchRejectDialog() {
 // Phase EN-D: Batch reject selected items
 async function batchRejectSelected() {
   // Phase GOV-C: Exclude unlock_request items from batch actions
-  // Module-level scoping: re-check here too — the toolbar button only shows when
-  // canActOnSelection is true, but selection can change between render and click.
+  // Re-check authority here too — the toolbar button only shows when canActOnSelection
+  // is true, but selection can change between render and click.
   const batchItems = selectedItems.value.filter(
-    i => i.source !== 'unlock_request' && canApprove(i.module)
+    i => i.source !== 'unlock_request' && canReviewItem(i)
   )
   if (batchItems.length === 0) {
     toast.warning('Unlock requests must be handled individually')
@@ -411,7 +426,7 @@ async function batchRejectSelected() {
 
 // Phase GOV-UI: Approve unlock request (revert to DRAFT)
 async function approveUnlockRequest(item: PendingItem) {
-  if (!canApprove(item.module)) {
+  if (!canReviewItem(item)) {
     toast.error('You are not authorized to approve unlock requests in this module')
     return
   }
@@ -432,7 +447,7 @@ async function approveUnlockRequest(item: PendingItem) {
 
 // Phase GOV-UI: Deny unlock request
 async function denyUnlockRequest(item: PendingItem) {
-  if (!canApprove(item.module)) {
+  if (!canReviewItem(item)) {
     toast.error('You are not authorized to deny unlock requests in this module')
     return
   }
@@ -662,9 +677,9 @@ onMounted(() => {
                   <v-list-item-title class="text-body-2">{{ item.unlock_request_reason }}</v-list-item-title>
                 </v-list-item>
                 <v-divider v-if="item.unlock_request_reason" class="my-1" />
-                <!-- Module-level scoping: unlock decisions need Approver/Manager
-                     authority on university_operations — Viewer/Contributor never see these. -->
-                <template v-if="canApprove(item.module)">
+                <!-- Unlock decisions are university_operations-only — Admin/SuperAdmin only
+                     (see canReviewItem); no module-level Approver/Manager path here. -->
+                <template v-if="canReviewItem(item)">
                   <v-list-item
                     @click="approveUnlockRequest(item)"
                     prepend-icon="mdi-lock-open-check"
@@ -682,9 +697,9 @@ onMounted(() => {
                 </template>
               </template>
 
-              <!-- Standard review actions — module-level scoping: only Approver/Manager
-                   for this item's module see Approve/Reject (Viewer/Contributor don't). -->
-              <template v-else-if="canApprove(item.module)">
+              <!-- Standard review actions — coi/repairs: Approver/Manager or Admin/SuperAdmin;
+                   university_operations: Admin/SuperAdmin only (see canReviewItem). -->
+              <template v-else-if="canReviewItem(item)">
                 <!-- Approve -->
                 <v-list-item
                   @click="approveItem(item)"

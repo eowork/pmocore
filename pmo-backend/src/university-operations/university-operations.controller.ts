@@ -48,7 +48,7 @@ export class UniversityOperationsController {
   }
 
   @Get('pending-review')
-  @Roles('Admin')
+  @Roles()
   findPendingReview(@CurrentUser() user: JwtPayload) {
     return this.service.findPendingReview(user);
   }
@@ -237,13 +237,13 @@ export class UniversityOperationsController {
   }
 
   @Get('quarterly-reports/pending-review')
-  @Roles('Admin')
+  @Roles()
   findQuarterlyReportsPendingReview(@CurrentUser() user: JwtPayload) {
     return this.service.findQuarterlyReportsPendingReview(user);
   }
 
   @Get('quarterly-reports/pending-unlock')
-  @Roles('Admin')
+  @Roles()
   findQuarterlyReportsPendingUnlock(@CurrentUser() user: JwtPayload) {
     return this.service.findQuarterlyReportsPendingUnlock(user);
   }
@@ -255,7 +255,7 @@ export class UniversityOperationsController {
   }
 
   @Get('quarterly-reports/submission-history')
-  @Roles('Admin')
+  @Roles()
   findSubmissionHistory(
     @CurrentUser() user: JwtPayload,
     @Query() query: QueryQuarterlyReportsDto,

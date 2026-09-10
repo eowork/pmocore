@@ -37,6 +37,24 @@ interface PermissionOverride {
 // pmo-backend/src/common/enums/access-level.enum.ts AccessLevel.
 const LEVEL_OPTIONS = ['Viewer', 'Contributor', 'Approver', 'Manager']
 
+// University Operations approval authority is reserved for Admin/SuperAdmin only —
+// it is NOT delegable via a module-level grant, because an Approver/Manager level on
+// any of these 3 keys also unlocks admin/pending-reviews.vue's Approve/Reject/Unlock
+// actions for the shared FY+quarter report (one submission covers every pillar at
+// once — see quarterly_reports schema). Granting Approver/Manager here would hand out
+// that admin-only authority through the back door, so these keys only ever offer
+// Viewer/Contributor.
+const UO_APPROVAL_RESTRICTED_KEYS = [
+  'university_operations',
+  'university-operations-physical',
+  'university-operations-financial',
+]
+
+function getLevelOptions(moduleKey: string): string[] {
+  if (UO_APPROVAL_RESTRICTED_KEYS.includes(moduleKey)) return ['Viewer', 'Contributor']
+  return LEVEL_OPTIONS
+}
+
 const permissionOverrides = ref<PermissionOverride[]>([])
 const permissionsLoading = ref(false)
 
@@ -558,7 +576,7 @@ onMounted(async () => {
                   <td>
                     <v-select
                       :model-value="getOverrideLevel(mod.key)"
-                      :items="LEVEL_OPTIONS"
+                      :items="getLevelOptions(mod.key)"
                       :disabled="!isModuleChecked(mod.key)"
                       density="compact"
                       variant="outlined"
