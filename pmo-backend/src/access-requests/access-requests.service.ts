@@ -11,8 +11,23 @@ import { UsersService } from '../users/users.service';
 import { SetPermissionOverrideDto } from '../users/dto';
 import { CreateAccessRequestDto, DecideAccessRequestDto } from './dto';
 import { JwtPayload } from '../common/interfaces';
+import { ModuleType } from '../common/enums';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
+
+// Best-effort mapping from the fine-grained access-request module key to the
+// coarser ModuleType bucket used by user_module_assignments (the legacy Admin
+// "responsibility scope" table — superseded by user_permission_overrides for actual
+// authorization, but still populated/displayed via users/access-[id].vue's Module
+// Scope tab). contractors/funding_sources/users have no ModuleType equivalent and
+// are intentionally left unmapped.
+const MODULE_TYPE_BY_ACCESS_MODULE: Partial<Record<string, ModuleType>> = {
+  coi: ModuleType.CONSTRUCTION,
+  repairs: ModuleType.REPAIR,
+  university_operations: ModuleType.OPERATIONS,
+  'university-operations-physical': ModuleType.OPERATIONS,
+  'university-operations-financial': ModuleType.OPERATIONS,
+};
 
 /**
  * PHASE BBBA (BBBA-3c) — self-service access requests.
@@ -202,6 +217,30 @@ export class AccessRequestsService {
         grantDto,
         admin.sub,
       );
+
+      // Best-effort sync of the legacy user_module_assignments table — see
+      // MODULE_TYPE_BY_ACCESS_MODULE comment. Not the source of authorization truth
+      // (that's the override above), so a mapping miss or an already-existing
+      // assignment (ConflictException, e.g. user already holds broader 'ALL') must
+      // never fail the approval itself.
+      const mappedModuleType =
+        MODULE_TYPE_BY_ACCESS_MODULE[req.requestedModule];
+      if (mappedModuleType) {
+        try {
+          await this.usersService.assignModule(
+            req.userId,
+            mappedModuleType,
+            admin.sub,
+          );
+        } catch (err) {
+          if (!(err instanceof ConflictException)) {
+            this.logger.warn(
+              `ACCESS_REQUEST_MODULE_ASSIGN_SYNC_FAILED: user=${req.userId}, module=${mappedModuleType}, id=${id} — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
       req.status = 'APPROVED';
       req.grantedLevel = level;
     } else {
@@ -254,6 +293,38 @@ export class AccessRequestsService {
       this.logger.warn(
         `ACCESS_REQUEST_REVOKE: override already absent for user=${req.userId} module=${req.requestedModule} — ${(err as Error).message}`,
       );
+    }
+
+    // Mirror of decide()'s best-effort user_module_assignments sync: only drop the
+    // coarse ModuleType bucket if no OTHER live override for this user still maps to
+    // it (e.g. a separate 'university-operations-financial' grant must keep the
+    // OPERATIONS bucket even though this 'university_operations' one was revoked).
+    const mappedModuleType = MODULE_TYPE_BY_ACCESS_MODULE[req.requestedModule];
+    if (mappedModuleType) {
+      const remaining = await this.usersService.getPermissionOverrides(
+        req.userId,
+      );
+      const stillHasBucket = remaining.some(
+        (o) =>
+          o.can_access &&
+          o.module_key !== req.requestedModule &&
+          MODULE_TYPE_BY_ACCESS_MODULE[o.module_key] === mappedModuleType,
+      );
+      if (!stillHasBucket) {
+        try {
+          await this.usersService.removeModuleAssignment(
+            req.userId,
+            mappedModuleType,
+            admin.sub,
+          );
+        } catch (err) {
+          if (!(err instanceof NotFoundException)) {
+            this.logger.warn(
+              `ACCESS_REQUEST_MODULE_ASSIGN_REVOKE_SYNC_FAILED: user=${req.userId}, module=${mappedModuleType}, id=${id} — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
     }
 
     req.status = 'REVOKED';

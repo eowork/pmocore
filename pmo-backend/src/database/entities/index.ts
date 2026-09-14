@@ -29,6 +29,7 @@ export { ConstructionDiaryEntry } from './construction-diary-entry.entity';
 export { ConstructionGallery } from './construction-gallery.entity';
 export { ConstructionMovEntry } from './construction-mov-entry.entity';
 export { RecordAssignment } from './record-assignment.entity';
+export { Facility } from './facility.entity';
 export { RepairProject } from './repair-project.entity';
 export { RepairPowItem } from './repair-pow-item.entity';
 export { RepairProjectPhase } from './repair-project-phase.entity';
