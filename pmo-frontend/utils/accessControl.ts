@@ -11,6 +11,15 @@ export const ACCESS_LEVEL_OPTIONS: { value: string; title: string; hint: string 
   { value: 'Manager', title: 'Manager', hint: 'Full administrative control' },
 ]
 
+// Self-service requesting is capped at Contributor — Approver/Manager confers approval
+// authority (and, for university_operations, maps into admin/pending-reviews.vue's
+// review queue), so it's never something a user can request for themselves. A
+// SuperAdmin grants those two levels manually per-user via users/access-[id].vue.
+// Used by onboarding.vue's Request Access step.
+export const SELF_SERVICE_LEVEL_OPTIONS = ACCESS_LEVEL_OPTIONS.filter(
+  o => o.value === 'Viewer' || o.value === 'Contributor',
+)
+
 export const ACCESS_REQUEST_MODULE_OPTIONS: { value: string; title: string }[] = [
   { value: 'coi', title: 'Infrastructure Projects (COI)' },
   { value: 'repairs', title: 'Repair Projects' },
