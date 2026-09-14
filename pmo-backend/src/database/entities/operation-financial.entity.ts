@@ -1,4 +1,4 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
 @Entity({ tableName: 'operation_financials' })
@@ -27,6 +27,8 @@ export class OperationFinancial {
   @Property({ nullable: true, length: 50 })
   fundType?: string;
 
+  // Plain lookup index (coredata_schema.sql:3936-3939).
+  @Index({ name: 'idx_of_project_code' })
   @Property({ nullable: true, length: 50 })
   projectCode?: string;
 
