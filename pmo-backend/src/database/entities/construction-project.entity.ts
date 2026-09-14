@@ -22,7 +22,20 @@ export class ConstructionProject {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
-  @Property({ columnType: 'bigserial', unique: true })
+  // FIX: 'bigserial' as a plain columnType carries no default in mikro-orm's own
+  // metadata (it's not a recognized auto-increment marker the way @PrimaryKey({
+  // autoincrement: true }) is), so the differ saw "entity has no default" vs "DB has
+  // DEFAULT nextval(...)" and generated a migration that dropped it — construction
+  // project creation (raw INSERT in construction-projects.service.ts, which never
+  // supplies this column) then hit a NOT NULL violation once that migration ran.
+  // Declaring the real underlying type (bigint, what Postgres itself reports for a
+  // bigserial column) plus the exact live default expression keeps future diffs a no-op.
+  @Property({
+    columnType: 'bigint',
+    unique: true,
+    defaultRaw:
+      "nextval('construction_projects_infra_project_uid_seq'::regclass)",
+  })
   infraProjectUid!: number;
 
   @Property({ columnType: 'uuid', unique: true })

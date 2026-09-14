@@ -2749,8 +2749,8 @@
         "infra_project_uid": {
           "name": "infra_project_uid",
           "type": "int8",
-          "unsigned": false,
-          "autoincrement": false,
+          "unsigned": true,
+          "autoincrement": true,
           "primary": false,
           "nullable": false,
           "unique": true,
