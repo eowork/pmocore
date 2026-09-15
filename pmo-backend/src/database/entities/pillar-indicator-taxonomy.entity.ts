@@ -17,8 +17,8 @@ export class PillarIndicatorTaxonomy {
   @Property({ nullable: true, length: 50 })
   indicatorCode?: string;
 
-  @Property({ length: 50 })
-  uacsCode!: string;
+  @Property({ nullable: true, length: 50 })
+  uacsCode?: string;
 
   @Property({ type: 'integer' })
   indicatorOrder!: number;
@@ -32,8 +32,8 @@ export class PillarIndicatorTaxonomy {
   @Property({ nullable: true, columnType: 'text' })
   description?: string;
 
-  @Property({ type: 'boolean', default: true })
-  isActive: boolean = true;
+  @Property({ type: 'boolean', default: true, nullable: true })
+  isActive?: boolean = true;
 
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();

@@ -6,20 +6,20 @@ export class User {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
-  @Property({ length: 255, unique: true })
+  @Property({ length: 100, unique: true })
   username!: string;
 
-  @Property({ nullable: true, length: 255, unique: true })
-  email?: string;
+  @Property({ length: 255, unique: true })
+  email!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  passwordHash?: string;
+  @Property({ length: 255 })
+  passwordHash!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  firstName?: string;
+  @Property({ length: 100 })
+  firstName!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  lastName?: string;
+  @Property({ length: 100 })
+  lastName!: string;
 
   @Property({ nullable: true, columnType: 'text' })
   middleName?: string;
@@ -27,7 +27,7 @@ export class User {
   @Property({ nullable: true, length: 255 })
   displayName?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   avatarUrl?: string;
 
   @Property({ nullable: true, columnType: 'text' })
@@ -39,7 +39,7 @@ export class User {
   @Property({ type: 'boolean', default: true })
   isActive: boolean = true;
 
-  @Property({ nullable: true, type: 'integer' })
+  @Property({ nullable: true, type: 'integer', default: 100 })
   rankLevel?: number;
 
   @Property({ nullable: true, length: 255, unique: true })

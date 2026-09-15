@@ -9,16 +9,16 @@ export class OperationFinancial {
   @Property({ columnType: 'uuid' })
   operationId!: string;
 
-  @Property({ nullable: true, type: 'integer' })
-  fiscalYear?: number;
+  @Property({ type: 'integer' })
+  fiscalYear!: number;
 
-  @Property({ nullable: true, length: 10 })
+  @Property({ nullable: true, length: 2 })
   quarter?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  operationsPrograms?: string;
+  @Property({ length: 255 })
+  operationsPrograms!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   department?: string;
 
   @Property({ nullable: true, length: 100 })
@@ -32,23 +32,41 @@ export class OperationFinancial {
   @Property({ nullable: true, length: 50 })
   projectCode?: string;
 
-  @Property({ nullable: true, length: 100 })
+  @Property({ nullable: true, length: 4 })
   expenseClass?: string;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(15,2)' })
   allotment?: number;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(15,2)' })
   target?: number;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(15,2)', default: 0 })
   obligation?: number;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(15,2)', default: 0 })
   disbursement?: number;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, columnType: 'numeric(5,2)' })
+  utilizationPerTarget?: number;
+
+  @Property({ nullable: true, columnType: 'numeric(5,2)' })
+  utilizationPerApprovedBudget?: number;
+
+  @Property({ nullable: true, columnType: 'numeric(5,2)' })
+  disbursementRate?: number;
+
+  @Property({ nullable: true, columnType: 'numeric(15,2)' })
+  balance?: number;
+
+  @Property({ nullable: true, columnType: 'numeric(15,2)' })
+  variance?: number;
+
+  @Property({ nullable: true, length: 255 })
   performanceIndicator?: string;
+
+  @Property({ nullable: true, length: 20, default: 'active' })
+  status?: string;
 
   @Property({ nullable: true, columnType: 'text' })
   remarks?: string;
@@ -56,8 +74,8 @@ export class OperationFinancial {
   @Property({ nullable: true, columnType: 'jsonb' })
   metadata?: Record<string, any>;
 
-  @Property({ columnType: 'uuid' })
-  createdBy!: string;
+  @Property({ nullable: true, columnType: 'uuid' })
+  createdBy?: string;
 
   @Property({ nullable: true, columnType: 'uuid' })
   updatedBy?: string;

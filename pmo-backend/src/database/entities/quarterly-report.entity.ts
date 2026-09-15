@@ -9,17 +9,17 @@ export class QuarterlyReport {
   @Property({ type: 'integer' })
   fiscalYear!: number;
 
-  @Property({ length: 10 })
+  @Property({ length: 2 })
   quarter!: string;
 
-  @Property({ columnType: 'text' })
-  title!: string;
+  @Property({ nullable: true, columnType: 'text' })
+  title?: string;
 
-  @Property({ length: 20, default: 'DRAFT' })
-  publicationStatus: string = 'DRAFT';
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
+  publicationStatus?: string = 'DRAFT';
 
-  @Property({ nullable: true, columnType: 'uuid' })
-  createdBy?: string;
+  @Property({ columnType: 'uuid' })
+  createdBy!: string;
 
   @Property({ type: 'integer', default: 0 })
   submissionCount: number = 0;
@@ -54,15 +54,16 @@ export class QuarterlyReport {
   @Property({ nullable: true, columnType: 'timestamptz' })
   unlockedAt?: Date;
 
-  @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
-  createdAt: Date = new Date();
+  @Property({ nullable: true, defaultRaw: 'NOW()', columnType: 'timestamptz' })
+  createdAt?: Date = new Date();
 
   @Property({
+    nullable: true,
     defaultRaw: 'NOW()',
     onUpdate: () => new Date(),
     columnType: 'timestamptz',
   })
-  updatedAt: Date = new Date();
+  updatedAt?: Date = new Date();
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   deletedAt?: Date;

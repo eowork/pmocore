@@ -15,17 +15,17 @@ export class GadPwdParityData {
   @Property({ nullable: true, length: 100 })
   subcategory?: string;
 
-  @Property({ type: 'integer', default: 0 })
-  totalBeneficiaries: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  totalBeneficiaries?: number = 0;
 
-  @Property({ type: 'integer', default: 0 })
-  maleCount: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  maleCount?: number = 0;
 
-  @Property({ type: 'integer', default: 0 })
-  femaleCount: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  femaleCount?: number = 0;
 
-  @Property({ length: 50, default: 'pending' })
-  status: string = 'pending';
+  @Property({ nullable: true, length: 50, default: 'pending' })
+  status?: string = 'pending';
 
   @Property({ nullable: true, columnType: 'uuid' })
   submittedBy?: string;

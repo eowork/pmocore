@@ -57,6 +57,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
       MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
+      STORAGE_DRIVER: local
     command: ["npm", "run", "start:dev"]
     depends_on:
       postgres:

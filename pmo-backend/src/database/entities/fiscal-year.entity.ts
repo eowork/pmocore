@@ -8,16 +8,17 @@ export class FiscalYear {
   @Property({ nullable: true, length: 50 })
   label?: string;
 
-  @Property({ type: 'boolean', default: false })
-  isActive: boolean = false;
+  @Property({ type: 'boolean', default: true })
+  isActive: boolean = true;
 
-  @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
-  createdAt: Date = new Date();
+  @Property({ nullable: true, defaultRaw: 'NOW()', columnType: 'timestamptz' })
+  createdAt?: Date;
 
   @Property({
+    nullable: true,
     defaultRaw: 'NOW()',
     onUpdate: () => new Date(),
     columnType: 'timestamptz',
   })
-  updatedAt: Date = new Date();
+  updatedAt?: Date;
 }

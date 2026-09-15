@@ -8,7 +8,7 @@ export class PasswordResetRequest {
   @Property({ columnType: 'text' })
   identifier!: string;
 
-  @Property({ length: 20, default: 'PENDING' })
+  @Property({ columnType: 'text', default: 'PENDING' })
   status: string = 'PENDING';
 
   @Property({ nullable: true, columnType: 'text' })
