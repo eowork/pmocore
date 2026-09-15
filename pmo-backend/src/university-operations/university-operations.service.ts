@@ -712,7 +712,7 @@ export class UniversityOperationsService {
     const submittedAt = new Date(); // Always track submission time
 
     // Phase AN: Include assigned_to for inline assignment during creation
-    // Phase BD: Include fiscal_year for year-based filtering
+    // Phase BD: Include fiscal_year for year-based filtering2
     const result = await this.em.getConnection().execute(
       `INSERT INTO university_operations
        (operation_type, title, description, code, start_date, end_date, status, budget, campus, coordinator_id, metadata, created_by,

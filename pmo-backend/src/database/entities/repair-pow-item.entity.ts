@@ -33,14 +33,14 @@ export class RepairPowItem {
   @Property({ columnType: 'decimal(15,2)' })
   unitCost!: string;
 
-  @Property({ type: 'boolean', default: false })
-  isUnitCostOverridden: boolean = false;
+  @Property({ type: 'boolean', default: false, nullable: true })
+  isUnitCostOverridden?: boolean = false;
 
   @Property({ columnType: 'date' })
   dateEntry!: Date;
 
-  @Property({ length: 50, default: 'Active' })
-  status: string = 'Active';
+  @Property({ nullable: true, length: 50, default: 'Active' })
+  status?: string = 'Active';
 
   @Property({ nullable: true, columnType: 'text' })
   remarks?: string;

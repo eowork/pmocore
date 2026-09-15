@@ -69,7 +69,7 @@ export class ConstructionTimelineEntry {
   @Property({ nullable: true, columnType: 'text' })
   lookAheadActivities?: string;
 
-  @Property({ nullable: true, columnType: 'jsonb' })
+  @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
   accomplishments?: Array<{
     description?: string;
     category?: string;
@@ -78,7 +78,7 @@ export class ConstructionTimelineEntry {
     remarks?: string;
   }>;
 
-  @Property({ nullable: true, columnType: 'jsonb' })
+  @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
   signatories?: Array<{
     userId?: string;
     userName?: string;
@@ -94,19 +94,19 @@ export class ConstructionTimelineEntry {
   @Property({ nullable: true, columnType: 'date' })
   reportingPeriodMonth?: Date;
 
-  @Property({ nullable: true, columnType: 'jsonb' })
+  @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
   workItems?: Array<Record<string, any>>;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(5,2)' })
   accomplishmentSummaryPercent?: number;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(5,2)' })
   percentTimeElapsed?: number;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(18,2)' })
   originalContractAmount?: number;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(18,2)' })
   revisedContractAmount?: number;
 
   // BBB-C: WAR/MPR financial billing fields (operational records; Progress Reports is the official source)
@@ -117,7 +117,7 @@ export class ConstructionTimelineEntry {
   financialAccomplishmentPercent?: number;
 
   // ZZZ-G: structured Project Concerns list (shared by WAR/MPR/timelogs)
-  @Property({ nullable: true, columnType: 'jsonb' })
+  @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
   concernsList?: Array<{
     title?: string;
     description?: string;
