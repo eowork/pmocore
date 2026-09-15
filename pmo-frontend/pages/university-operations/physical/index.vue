@@ -373,7 +373,7 @@ async function findCurrentOperation() {
 
     // Phase EK-C: Add filters to avoid pagination miss
     const response = await api.get<any>(
-      `/api/university-operations?type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
+      `/api/university-operations?operation_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
     )
     const data = Array.isArray(response) ? response : (response?.data || [])
 
