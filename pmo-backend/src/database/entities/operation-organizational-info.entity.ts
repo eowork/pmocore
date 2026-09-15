@@ -9,17 +9,26 @@ export class OperationOrganizationalInfo {
   @Property({ columnType: 'uuid', unique: true })
   operationId!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   department?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   agencyEntity?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   operatingUnit?: string;
 
   @Property({ nullable: true, length: 100 })
   organizationCode?: string;
+
+  @Property({ columnType: 'uuid' })
+  createdBy!: string;
+
+  @Property({ nullable: true, columnType: 'uuid' })
+  updatedBy?: string;
+
+  @Property({ nullable: true, columnType: 'jsonb' })
+  metadata?: Record<string, any>;
 
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();
@@ -33,4 +42,7 @@ export class OperationOrganizationalInfo {
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   deletedAt?: Date;
+
+  @Property({ nullable: true, columnType: 'uuid' })
+  deletedBy?: string;
 }

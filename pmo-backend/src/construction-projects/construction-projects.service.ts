@@ -265,7 +265,7 @@ export class ConstructionProjectsService {
     user: JwtPayload | undefined,
     permission: 'canCreate' | 'canEdit' | 'canDelete' | 'canUpload',
   ): Promise<void> {
-    if (user && this.isAdmin(user)) return; // Admin bypass
+    if (user && this.permissionResolver.isAdmin(user)) return; // Admin bypass
     const conn = this.em.getConnection();
     // Owner bypass
     const proj = await conn.execute(

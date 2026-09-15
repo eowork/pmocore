@@ -10,6 +10,12 @@ set -e
 # migrate.js runs. Prod's runtime image has no src/, so this is a no-op there.
 if [ -d /app/src ]; then
   echo "Dev environment detected — rebuilding before migrating..."
+  # /app/dist is itself a volume mount point (docker-compose.dev.yml), so it can't
+  # be rmdir'd as a whole (nest-cli.json's deleteOutDir must stay false here) — only
+  # its contents can be cleared. Without this, a source file removed from src/ (e.g.
+  # a deleted migration) leaves its stale compiled .js behind in dist/ forever, since
+  # tsc/nest build never deletes output for files that no longer exist in source.
+  rm -rf /app/dist/*
   npm run build
 fi
 

@@ -20,8 +20,8 @@ export class ConstructionMilestone {
   @Property({ nullable: true, columnType: 'date' })
   actualDate?: Date;
 
-  @Property({ length: 50, default: 'PENDING' })
-  status: string = 'PENDING';
+  @Property({ nullable: true, length: 50, default: 'PENDING' })
+  status?: string = 'PENDING';
 
   @Property({ nullable: true, columnType: 'text' })
   remarks?: string;

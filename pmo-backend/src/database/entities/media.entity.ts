@@ -12,7 +12,7 @@ export class Media {
   @Property({ columnType: 'uuid' })
   mediableId!: string;
 
-  @Property()
+  @Property({ columnType: 'media_type_enum' })
   mediaType!: string;
 
   @Property({ length: 255 })
@@ -36,8 +36,8 @@ export class Media {
   @Property({ nullable: true, length: 255 })
   altText?: string;
 
-  @Property({ type: 'boolean', default: false })
-  isFeatured: boolean = false;
+  @Property({ nullable: true, type: 'boolean', default: false })
+  isFeatured?: boolean = false;
 
   @Property({ nullable: true, length: 255 })
   thumbnailUrl?: string;
@@ -51,8 +51,8 @@ export class Media {
   @Property({ nullable: true, columnType: 'date' })
   captureDate?: Date;
 
-  @Property({ type: 'integer', default: 0 })
-  displayOrder: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  displayOrder?: number = 0;
 
   @Property({ nullable: true, columnType: 'jsonb' })
   location?: Record<string, any>;

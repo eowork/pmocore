@@ -9,7 +9,7 @@ export class UniversityOperation {
   @Property({ length: 50 })
   operationType!: string;
 
-  @Property({ columnType: 'text' })
+  @Property({ length: 255 })
   title!: string;
 
   @Property({ nullable: true, columnType: 'text' })
@@ -24,10 +24,10 @@ export class UniversityOperation {
   @Property({ nullable: true, columnType: 'date' })
   endDate?: Date;
 
-  @Property({ nullable: true, length: 20 })
-  status?: string;
+  @Property({ length: 20 })
+  status!: string;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(15,2)' })
   budget?: number;
 
   @Property({ length: 100 })
@@ -42,8 +42,8 @@ export class UniversityOperation {
   @Property({ columnType: 'uuid' })
   createdBy!: string;
 
-  @Property({ length: 20, default: 'DRAFT' })
-  publicationStatus: string = 'DRAFT';
+  @Property({ length: 20, default: 'PUBLISHED' })
+  publicationStatus: string = 'PUBLISHED';
 
   @Property({ nullable: true, columnType: 'uuid' })
   submittedBy?: string;
@@ -66,16 +66,16 @@ export class UniversityOperation {
   @Property({ nullable: true, type: 'integer' })
   fiscalYear?: number;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ1?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ2?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ3?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ4?: string;
 
   @Property({ nullable: true, columnType: 'uuid' })
