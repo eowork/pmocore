@@ -64,7 +64,7 @@ export class ConstructionProjectsController {
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
   @ApiOperation({
     summary:
-      'List all construction projects (non-Admin only see PUBLISHED; Contractors see only assigned)',
+      'List construction projects (Admin/SuperAdmin see all; everyone else sees only created/assigned)',
   })
   findAll(
     @Query() query: QueryConstructionProjectDto,
@@ -94,7 +94,7 @@ export class ConstructionProjectsController {
   }
 
   @Get('pending-review')
-  @Roles('Admin')
+  @Roles()
   @ApiOperation({ summary: 'List drafts pending review (Admin only)' })
   findPendingReview(@CurrentUser() user: JwtPayload) {
     return this.service.findPendingReview(user);
@@ -182,10 +182,13 @@ export class ConstructionProjectsController {
     return this.service.submitForReview(id, user.sub, user);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'coi' module-level grant, enforced inside the service via
+  // permissionResolver.canApproveModule(). @Roles('Admin') here would have blocked
+  // a module-level Approver/Manager before the service check ever ran.
   @Post(':id/publish')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Publish (approve) a draft (Admin only)' })
+  @ApiOperation({ summary: 'Publish (approve) a draft (Admin, or Approver/Manager module level)' })
   publish(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -194,10 +197,9 @@ export class ConstructionProjectsController {
   }
 
   @Patch(':id/approve')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Approve (publish) a draft (Admin only) — alias for /publish',
+    summary: 'Approve (publish) a draft (Admin, or Approver/Manager module level) — alias for /publish',
   })
   approve(
     @Param('id', ParseUUIDPipe) id: string,
@@ -207,9 +209,8 @@ export class ConstructionProjectsController {
   }
 
   @Post(':id/reject')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reject a draft with notes (Admin only)' })
+  @ApiOperation({ summary: 'Reject a draft with notes (Admin, or Approver/Manager module level)' })
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('notes') notes: string,
@@ -240,12 +241,15 @@ export class ConstructionProjectsController {
     return this.service.update(id, dto, user.sub, user);
   }
 
-  // --- Delete Operations: Admin only ---
+  // --- Delete Operations: Admin, project owner, or a record-level canDelete grant ---
 
   @Delete(':id')
-  @Roles('Admin')
+  @Roles('Admin', 'Staff')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete construction project (Admin only)' })
+  @ApiOperation({
+    summary:
+      'Delete construction project (Admin, owner, or record-level canDelete)',
+  })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,

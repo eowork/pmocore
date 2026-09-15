@@ -6,7 +6,7 @@
  * PV-E: batch add dialog (YC: dual-mode for institutional / external).
  * PV-F: 3-section permission UI (Section A: Actions, Section B: Tab Access, Section C: Access Level preset).
  */
-import { PERSONNEL_GROUPS, PERSONNEL_CATEGORY_OPTIONS, COI_PROJECT_TABS } from '~/utils/coiFormState'
+import { PERSONNEL_GROUPS, PERSONNEL_CATEGORY_OPTIONS, COI_PROJECT_TABS, type FullPermissions } from '~/utils/coiFormState'
 
 const props = withDefaults(defineProps<{
   projectId: string
@@ -32,18 +32,7 @@ const toast = useToast ? useToast() : { success: console.log, error: console.err
 const { isAdmin } = usePermissions()
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
-interface FullPermissions {
-  // Section A: Actions
-  canCreate: boolean; canEdit: boolean; canDelete: boolean
-  canUpload: boolean; canReview: boolean; canApprove: boolean
-  // Section B: Tab Access — exactly matches COI_PROJECT_TABS permKeys
-  tabProjectProfile: boolean; tabDatesDuration: boolean
-  tabProgressReport: boolean
-  tabPersonnel: boolean; tabAttachments: boolean; tabOthers: boolean
-  // Section C: preset label
-  accessLevel: 'Viewer' | 'Contributor' | 'Editor' | 'Manager' | 'Admin'
-}
-
+// FullPermissions now lives in ~/utils/coiFormState (single source of truth).
 interface DraftUser {
   id: string; name: string; email?: string | null
   role?: string | null; department?: string | null; phone?: string | null

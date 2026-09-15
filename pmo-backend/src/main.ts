@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConsoleLogger, Logger, ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
@@ -13,7 +13,12 @@ import { createUploadedFilesHandler } from './uploads/uploaded-files.handler';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule,{
+    logger: new ConsoleLogger({
+      json: true,
+      colors: true,
+    })
+  });
 
   // KY-A1: Serve uploaded files as static assets at /uploads prefix.
   // SECURITY (T2): /uploads is unauthenticated, so restrict it to IMAGE types only

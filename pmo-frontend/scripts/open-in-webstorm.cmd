@@ -26,5 +26,13 @@ if "%LINE%"=="" set "LINE=1"
 set "COLUMN=%~3"
 if "%COLUMN%"=="" set "COLUMN=1"
 
-webstorm.exe "%PROJECT_DIR%" --line %LINE% --column %COLUMN% "%~1"
+rem Toolbox installs put a `webstorm.exe` shim on PATH; a standalone/bin-dir install
+rem only gives you `webstorm.bat` in the IDE's own bin\ folder. Try both so the script
+rem works regardless of how WebStorm was installed on this machine.
+where webstorm.exe >nul 2>nul
+if %ERRORLEVEL%==0 (
+  webstorm.exe "%PROJECT_DIR%" --line %LINE% --column %COLUMN% "%~1"
+) else (
+  webstorm.bat "%PROJECT_DIR%" --line %LINE% --column %COLUMN% "%~1"
+)
 exit /b %ERRORLEVEL%

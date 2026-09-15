@@ -289,6 +289,28 @@ export class ConstructionProjectsService {
     }
   }
 
+  // Approval authority for submit/publish/reject/withdraw: Admin, OR a module-level
+  // Approver/Manager grant on 'coi' (Layer 3 — bypasses record scope org-wide), OR
+  // this specific project's record_assignments.permissions.canApprove (Layer 4 —
+  // a record-level Manager assigned to just this project, per the frontend's
+  // FullPermissions shape / accessLevel: Manager). Deliberately NO owner bypass here
+  // (unlike assertProjectPermission above) — owning a project isn't itself approval
+  // authority; a Contributor/owner may edit but not approve/submit their own work.
+  private async hasApprovalAuthority(
+    projectId: string,
+    userId: string,
+    user: JwtPayload,
+  ): Promise<boolean> {
+    if (await this.permissionResolver.canApproveModule(user, 'coi')) return true;
+    const conn = this.em.getConnection();
+    const rows = await conn.execute(
+      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
+      [projectId, userId],
+    );
+    const perms = rows[0]?.permissions as Record<string, unknown> | null;
+    return !!perms?.canApprove;
+  }
+
   // --- RAW SQL reads (complex JOINs preserved) ---
 
   async findAll(
@@ -305,19 +327,22 @@ export class ConstructionProjectsService {
     const params: any[] = [];
 
     const queryAny = query as any;
-    // PHASE BBBF (Track 1 / Task B1, R-353): the COI list is universally viewable — all authenticated
-    // institutional users (any role/level with COI access) see/search/filter ALL projects, incl. DRAFT
-    // (operator decision). Per-project edit restrictions apply only INSIDE a project. Contractors remain
-    // scoped to assigned records (security). The former campus/PUBLISHED/own list filter was removed.
+    // Visibility scope (supersedes PHASE BBBF Track 1/R-353's "universally viewable" policy):
+    // Admin/SuperAdmin see everything. Everyone else — any role/level, Contractor included —
+    // sees ONLY projects they created or are explicitly assigned to. Scoped server-side off the
+    // JWT-authenticated user id (not left to the frontend), and ANDed with any other filter
+    // below rather than short-circuited by one (the prior `else if` let a publication_status
+    // filter bypass the Contractor-only scoping entirely).
+    if (user && !this.permissionResolver.isAdmin(user)) {
+      conditions.push(
+        `(cp.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?))`,
+      );
+      params.push(user.sub, user.sub);
+    }
+
     if (queryAny.publication_status) {
       conditions.push(`cp.publication_status = ?`);
       params.push(queryAny.publication_status);
-    } else if (user && this.permissionResolver.isContractor(user)) {
-      // Contractors see ONLY records they are explicitly assigned to.
-      conditions.push(
-        `EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?)`,
-      );
-      params.push(user.sub);
     }
 
     if (query.status) {
@@ -1093,6 +1118,9 @@ export class ConstructionProjectsService {
   async remove(id: string, userId: string, user?: JwtPayload): Promise<void> {
     const project = await this.findOne(id);
 
+    // Admin, project owner, or this project's own record_assignments.permissions.canDelete.
+    await this.assertProjectPermission(id, userId, user, 'canDelete');
+
     await this.em.transactional(async (em) => {
       const conn = em.getConnection();
       await conn.execute(
@@ -1127,11 +1155,13 @@ export class ConstructionProjectsService {
       );
     }
 
-    const isOwner = project.created_by === userId;
-    const isAssigned = await this.isUserAssigned(id, userId);
-    if (!isOwner && !isAssigned) {
+    // Submitting requires Approver/Manager authority — module-level 'coi' OR this
+    // project's own record_assignments.permissions.canApprove. Deliberately NOT
+    // owner/assigned alone (that was the prior rule; it let a Viewer/Contributor
+    // submit their own draft, contradicting the frontend's Approver/Manager-only gate).
+    if (user && !(await this.hasApprovalAuthority(id, userId, user))) {
       throw new ForbiddenException(
-        'Only the creator or assigned user can submit this draft for review',
+        'Insufficient approval authority to submit this project for review',
       );
     }
 
@@ -1155,8 +1185,12 @@ export class ConstructionProjectsService {
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can publish records');
+    // Admin, OR module-level 'coi' Approver/Manager, OR this project's own
+    // record_assignments.permissions.canApprove (record-level Manager).
+    if (!(await this.hasApprovalAuthority(id, adminId, user))) {
+      throw new ForbiddenException(
+        'Insufficient approval authority to publish this project',
+      );
     }
 
     const project = await this.findOne(id);
@@ -1200,8 +1234,12 @@ export class ConstructionProjectsService {
     notes: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can reject records');
+    // Admin, OR module-level 'coi' Approver/Manager, OR this project's own
+    // record_assignments.permissions.canApprove (record-level Manager).
+    if (!(await this.hasApprovalAuthority(id, adminId, user))) {
+      throw new ForbiddenException(
+        'Insufficient approval authority to reject this project',
+      );
     }
 
     const project = await this.findOne(id);
@@ -1242,9 +1280,14 @@ export class ConstructionProjectsService {
       );
     }
 
-    if (project.submitted_by !== userId) {
+    // Original submitter, OR Admin/module-level/record-level approval authority —
+    // mirrors publish/reject/submitForReview's hasApprovalAuthority.
+    if (
+      project.submitted_by !== userId &&
+      !(user && (await this.hasApprovalAuthority(id, userId, user)))
+    ) {
       throw new ForbiddenException(
-        'Only the original submitter can withdraw this submission',
+        'Only the original submitter or an Approver/Manager can withdraw this submission',
       );
     }
 

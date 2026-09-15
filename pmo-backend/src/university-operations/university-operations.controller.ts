@@ -48,7 +48,7 @@ export class UniversityOperationsController {
   }
 
   @Get('pending-review')
-  @Roles('Admin')
+  @Roles()
   findPendingReview(@CurrentUser() user: JwtPayload) {
     return this.service.findPendingReview(user);
   }
@@ -237,13 +237,13 @@ export class UniversityOperationsController {
   }
 
   @Get('quarterly-reports/pending-review')
-  @Roles('Admin')
+  @Roles()
   findQuarterlyReportsPendingReview(@CurrentUser() user: JwtPayload) {
     return this.service.findQuarterlyReportsPendingReview(user);
   }
 
   @Get('quarterly-reports/pending-unlock')
-  @Roles('Admin')
+  @Roles()
   findQuarterlyReportsPendingUnlock(@CurrentUser() user: JwtPayload) {
     return this.service.findQuarterlyReportsPendingUnlock(user);
   }
@@ -255,7 +255,7 @@ export class UniversityOperationsController {
   }
 
   @Get('quarterly-reports/submission-history')
-  @Roles('Admin')
+  @Roles()
   findSubmissionHistory(
     @CurrentUser() user: JwtPayload,
     @Query() query: QueryQuarterlyReportsDto,
@@ -287,11 +287,13 @@ export class UniversityOperationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.submitQuarterlyReport(id, user.sub);
+    return this.service.submitQuarterlyReport(id, user.sub, user);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'university_operations' module-level grant, enforced inside
+  // the service via permissionResolver.canApproveModule().
   @Post('quarterly-reports/:id/approve')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   approveQuarterlyReport(
     @Param('id', ParseUUIDPipe) id: string,
@@ -301,7 +303,6 @@ export class UniversityOperationsController {
   }
 
   @Post('quarterly-reports/:id/reject')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   rejectQuarterlyReport(
     @Param('id', ParseUUIDPipe) id: string,
@@ -317,13 +318,15 @@ export class UniversityOperationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.withdrawQuarterlyReport(id, user.sub);
+    return this.service.withdrawQuarterlyReport(id, user.sub, user);
   }
 
   // Phase GOV: Post-Publication Governance Endpoints
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'university_operations' module-level grant, enforced inside
+  // the service via permissionResolver.canApproveModule().
   @Post('quarterly-reports/:id/unlock')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   unlockQuarterlyReport(
     @Param('id', ParseUUIDPipe) id: string,
@@ -343,8 +346,10 @@ export class UniversityOperationsController {
     return this.service.requestQuarterlyReportUnlock(id, user.sub, reason);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'university_operations' module-level grant, enforced inside
+  // the service via permissionResolver.canApproveModule().
   @Post('quarterly-reports/:id/deny-unlock')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   denyQuarterlyReportUnlock(
     @Param('id', ParseUUIDPipe) id: string,
@@ -402,8 +407,10 @@ export class UniversityOperationsController {
     return this.service.submitForReview(id, user.sub);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'university_operations' module-level grant, enforced inside
+  // the service via permissionResolver.canApproveModule().
   @Post(':id/publish')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   publish(
     @Param('id', ParseUUIDPipe) id: string,
@@ -413,7 +420,6 @@ export class UniversityOperationsController {
   }
 
   @Post(':id/reject')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   reject(
     @Param('id', ParseUUIDPipe) id: string,
@@ -444,8 +450,10 @@ export class UniversityOperationsController {
     return this.service.submitQuarterForReview(id, quarter, user.sub);
   }
 
+  // Phase BBCH (Track 1): role gate relaxed — authority is now Admin OR an
+  // Approver/Manager 'university_operations' module-level grant, enforced inside
+  // the service via permissionResolver.canApproveModule().
   @Post(':id/approve-quarter')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   approveQuarter(
     @Param('id', ParseUUIDPipe) id: string,
@@ -456,7 +464,6 @@ export class UniversityOperationsController {
   }
 
   @Post(':id/reject-quarter')
-  @Roles('Admin')
   @HttpCode(HttpStatus.OK)
   rejectQuarter(
     @Param('id', ParseUUIDPipe) id: string,

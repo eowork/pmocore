@@ -42,7 +42,6 @@ const {
   canViewTab,
   canEditMilestones: canEditMilestonesFromAccess,
   canEditWorkLog: canEditWorkLogFromAccess,
-  canEditFinancial: canEditFinancialFromAccess,
   canEditPersonnel: canEditPersonnelFromAccess,
   canUploadDocuments,
   canDeleteResources,
@@ -71,7 +70,6 @@ const showNotAssignedNotice = computed(
 // PR-B: per-tab edit flags now respect project-level effectivePermissions
 const canEditMilestones = computed(() => canEditMilestonesFromAccess.value)
 const canEditWorkLog    = computed(() => canEditWorkLogFromAccess.value)
-const canEditFinancial  = computed(() => canEditFinancialFromAccess.value)
 const canEditPersonnel  = computed(() => canEditPersonnelFromAccess.value)
 
 // ACE-R15 Tier 3: Direct ID extraction (no computed, no watchEffect)
@@ -999,51 +997,6 @@ const milestoneStatusOptions = [
   { title: 'Cancelled', value: 'CANCELLED' },
 ]
 
-// JW-F: Financial records (per-fiscal-year) state + CRUD
-interface EditFinancialItem {
-  id: string
-  fiscalYear: number
-  appropriation: string | number
-  obligation: string | number
-  disbursement: string | number
-  // KB-F: Traceability fields
-  activityTitle?: string | null
-  transactionCategory?: string | null
-  remarks?: string | null
-  paymentReference?: string | null
-  status?: string | null
-}
-const existingFinancials = ref<EditFinancialItem[]>([])
-const loadingFinancials = ref(false)
-const deletingFinancial = ref<Record<string, boolean>>({})
-
-const financialDialog = ref(false)
-const financialDialogMode = ref<'create' | 'edit'>('create')
-const financialEditingId = ref<string | null>(null)
-const financialSubmitting = ref(false)
-const financialForm = ref({
-  fiscal_year: new Date().getFullYear(),
-  appropriation: 0,
-  obligation: 0,
-  disbursement: 0,
-  // KB-F: Traceability fields
-  activity_title: '',
-  transaction_category: '',
-  remarks: '',
-  payment_reference: '',
-  status: 'ALLOCATED',
-})
-
-const financialStatusOptions = [
-  { title: 'Allocated', value: 'ALLOCATED', color: 'grey' },
-  { title: 'Obligated', value: 'OBLIGATED', color: 'info' },
-  { title: 'Disbursed', value: 'DISBURSED', color: 'primary' },
-  { title: 'Liquidated', value: 'LIQUIDATED', color: 'success' },
-]
-
-const deleteFinancialDialog = ref(false)
-const deleteFinancialTarget = ref<EditFinancialItem | null>(null)
-
 // JW-G: Timeline diary entries (per-period work log) state + CRUD
 interface EditDiaryEntry {
   id: string
@@ -1556,127 +1509,6 @@ async function executeDeleteMilestone() {
   }
 }
 
-// JW-F: Financial records CRUD
-async function fetchFinancials() {
-  if (!projectId) return
-  loadingFinancials.value = true
-  try {
-    const res = await api.get<any>(
-      `/api/construction-projects/${projectId}/financials`
-    )
-    const financialList: any[] = Array.isArray(res) ? res : (res?.data || [])
-    existingFinancials.value = financialList.map((f: any) => ({
-      id: f.id,
-      fiscalYear: Number(f.fiscalYear ?? f.fiscal_year),
-      appropriation: f.appropriation,
-      obligation: f.obligation,
-      disbursement: f.disbursement,
-      activityTitle: f.activityTitle ?? f.activity_title,
-      transactionCategory: f.transactionCategory ?? f.transaction_category,
-      remarks: f.remarks,
-      paymentReference: f.paymentReference ?? f.payment_reference,
-      status: f.status,
-    }))
-  } catch (err: unknown) {
-    console.error('[COI Edit] Failed to fetch financials:', err)
-  } finally {
-    loadingFinancials.value = false
-  }
-}
-
-function openCreateFinancial() {
-  financialForm.value = {
-    fiscal_year: new Date().getFullYear(),
-    appropriation: 0,
-    obligation: 0,
-    disbursement: 0,
-    activity_title: '',
-    transaction_category: '',
-    remarks: '',
-    payment_reference: '',
-    status: 'ALLOCATED',
-  }
-  financialEditingId.value = null
-  financialDialogMode.value = 'create'
-  financialDialog.value = true
-}
-
-function openEditFinancial(f: EditFinancialItem) {
-  financialForm.value = {
-    fiscal_year: f.fiscalYear,
-    appropriation: Number(f.appropriation) || 0,
-    obligation: Number(f.obligation) || 0,
-    disbursement: Number(f.disbursement) || 0,
-    activity_title: f.activityTitle || '',
-    transaction_category: f.transactionCategory || '',
-    remarks: f.remarks || '',
-    payment_reference: f.paymentReference || '',
-    status: f.status || 'ALLOCATED',
-  }
-  financialEditingId.value = f.id
-  financialDialogMode.value = 'edit'
-  financialDialog.value = true
-}
-
-async function saveFinancial() {
-  if (!financialForm.value.fiscal_year || financialForm.value.fiscal_year < 1900) {
-    toast.error('Fiscal year is required')
-    return
-  }
-  financialSubmitting.value = true
-  try {
-    const payload: Record<string, unknown> = {
-      fiscal_year: Number(financialForm.value.fiscal_year),
-      appropriation: Number(financialForm.value.appropriation) || 0,
-      obligation: Number(financialForm.value.obligation) || 0,
-      disbursement: Number(financialForm.value.disbursement) || 0,
-      activity_title: financialForm.value.activity_title || undefined,
-      transaction_category: financialForm.value.transaction_category || undefined,
-      remarks: financialForm.value.remarks || undefined,
-      payment_reference: financialForm.value.payment_reference || undefined,
-      status: financialForm.value.status || 'ALLOCATED',
-    }
-    if (financialDialogMode.value === 'create') {
-      await api.post(`/api/construction-projects/${projectId}/financials`, payload)
-      toast.success('Financial record added')
-    } else if (financialEditingId.value) {
-      await api.patch(
-        `/api/construction-projects/${projectId}/financials/${financialEditingId.value}`,
-        payload,
-      )
-      toast.success('Financial record updated')
-    }
-    financialDialog.value = false
-    await fetchFinancials()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to save financial record')
-  } finally {
-    financialSubmitting.value = false
-  }
-}
-
-function confirmDeleteFinancial(f: EditFinancialItem) {
-  deleteFinancialTarget.value = f
-  deleteFinancialDialog.value = true
-}
-
-async function executeDeleteFinancial() {
-  if (!deleteFinancialTarget.value) return
-  const id = deleteFinancialTarget.value.id
-  deletingFinancial.value[id] = true
-  try {
-    await api.del(`/api/construction-projects/${projectId}/financials/${id}`)
-    existingFinancials.value = existingFinancials.value.filter(f => f.id !== id)
-    toast.success('Financial record deleted')
-    deleteFinancialDialog.value = false
-    deleteFinancialTarget.value = null
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to delete financial record')
-  } finally {
-    deletingFinancial.value[id] = false
-  }
-}
-
 function formatCurrency(amount: string | number): string {
   const n = typeof amount === 'string' ? Number(amount) : amount
   if (Number.isNaN(n)) return '₱0.00'
@@ -2036,7 +1868,6 @@ onMounted(() => {
   fetchDocs()
   fetchGallery()
   fetchMilestones()  // JV-A
-  fetchFinancials()  // JW-F
   fetchDiaryEntries()  // JW-G
   fetchDocumentTypes()  // KO-F: load KB-E taxonomy for upload form
   fetchMovEntries()  // KW-G: MOV evidence aggregation
@@ -2852,150 +2683,6 @@ onBeforeUnmount(() => {
             color="error"
             :loading="deleteMilestoneTarget ? deletingMilestone[deleteMilestoneTarget.id] : false"
             @click="executeDeleteMilestone"
-          >
-            Delete
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- ============= JW-F + KB-F: Financial Add/Edit Dialog ============= -->
-    <v-dialog v-model="financialDialog" max-width="720" persistent>
-      <v-card>
-        <v-card-title>
-          {{ financialDialogMode === 'create' ? 'Add Financial Record' : 'Edit Financial Record' }}
-        </v-card-title>
-        <v-divider />
-        <v-card-text class="pt-4">
-          <v-row dense>
-            <v-col cols="12" sm="4">
-              <v-text-field
-                v-model.number="financialForm.fiscal_year"
-                label="Fiscal Year *"
-                type="number"
-                min="1900"
-                max="2100"
-                placeholder="2026"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="4">
-              <v-select
-                v-model="financialForm.status"
-                :items="financialStatusOptions"
-                item-title="title"
-                item-value="value"
-                label="Status"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="4">
-              <v-text-field
-                v-model="financialForm.transaction_category"
-                label="Transaction Category"
-                placeholder="Civil Works, Materials…"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12">
-              <v-text-field
-                v-model="financialForm.activity_title"
-                label="Activity Title"
-                placeholder="e.g., Foundation excavation, Q1 progress billing…"
-                hint="Links the record to a specific work activity or contract item"
-                persistent-hint
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="financialForm.appropriation"
-                label="Appropriation (₱)"
-                type="number"
-                min="0"
-                step="0.01"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="financialForm.obligation"
-                label="Obligation (₱)"
-                type="number"
-                min="0"
-                step="0.01"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="financialForm.disbursement"
-                label="Disbursement (₱)"
-                type="number"
-                min="0"
-                step="0.01"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model="financialForm.payment_reference"
-                label="Payment Reference"
-                placeholder="JEV/billing/transaction number"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12">
-              <v-textarea
-                v-model="financialForm.remarks"
-                label="Remarks / Justification"
-                rows="2"
-                placeholder="Audit annotation or justification…"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-          </v-row>
-        </v-card-text>
-        <v-divider />
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" :disabled="financialSubmitting" @click="financialDialog = false">
-            Cancel
-          </v-btn>
-          <v-btn color="primary" :loading="financialSubmitting" @click="saveFinancial">
-            {{ financialDialogMode === 'create' ? 'Add' : 'Save' }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- ============= JW-F: Financial Delete Confirm Dialog ============= -->
-    <v-dialog v-model="deleteFinancialDialog" max-width="420">
-      <v-card>
-        <v-card-title>Delete financial record?</v-card-title>
-        <v-card-text>
-          <p class="mb-2">
-            This will permanently delete the
-            <strong>FY {{ deleteFinancialTarget?.fiscalYear }}</strong> financial record.
-          </p>
-          <p class="text-caption text-grey">This action cannot be undone.</p>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="deleteFinancialDialog = false">Cancel</v-btn>
-          <v-btn
-            color="error"
-            :loading="deleteFinancialTarget ? deletingFinancial[deleteFinancialTarget.id] : false"
-            @click="executeDeleteFinancial"
           >
             Delete
           </v-btn>

@@ -77,11 +77,22 @@ const CAMPUSES = [
 ] as const
 
 // Phase HN: Pillar-based tab visibility (Directive 159)
+// FIX: an empty pillar_assignments list now means NO pillars granted (default-deny),
+// not "no restriction" — a user with zero assignments has simply never been given
+// pillar access yet and should be redirected (see hasAnyPillarAccess below), not
+// silently shown every pillar's data.
 const visiblePillars = computed(() => {
   if (isAdmin.value || isSuperAdmin.value) return PILLARS
   const assignments = authStore.user?.pillarAssignments ?? []
-  if (assignments.length === 0) return PILLARS // no restriction if unassigned
   return PILLARS.filter(p => assignments.includes(p.id))
+})
+
+// Phase HN: whether the user has ANY reason to be on this page at all — Admin/SuperAdmin
+// bypass, otherwise at least one pillar assignment is required. Zero assignments ⇒ redirect
+// with a toast rather than rendering a page with every tab disabled.
+const hasAnyPillarAccess = computed(() => {
+  if (isAdmin.value || isSuperAdmin.value) return true
+  return (authStore.user?.pillarAssignments ?? []).length > 0
 })
 
 // State
@@ -876,9 +887,16 @@ watch(selectedQuarter, async () => {
 })
 
 onMounted(async () => {
+  // Phase HN: zero pillar assignments ⇒ nothing on this page is accessible — bounce
+  // back to the UO landing page instead of rendering with every tab disabled.
+  if (!hasAnyPillarAccess.value) {
+    toast.error('No pillar access assigned. Contact your administrator.')
+    router.push('/university-operations')
+    return
+  }
   // Phase HN: If current activePillar not in visiblePillars, select first visible
   if (!visiblePillars.value.some(p => p.id === activePillar.value)) {
-    activePillar.value = visiblePillars.value[0]?.id ?? PILLARS[0].id
+    activePillar.value = visiblePillars.value[0]?.id ?? activePillar.value
   }
   await fiscalYearStore.fetchFiscalYears()
   await fetchFinancialData()

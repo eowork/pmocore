@@ -1,4 +1,4 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
 
 type ChecklistRemarkEntry = {
   text: string;
@@ -6,19 +6,45 @@ type ChecklistRemarkEntry = {
   timestamp: string;
 };
 
+// Phase JN-A: project_code uniqueness is a partial index (WHERE deleted_at IS NULL,
+// coredata_schema.sql:3439-3442), not a plain unique constraint — a soft-deleted
+// project's code must be reusable. A plain `unique: true` on the property makes
+// mikro-orm's schema diff want to replace this index with a full-table unique
+// constraint, silently reintroducing the reuse bug Migration20260502071146 fixed.
+@Index({
+  name: 'construction_projects_project_code_active_idx',
+  expression:
+    'CREATE UNIQUE INDEX construction_projects_project_code_active_idx ON construction_projects (project_code) WHERE deleted_at IS NULL',
+})
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
 @Entity({ tableName: 'construction_projects' })
 export class ConstructionProject {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
-  @Property({ columnType: 'bigserial', unique: true })
+  // FIX: 'bigserial' as a plain columnType carries no default in mikro-orm's own
+  // metadata (it's not a recognized auto-increment marker the way @PrimaryKey({
+  // autoincrement: true }) is), so the differ saw "entity has no default" vs "DB has
+  // DEFAULT nextval(...)" and generated a migration that dropped it — construction
+  // project creation (raw INSERT in construction-projects.service.ts, which never
+  // supplies this column) then hit a NOT NULL violation once that migration ran.
+  // Declaring the real underlying type (bigint, what Postgres itself reports for a
+  // bigserial column) plus the exact live default expression keeps future diffs a no-op.
+  @Property({
+    columnType: 'bigint',
+    unique: true,
+    defaultRaw:
+      "nextval('construction_projects_infra_project_uid_seq'::regclass)",
+  })
   infraProjectUid!: number;
 
   @Property({ columnType: 'uuid', unique: true })
   projectId!: string;
 
-  @Property({ length: 50, unique: true })
+  // Plain lookup index (coredata_schema.sql:3530-3533) — separate from the partial
+  // unique index above (which only enforces uniqueness among non-deleted rows).
+  @Index({ name: 'idx_conproj_code' })
+  @Property({ length: 50 })
   projectCode!: string;
 
   @Property({ length: 255 })
@@ -300,7 +326,15 @@ export class ConstructionProject {
   sdgGoals?: any;
 
   // XXX-K: Historical Planning Frameworks (2017-2022)
-  @Property({ nullable: true, columnType: 'jsonb' })
+  // Explicit fieldName: default naming strategy would map to "rdp2017alignment"
+  // (no underscore before "alignment"), but the actual column is "rdp2017_alignment"
+  // (coredata_schema.sql:948) — also the name construction-projects.service.ts's raw
+  // SQL hardcodes for this field.
+  @Property({
+    nullable: true,
+    columnType: 'jsonb',
+    fieldName: 'rdp2017_alignment',
+  })
   rdp2017Alignment?: any;
 
   // Explicit fieldName: default naming strategy would map to "point_agenda10"

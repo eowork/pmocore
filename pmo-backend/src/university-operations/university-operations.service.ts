@@ -71,6 +71,16 @@ export class UniversityOperationsService {
     'end_date',
   ];
 
+  // Phase HU: the 3 module keys sharing one approval-authority family — the parent
+  // 'university_operations' key plus its 2 independent per-pillar sub-modules. Passed
+  // together to canApproveModule() so an Approver/Manager grant scoped to just one
+  // pillar isn't ignored (mirrors ModuleAccessGuard's candidateKeys handling).
+  private readonly UO_LEVEL_KEYS = [
+    'university_operations',
+    'university-operations-physical',
+    'university-operations-financial',
+  ];
+
   constructor(
     @InjectRepository(UniversityOperation)
     private readonly uoRepo: EntityRepository<UniversityOperation>,
@@ -919,8 +929,11 @@ export class UniversityOperationsService {
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can publish records');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException(
+        'Insufficient module level to publish records',
+      );
     }
 
     const operation = await this.findOne(id);
@@ -966,8 +979,11 @@ export class UniversityOperationsService {
     notes: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can reject records');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException(
+        'Insufficient module level to reject records',
+      );
     }
 
     const operation = await this.findOne(id);
@@ -1079,8 +1095,9 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     this.validateQuarterParam(quarter);
-    if (!this.isAdmin(user))
-      throw new ForbiddenException('Only Admin can approve quarters');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS)))
+      throw new ForbiddenException('Insufficient module level to approve quarters');
     const operation = await this.findOne(id);
 
     // Prevent self-approval
@@ -1121,8 +1138,9 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     this.validateQuarterParam(quarter);
-    if (!this.isAdmin(user))
-      throw new ForbiddenException('Only Admin can reject quarters');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS)))
+      throw new ForbiddenException('Insufficient module level to reject quarters');
 
     const operation = await this.findOne(id);
     const statusCol = `status_${quarter.toLowerCase()}`;
@@ -3326,7 +3344,11 @@ export class UniversityOperationsService {
     return result;
   }
 
-  async submitQuarterlyReport(id: string, userId: string): Promise<any> {
+  async submitQuarterlyReport(
+    id: string,
+    userId: string,
+    user: JwtPayload,
+  ): Promise<any> {
     const report = await this.findOneQuarterlyReport(id);
 
     if (
@@ -3338,14 +3360,14 @@ export class UniversityOperationsService {
       );
     }
 
-    // Creator can submit
-    if (report.created_by !== userId) {
-      const isAdmin = await this.permissionResolver.isAdminFromDatabase(userId);
-      if (!isAdmin) {
-        throw new ForbiddenException(
-          'Only the creator or an admin can submit this report',
-        );
-      }
+    // Phase HU/BBCH: submitting requires Approver/Manager module level (or Admin) —
+    // matches physical/index.vue's canSubmitAllPillars and the COI equivalent.
+    // Deliberately NO creator/owner exception: owning a report isn't itself approval
+    // authority (established rule — Contributor may input data but not submit it).
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException(
+        'Insufficient module level to submit this report',
+      );
     }
 
     // Phase GOV-D: Snapshot submission event and increment submission_count
@@ -3377,8 +3399,11 @@ export class UniversityOperationsService {
     adminId: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can approve quarterly reports');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException(
+        'Insufficient module level to approve quarterly reports',
+      );
     }
 
     const report = await this.findOneQuarterlyReport(id);
@@ -3424,8 +3449,11 @@ export class UniversityOperationsService {
     notes: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can reject quarterly reports');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException(
+        'Insufficient module level to reject quarterly reports',
+      );
     }
 
     const report = await this.findOneQuarterlyReport(id);
@@ -3464,7 +3492,11 @@ export class UniversityOperationsService {
     return result[0];
   }
 
-  async withdrawQuarterlyReport(id: string, userId: string): Promise<any> {
+  async withdrawQuarterlyReport(
+    id: string,
+    userId: string,
+    user: JwtPayload,
+  ): Promise<any> {
     const report = await this.findOneQuarterlyReport(id);
 
     if (report.publication_status !== 'PENDING_REVIEW') {
@@ -3473,9 +3505,14 @@ export class UniversityOperationsService {
       );
     }
 
-    if (report.submitted_by !== userId) {
+    // Admin/SuperAdmin, or Approver/Manager module level (any pending submission in
+    // this module), or the original submitter — mirrors the COI equivalent.
+    if (
+      report.submitted_by !== userId &&
+      !(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))
+    ) {
       throw new ForbiddenException(
-        'Only the original submitter can withdraw this report',
+        'Only the original submitter or an Approver/Manager can withdraw this report',
       );
     }
 
@@ -3597,8 +3634,9 @@ export class UniversityOperationsService {
     reason: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can unlock quarterly reports');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException('Insufficient module level to unlock quarterly reports');
     }
 
     const report = await this.findOneQuarterlyReport(id);
@@ -3692,8 +3730,9 @@ export class UniversityOperationsService {
     adminId: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can deny unlock requests');
+    // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
+    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+      throw new ForbiddenException('Insufficient module level to deny unlock requests');
     }
 
     const report = await this.findOneQuarterlyReport(id);

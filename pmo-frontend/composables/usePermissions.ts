@@ -35,6 +35,16 @@ const MODULE_KEY_MAP: Record<string, string> = {
   'users': 'users',
 }
 
+// Mirrors backend's UniversityOperationsService.UO_LEVEL_KEYS (university-operations.service.ts):
+// the parent 'university_operations' key plus its 2 independent per-pillar sub-modules. A
+// Physical-only or Financial-only Approver/Manager grant lives under its own sub-key and never
+// rolls up into the parent — approval authority must OR across all three, same as the backend.
+const UO_LEVEL_KEYS = [
+  'university_operations',
+  'university-operations-physical',
+  'university-operations-financial',
+]
+
 /**
  * Default permission matrix by role
  * Maps role names to CRUD capabilities
@@ -261,6 +271,20 @@ export function usePermissions() {
       return { canView: false, canAdd: false, canEdit: false, canDelete: false }
     }
 
+    // 'users' (User Management) is the one Admin-only module where Admin does NOT bypass the
+    // level check — unlike coi/repairs/university_operations (Admins administer every project
+    // module), user-account writes (reset password, manage access, edit profile) require an
+    // explicit Contributor+ grant even for an Admin; a Viewer-level Admin gets read-only.
+    // SuperAdmin already bypassed above. Mirrors users.controller.ts's own SuperAdmin-only
+    // lockdown on create/update/delete/assignRole/unlockAccount — Admin alone isn't enough there
+    // either, so the frontend shouldn't hand an Admin full CRUD here by role alone.
+    if (normalizedId === 'users') {
+      const level = moduleLevels.value['users']
+      return (
+        LEVEL_PERMISSIONS[level] || { canView: true, canAdd: false, canEdit: false, canDelete: false }
+      )
+    }
+
     // PHASE BBBC (Track 8d) + BBBE (Track 2): for non-admins, a granted module's LEVEL governs CRUD —
     // module entry never implies write. On gated modules, NO level ⇒ view-only (write needs a grant,
     // aligning with the backend ModuleAccessGuard). Admins/SuperAdmins bypass (role matrix below).
@@ -346,8 +370,22 @@ export function usePermissions() {
     if (isSuperAdmin.value) return true
     if (isAdmin.value) return true
 
+    const normalized = normalizeModuleKey(moduleId)
+
+    // FIX: 'university_operations' has 2 independent per-pillar sub-modules
+    // ('university-operations-physical' / '-financial') that each carry their own
+    // module level — a grant scoped to just one pillar never rolls up into the parent
+    // key. Checking only the parent silently denied approval authority the backend
+    // itself grants (UniversityOperationsService.UO_LEVEL_KEYS ORs across all three).
+    if (normalized === 'university_operations') {
+      return UO_LEVEL_KEYS.some((key) => {
+        const level = moduleLevels.value[key]
+        return level === 'Approver' || level === 'Manager'
+      })
+    }
+
     // Layer 3: an Approver/Manager module-level grant confers approval authority for this module.
-    const level = moduleLevels.value[normalizeModuleKey(moduleId)]
+    const level = moduleLevels.value[normalized]
     return level === 'Approver' || level === 'Manager'
   }
 
