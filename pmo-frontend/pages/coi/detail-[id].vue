@@ -388,6 +388,36 @@ function isDriveLink(doc: DocumentItem): boolean {
   return doc.mimeType === 'application/x-google-drive-link'
 }
 
+// CCC-A: authenticated download with the original filename; links open raw href.
+//
+// Linking straight to doc.filePath does not work for documents. /uploads is
+// unauthenticated, so main.ts gates it to image extensions only and answers
+// anything else with 403 "documents are served via the authenticated download
+// endpoint" — deliberate, since a raw /uploads URL would otherwise hand out
+// every stored document to anyone who guessed the key. Only the JWT-guarded
+// endpoint below may stream a document, and it also records the DOWNLOAD audit
+// entry that a direct link would skip.
+//
+// Same shape as CiAttachmentHub, CiRepositoryModal, CiSupportingDocsRepository
+// and CiComplianceRepository, which already used this endpoint; this page was
+// the last one still pointing at the raw path.
+async function downloadDoc(doc: DocumentItem | null | undefined): Promise<void> {
+  if (!doc) return
+  // External links have no stored bytes — filePath is the destination URL.
+  if (isDriveLink(doc) || !projectId) {
+    window.open(doc.filePath, '_blank', 'noopener')
+    return
+  }
+  try {
+    await api.download(
+      `/api/construction-projects/${projectId}/documents/${doc.id}/download`,
+      doc.fileName,
+    )
+  } catch (err) {
+    console.error('[COI Detail] Failed to download document:', err)
+  }
+}
+
 // JR-B: Split documents into files vs links for FILES/LINKS sections
 const documentFiles = computed(() => documents.value.filter(d => !isDriveLink(d)))
 const documentLinks = computed(() => documents.value.filter(d => isDriveLink(d)))
@@ -1631,8 +1661,7 @@ onMounted(() => {
                             <v-btn
                               v-if="findDocumentPreview(documents, docType.key)?.filePath"
                               variant="text" size="x-small" color="primary" class="mt-1 pa-0"
-                              :href="findDocumentPreview(documents, docType.key)?.filePath || undefined"
-                              target="_blank" rel="noopener noreferrer"
+                              @click="downloadDoc(findDocumentPreview(documents, docType.key))"
                             >
                               View Document
                             </v-btn>
@@ -2446,9 +2475,7 @@ onMounted(() => {
             color="primary"
             variant="flat"
             prepend-icon="mdi-download"
-            :href="selectedDoc.filePath"
-            target="_blank"
-            rel="noopener noreferrer"
+            @click="downloadDoc(selectedDoc)"
           >
             Download
           </v-btn>
