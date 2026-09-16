@@ -11,7 +11,7 @@ export class QuarterlyReportSubmission {
   @Property({ type: 'integer' })
   fiscalYear!: number;
 
-  @Property({ length: 10 })
+  @Property({ length: 2 })
   quarter!: string;
 
   @Property({ type: 'integer', default: 1 })
@@ -38,12 +38,12 @@ export class QuarterlyReportSubmission {
   @Property({ columnType: 'uuid' })
   actionedBy!: string;
 
-  @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
-  actionedAt: Date = new Date();
+  @Property({ nullable: true, defaultRaw: 'NOW()', columnType: 'timestamptz' })
+  actionedAt?: Date = new Date();
 
   @Property({ nullable: true, columnType: 'text' })
   reason?: string;
 
-  @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
-  createdAt: Date = new Date();
+  @Property({ nullable: true, defaultRaw: 'NOW()', columnType: 'timestamptz' })
+  createdAt?: Date = new Date();
 }

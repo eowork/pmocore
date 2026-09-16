@@ -52,21 +52,21 @@ export class ConstructionProgressReport {
   @Property({ nullable: true, columnType: 'text' })
   mitigationActions?: string;
 
-  @Property({ columnType: 'jsonb', nullable: true })
+  @Property({ columnType: 'jsonb', default: '[]' })
   narrativeList: Array<{ text: string; createdAt: string; author?: string }> =
     [];
 
-  @Property({ columnType: 'jsonb', nullable: true })
+  @Property({ columnType: 'jsonb', default: '[]' })
   remarksList: Array<{ text: string; createdAt: string; author?: string }> = [];
 
-  @Property({ columnType: 'jsonb', nullable: true })
+  @Property({ columnType: 'jsonb', default: '[]' })
   issuesEncounteredList: Array<{
     text: string;
     createdAt: string;
     author?: string;
   }> = [];
 
-  @Property({ columnType: 'jsonb', nullable: true })
+  @Property({ columnType: 'jsonb', default: '[]' })
   mitigationActionsList: Array<{
     text: string;
     createdAt: string;

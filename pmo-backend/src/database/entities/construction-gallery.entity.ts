@@ -14,11 +14,11 @@ export class ConstructionGallery {
   @Property({ nullable: true, length: 255 })
   caption?: string;
 
-  @Property({ length: 50, default: 'IN_PROGRESS' })
-  category: string = 'IN_PROGRESS';
+  @Property({ nullable: true, length: 50, default: 'IN_PROGRESS' })
+  category?: string = 'IN_PROGRESS';
 
-  @Property({ type: 'boolean', default: false })
-  isFeatured: boolean = false;
+  @Property({ nullable: true, type: 'boolean', default: false })
+  isFeatured?: boolean = false;
 
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   uploadedAt: Date = new Date();
