@@ -6,8 +6,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-pmo_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       # PG18+ images store data in a version subdir and expect the mount at
       # /var/lib/postgresql (NOT /data) — see docker-library/postgres#1259.
@@ -52,8 +52,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${BACKEND_PORT:-3000}:3000"
+    # ports:
+    #   - "${BACKEND_PORT:-3000}:3000"
     volumes:
       - backend_uploads:/app/uploads
     healthcheck:
@@ -78,8 +78,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-3001}:3000"
+    # ports:
+    #   - "${FRONTEND_PORT:-3001}:3000"
   minio:
     image: 'quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z'
     restart: unless-stopped
