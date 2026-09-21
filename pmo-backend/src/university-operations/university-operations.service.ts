@@ -32,6 +32,7 @@ import {
 } from './dto';
 import { JwtPayload } from '../common/interfaces';
 import { PermissionResolverService } from '../common/services';
+import { UniversityOperationRepository } from './university-operation.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -84,6 +85,8 @@ export class UniversityOperationsService {
   constructor(
     @InjectRepository(UniversityOperation)
     private readonly uoRepo: EntityRepository<UniversityOperation>,
+    @InjectRepository(UniversityOperation)
+    private readonly universityOperationRepo: UniversityOperationRepository,
     @InjectRepository(OperationIndicator)
     private readonly indicatorRepo: EntityRepository<OperationIndicator>,
     @InjectRepository(OperationFinancial)
@@ -144,7 +147,7 @@ export class UniversityOperationsService {
           userId,
         }),
       );
-      await this.em.persistAndFlush(assignments);
+      await this.em.persist(assignments).flush()
     }
   }
 
@@ -178,7 +181,7 @@ export class UniversityOperationsService {
       assignedBy,
       assignedAt: new Date(),
     });
-    await this.em.persistAndFlush(assignment);
+    await this.em.persist(assignment).flush();
     return assignment;
   }
 
@@ -217,7 +220,7 @@ export class UniversityOperationsService {
    * Admin/SuperAdmin bypass. Returns true iff the user may view THIS record.
    */
   private userCanViewOperation(operation: any, user: JwtPayload): boolean {
-    if (this.isAdmin(user)) return true;
+    if (this.permissionResolver.isAdmin(user)) return true;
     const isCreator = operation.created_by === user.sub;
     const assigned = Array.isArray(operation.assigned_users)
       ? operation.assigned_users
@@ -246,7 +249,7 @@ export class UniversityOperationsService {
     userId: string,
     user: JwtPayload,
   ): Promise<void> {
-    if (this.isAdmin(user)) {
+    if (this.permissionResolver.isAdmin(user)) {
       return;
     }
 
@@ -305,7 +308,7 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     // Admins always have access
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       const moduleCheck = await this.em
         .getConnection()
         .execute(
@@ -338,7 +341,7 @@ export class UniversityOperationsService {
     userId: string,
     user: JwtPayload,
   ): Promise<void> {
-    if (this.isAdmin(user)) {
+    if (this.permissionResolver.isAdmin(user)) {
       return;
     }
 
@@ -541,7 +544,7 @@ export class UniversityOperationsService {
       if (
         queryAny.publication_status !== 'PUBLISHED' &&
         user &&
-        !this.isAdmin(user)
+        !this.permissionResolver.isAdmin(user)
       ) {
         conditions.push(`(uo.publication_status = ? AND uo.created_by = ?)`);
         params.push(queryAny.publication_status, user.sub);
@@ -549,7 +552,7 @@ export class UniversityOperationsService {
         conditions.push(`uo.publication_status = ?`);
         params.push(queryAny.publication_status);
       }
-    } else if (user && !this.isAdmin(user)) {
+    } else if (user && !this.permissionResolver.isAdmin(user)) {
       // Phase Y + AM + AT: Campus-scoped visibility with junction table for assignments
       const recordCampus = this.normalizeUserCampusToRecordCampus(user.campus);
       if (recordCampus) {

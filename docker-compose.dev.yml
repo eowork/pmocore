@@ -57,11 +57,21 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
       MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
-      STORAGE_DRIVER: local
+      STORAGE_DRIVER: minio
     command: ["npm", "run", "start:dev"]
     depends_on:
       postgres:
         condition: service_healthy
+      # The dependency the MINIO-0 comment below said would be added at cutover.
+      # Now that STORAGE_DRIVER is minio, MinioStorageDriver.onModuleInit aborts
+      # the whole boot if the endpoint is unreachable (MINIO_UNREACHABLE) or the
+      # bucket is absent (MINIO_BUCKET_MISSING), so waiting for minio to be
+      # healthy AND for minio-init to have created the bucket is what turns a
+      # crash-loop on `up` into a clean ordered start.
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     volumes:
@@ -113,6 +123,13 @@ services:
       - '${MINIO_CONSOLE_PORT:-9001}:9001'
     volumes:
       - 'minio_data:/data'
+    # Must be on the same network as the backend. A service that declares
+    # `networks:` joins ONLY those networks, so once postgres/backend were moved
+    # onto pmo-network, minio staying on the implicit `default` network made the
+    # hostname "minio" unresolvable from the backend — MINIO_UNREACHABLE with
+    # getaddrinfo EAI_AGAIN at boot.
+    networks:
+      - pmo-network
     healthcheck:
       test: ['CMD', 'mc', 'ready', 'local']
       interval: 5s
@@ -130,6 +147,10 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    # Same reason as minio above: this container resolves "minio" by name in the
+    # mc alias command below, so it has to share the network.
+    networks:
+      - pmo-network
     environment:
       MINIO_ACCESS_KEY: '${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}'
       MINIO_SECRET_KEY: '${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}'

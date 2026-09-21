@@ -570,7 +570,7 @@ onMounted(async () => {
             <v-card variant="tonal" class="h-100">
               <v-card-title class="text-subtitle-1 d-flex align-center">
                 <v-icon start size="small" color="primary">mdi-chart-bar-stacked</v-icon>
-                Target vs Actual by Pillar - FY {{ selectedFiscalYear }}
+                Target vs Actual by Program - FY {{ selectedFiscalYear }}
               </v-card-title>
               <v-card-text>
                 <ClientOnly>
@@ -592,12 +592,12 @@ onMounted(async () => {
         </v-row>
 
         <v-row>
-          <!-- Pillar Accomplishment Rates -->
+          <!-- Program Accomplishment Rates -->
           <v-col cols="12" md="4">
             <v-card variant="tonal" class="h-100">
               <v-card-title class="text-subtitle-1 d-flex align-center">
                 <v-icon start size="small" color="primary">mdi-chart-donut</v-icon>
-                Pillar Accomplishment Rates
+                Program Accomplishment Rates
               </v-card-title>
               <v-card-text>
                 <ClientOnly>

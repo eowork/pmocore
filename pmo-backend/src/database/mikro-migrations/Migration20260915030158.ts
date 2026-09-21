@@ -1205,15 +1205,15 @@ export class Migration20260915030158 extends Migration {
     this.addSql(`drop index if exists "users_username_active_unique";`);
     this.addSql(`alter table "users" drop constraint chk_users_rank_level;`);
 
-    this.addSql(
-      `alter table "users" add constraint "users_username_unique" unique ("username");`,
-    );
-    this.addSql(
-      `alter table "users" add constraint "users_email_unique" unique ("email");`,
-    );
-    this.addSql(
-      `alter table "users" add constraint "users_google_id_unique" unique ("google_id");`,
-    );
+    // this.addSql(
+    //   `alter table "users" add constraint "users_username_unique" unique ("username");`,
+    // );
+    // this.addSql(
+    //   `alter table "users" add constraint "users_email_unique" unique ("email");`,
+    // );
+    // this.addSql(
+    //   `alter table "users" add constraint "users_google_id_unique" unique ("google_id");`,
+    // );
 
     this.addSql(`drop index if exists "idx_activity_logs_created";`);
     this.addSql(`drop index if exists "idx_activity_logs_entity";`);
@@ -2986,11 +2986,11 @@ export class Migration20260915030158 extends Migration {
       `CREATE INDEX idx_user_roles_is_superadmin ON public.user_roles USING btree (is_superadmin) WHERE (is_superadmin = true);`,
     );
 
-    this.addSql(`alter table "users" drop constraint if exists "users_username_unique";`);
-    this.addSql(`alter table "users" drop constraint if exists "users_email_unique";`);
-    this.addSql(
-      `alter table "users" drop constraint if exists "users_google_id_unique";`,
-    );
+    // this.addSql(`alter table "users" drop constraint if exists "users_username_unique";`);
+    // this.addSql(`alter table "users" drop constraint if exists "users_email_unique";`);
+    // this.addSql(
+    //   `alter table "users" drop constraint if exists "users_google_id_unique";`,
+    // );
 
     this.addSql(
       `alter table "users" add constraint "users_created_by_fkey" foreign key ("created_by") references "users" ("id") on update no action on delete no action;`,
