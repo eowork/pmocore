@@ -49,6 +49,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
       MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
       STORAGE_DRIVER: minio
+      OAUTH_ALLOWED_DOMAIN: ${OAUTH_ALLOWED_DOMAIN:-carsu.edu.ph,csucc.edu.ph}
     depends_on:
       postgres:
         condition: service_healthy

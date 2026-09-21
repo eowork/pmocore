@@ -5,6 +5,7 @@ import { Strategy, Profile, VerifyCallback } from 'passport-google-oauth20';
 import { EntityManager } from '@mikro-orm/core';
 import { User, UserPermissionOverride } from '../../database/entities';
 import { VALID_MODULE_KEYS } from '../../users/dto/permission-override.dto';
+import { isAllowedDomain, parseAllowedDomains } from '../allowed-domains.util';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -36,17 +37,21 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       );
     }
 
-    // PHASE BBBC (Track 5): restrict OAuth to the institutional domain.
-    const allowedDomain = this.configService
-      .get<string>('OAUTH_ALLOWED_DOMAIN', 'carsu.edu.ph')
-      .toLowerCase();
-    if (!email.toLowerCase().endsWith('@' + allowedDomain)) {
+    // PHASE BBBC (Track 5): restrict OAuth to the institutional domains.
+    // OAUTH_ALLOWED_DOMAIN is a comma-separated list so an additional campus domain can be
+    // onboarded from configuration; a single value behaves exactly as it did before.
+    // This is the authoritative gate — the `hd` hint GoogleAuthGuard adds to the consent
+    // screen is user-editable and must never be relied on.
+    const allowedDomains = parseAllowedDomains(
+      this.configService.get<string>('OAUTH_ALLOWED_DOMAIN'),
+    );
+    if (!isAllowedDomain(email, allowedDomains)) {
       this.logger.warn(
         `GOOGLE_LOGIN_REJECTED: email=${email}, reason=DOMAIN_NOT_ALLOWED`,
       );
       return done(
         new UnauthorizedException(
-          `Only @${allowedDomain} accounts may sign in.`,
+          `Only ${allowedDomains.map((d) => '@' + d).join(' or ')} accounts may sign in.`,
         ),
         false,
       );
