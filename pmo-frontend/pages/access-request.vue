@@ -7,6 +7,7 @@ import {
   labelForAccessModule,
   type AccessRequest,
 } from '~/utils/accessControl'
+import {SELF_SERVICE_LEVEL_OPTIONS} from "../utils/accessControl";
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -20,7 +21,7 @@ const myRequests = ref<AccessRequest[]>([])
 const submitting = ref(false)
 const form = ref({ requested_module: '', requested_level: 'Contributor', justification: '' })
 
-const levelOptions = ACCESS_LEVEL_OPTIONS
+const levelOptions = SELF_SERVICE_LEVEL_OPTIONS
 const pendingModules = computed(
   () => new Set(myRequests.value.filter(r => r.status === 'PENDING').map(r => r.requested_module)),
 )
