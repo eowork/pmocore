@@ -56,6 +56,43 @@ export default defineNuxtConfig({
         config.plugins?.push(vuetify({ autoImport: true }))
       })
     },
+
+    // Stub "#app-manifest" in the CLIENT bundle.
+    //
+    // nuxt/dist/app/composables/manifest.js dynamically imports "#app-manifest"
+    // inside an `if (import.meta.server)` branch. Vite does not tree-shake in dev,
+    // so vite:import-analysis still tries to resolve the specifier even though the
+    // branch is dead on the client, and fails with
+    // "Failed to resolve import #app-manifest", surfacing as a blocking error
+    // overlay in the browser.
+    //
+    // Nuxt's own vite builder already intends to alias this away — see
+    // EnvironmentsPlugin in @nuxt/vite-builder, which maps "#app-manifest" to
+    // mocked-exports/empty for the client environment. That alias is registered
+    // through applyToEnvironment(), which is not reached on the legacy
+    // (non-viteEnvironmentApi) build path this project uses, so the specifier
+    // arrives at import-analysis unresolved. Reproduced on Nuxt 3.21.10 with Vite
+    // 7.3.6, with .nuxt intact, so it is not a stale-cache or cleanup race.
+    //
+    // Only the client config is patched; the server build must keep
+    // "#app-manifest" external so Nitro can supply the real manifest.
+    (_options, nuxt) => {
+      nuxt.hooks.hook('vite:extendConfig', (config, { isClient }) => {
+        if (!isClient) return
+        config.plugins?.push({
+          name: 'pmo:app-manifest-client-stub',
+          enforce: 'pre',
+          resolveId(source: string) {
+            return source === '#app-manifest' ? '\0pmo-app-manifest-stub' : null
+          },
+          load(id: string) {
+            // Never executed: the importing branch is server-only. It exists purely
+            // so the specifier resolves and import-analysis stops erroring.
+            return id === '\0pmo-app-manifest-stub' ? 'export default {}' : null
+          },
+        })
+      })
+    },
   ],
 
   vite: {
