@@ -33,6 +33,13 @@ export interface UploadTask {
   id: string
   fileName: string
   fileSize: number
+  /**
+   * Which sub-resource this upload went to, and — for a document — the type it was filed
+   * under. The attachment hub matches these against a repository card's type codes so the
+   * progress bar appears inside the card the user uploaded into.
+   */
+  resource: string
+  typeCode: string | null
   /** 0-100, blending transfer progress with the server phases. */
   percent: number
   phase: UploadPhase
@@ -128,6 +135,8 @@ export function useDocumentUpload(projectId: MaybeRefOrGetter<string>) {
       id: uploadId,
       fileName: file.name,
       fileSize: file.size,
+      resource,
+      typeCode: fields.documentType ?? null,
       percent: 0,
       phase: 'transferring',
       label: PHASE_LABEL.transferring,
