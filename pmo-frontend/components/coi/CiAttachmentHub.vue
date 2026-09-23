@@ -582,6 +582,22 @@ async function deleteGalleryItem(id: string) {
 const linkUrl = ref('')
 const linkTitle = ref('')
 const linkDescription = ref('')
+/**
+ * Document type carried by an external link.
+ *
+ * Links used to be posted with the hardcoded type 'link', which put them outside every
+ * type-based view: a Google Drive MOV for the Program of Works could never show up under
+ * Program of Works, only in the flat attachment list. Typing a link the same way an upload
+ * is typed makes it a first-class document of that type.
+ *
+ * LINK_FALLBACK_TYPE keeps the old behaviour for a link the user does not classify.
+ */
+const LINK_FALLBACK_TYPE = 'link'
+const linkDocType = ref<string>(LINK_FALLBACK_TYPE)
+const linkDocTypeItems = computed(() => [
+  { title: 'Unclassified link', value: LINK_FALLBACK_TYPE },
+  ...allDocTypes.value.map((t) => ({ title: `[${t.groupLabel}] ${t.typeLabel}`, value: t.typeCode })),
+])
 const URL_RE = /^https?:\/\/.+/i
 // MMM-C: immutable removal of a staged external link
 function removeStagedLink(i: number) {
@@ -592,19 +608,19 @@ function removeStagedLink(i: number) {
 async function submitLink() {
   if (!linkUrl.value || !URL_RE.test(linkUrl.value)) { toast.error('Must be a valid URL starting with https://'); return }
   if (isStaging.value) {
-    emitStaged({ links: [...(props.modelValue?.links ?? []), { url: linkUrl.value, title: linkTitle.value, description: linkDescription.value }] })
-    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''
+    emitStaged({ links: [...(props.modelValue?.links ?? []), { url: linkUrl.value, title: linkTitle.value, description: linkDescription.value, documentType: linkDocType.value }] })
+    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''; linkDocType.value = LINK_FALLBACK_TYPE
     return
   }
   try {
     await api.post(`/api/construction-projects/${props.projectId}/documents`, {
-      documentType: 'link',
+      documentType: linkDocType.value || LINK_FALLBACK_TYPE,
       externalLink: linkUrl.value,
       title: linkTitle.value || undefined,
       description: linkDescription.value || undefined,
     })
     toast.success('External link added')
-    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''
+    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''; linkDocType.value = LINK_FALLBACK_TYPE
     await fetchDocuments()
   } catch (err: unknown) {
     toast.error((err as { message?: string })?.message || 'Failed to add link')
@@ -1083,8 +1099,9 @@ defineExpose({ fetchDocuments, fetchGallery })
           </v-list>
         </template>
         <v-row v-if="canUpload" dense>
-          <v-col cols="12" sm="7"><v-text-field v-model="linkUrl" label="External URL" placeholder="https://..." prepend-inner-icon="mdi-link" variant="outlined" density="comfortable" hide-details /></v-col>
-          <v-col cols="12" sm="3"><v-text-field v-model="linkTitle" label="Title" variant="outlined" density="comfortable" hide-details /></v-col>
+          <v-col cols="12" sm="5"><v-text-field v-model="linkUrl" label="External URL" placeholder="https://..." prepend-inner-icon="mdi-link" variant="outlined" density="comfortable" hide-details /></v-col>
+          <v-col cols="12" sm="3"><v-select v-model="linkDocType" :items="linkDocTypeItems" label="Document Type" variant="outlined" density="comfortable" hide-details /></v-col>
+          <v-col cols="12" sm="2"><v-text-field v-model="linkTitle" label="Title" variant="outlined" density="comfortable" hide-details /></v-col>
           <v-col cols="12" sm="2"><v-btn color="info" block prepend-icon="mdi-link-plus" :disabled="!linkUrl" @click="submitLink">{{ isStaging ? 'Stage' : 'Add' }}</v-btn></v-col>
         </v-row>
       </v-window-item>

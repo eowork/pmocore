@@ -12,7 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { EntityRepository, EntityManager } from '@mikro-orm/core';
+import { EntityRepository, EntityManager, wrap } from '@mikro-orm/core';
 import type { FilterQuery } from '@mikro-orm/core';
 import { createPaginatedResponse, PaginatedResponse } from '../common/dto';
 import {
@@ -2436,14 +2436,23 @@ export class ConstructionProjectsService {
     return doc;
   }
 
+  /**
+   * Every document attached to the project: uploaded files and external links alike,
+   * newest first. Soft-deleted rows are excluded by the entity's default notDeleted filter.
+   *
+   * Returns plain objects rather than entities. uploadedByName is joined in below, and an
+   * entity only serialises its mapped @Property fields, so assigning the name onto the
+   * entity silently dropped it before it ever reached the client: the query ran on every
+   * request and the UI column was always blank.
+   */
   async listProjectDocuments(
     projectId: string,
-  ): Promise<Array<Document & { uploadedByName?: string }>> {
+  ): Promise<Array<Record<string, unknown> & { uploadedByName?: string }>> {
     const docs = await this.documentRepo.find(
       { documentableType: 'CONSTRUCTION_PROJECT', documentableId: projectId },
       { orderBy: { createdAt: 'desc' } },
     );
-    if (!docs.length) return docs;
+    if (!docs.length) return [];
     const uploaderIds = [
       ...new Set(docs.map((d) => d.uploadedBy).filter(Boolean)),
     ];
@@ -2452,7 +2461,10 @@ export class ConstructionProjectsService {
     // `ANY($1, $2, ...)` (invalid SQL) → HTTP 500 whenever a project had documents.
     // Use the codebase-standard IN(placeholders) + flat params instead.
     if (!uploaderIds.length) {
-      return docs.map((d) => Object.assign(d, { uploadedByName: undefined }));
+      return docs.map((d) => ({
+        ...wrap(d).toJSON(),
+        uploadedByName: undefined,
+      }));
     }
     const placeholders = uploaderIds.map(() => '?').join(', ');
     const userRows = (await this.em
@@ -2462,9 +2474,10 @@ export class ConstructionProjectsService {
         uploaderIds,
       )) as Array<{ id: string; display_name: string }>;
     const nameMap = new Map(userRows.map((r) => [r.id, r.display_name]));
-    return docs.map((d) =>
-      Object.assign(d, { uploadedByName: nameMap.get(d.uploadedBy) }),
-    );
+    return docs.map((d) => ({
+      ...wrap(d).toJSON(),
+      uploadedByName: nameMap.get(d.uploadedBy),
+    }));
   }
 
   // UUU-C: Dynamic template discovery. Scans the static templates directory at
