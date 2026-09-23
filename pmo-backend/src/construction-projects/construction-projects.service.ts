@@ -3331,8 +3331,14 @@ export class ConstructionProjectsService {
       entity.reportDate = new Date(dto.report_date);
     if (dto.report_number !== undefined)
       entity.reportNumber = dto.report_number;
+    // An explicit null clears the field. percentage_completion is NOT NULL in the
+    // database, so it resets to zero instead of being written as the string "null",
+    // which Postgres rejects with: invalid input syntax for type numeric: "null".
     if (dto.percentage_completion !== undefined)
-      entity.percentageCompletion = String(dto.percentage_completion);
+      entity.percentageCompletion =
+        dto.percentage_completion != null
+          ? String(dto.percentage_completion)
+          : '0.00';
     if (dto.planned_accomplishment !== undefined)
       entity.plannedAccomplishment =
         dto.planned_accomplishment != null
@@ -3365,20 +3371,24 @@ export class ConstructionProjectsService {
     if (dto.mov_document_id !== undefined)
       entity.movDocumentId = dto.mov_document_id;
     if (dto.mov_link !== undefined) entity.movLink = dto.mov_link;
-    // OS-D: update list fields if provided
-    if (dto.narrative_list !== undefined) {
-      const now = new Date().toISOString();
-      const stampList = (items: any[] | undefined) =>
-        (items || []).map((e) => ({
-          text: e.text || '',
-          author: e.author || user?.email || 'System',
-          createdAt: e.created_at || e.createdAt || now,
-        }));
+    // OS-D: update list fields if provided. Each list is applied on its own so a PATCH
+    // carrying only one of them does not silently wipe the other three, which the old
+    // single 'if (narrative_list)' gate did.
+    const now = new Date().toISOString();
+    const stampList = (items: any[] | null | undefined) =>
+      (items || []).map((e) => ({
+        text: e.text || '',
+        author: e.author || user?.email || 'System',
+        createdAt: e.created_at || e.createdAt || now,
+      }));
+    if (dto.narrative_list !== undefined)
       entity.narrativeList = stampList(dto.narrative_list);
+    if (dto.remarks_list !== undefined)
       entity.remarksList = stampList(dto.remarks_list);
+    if (dto.issues_encountered_list !== undefined)
       entity.issuesEncounteredList = stampList(dto.issues_encountered_list);
+    if (dto.mitigation_actions_list !== undefined)
       entity.mitigationActionsList = stampList(dto.mitigation_actions_list);
-    }
     entity.updatedBy = user?.sub;
     await this.em.flush();
     await this.mirrorLatestReportToProject(projectId);
