@@ -22,7 +22,8 @@
     "migration:up": "mikro-orm migration:up",
     "migration:down": "mikro-orm migration:down",
     "migration:list": "mikro-orm migration:list",
-    "migration:check": "mikro-orm migration:check"
+    "migration:check": "mikro-orm migration:check",
+    "reclassify:links": "node scripts/reclassify-link-documents.js"
   },
   "mikro-orm": {
     "useTsNode": false,
