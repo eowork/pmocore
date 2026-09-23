@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Logger,
   StreamableFile,
+  HttpException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import * as fs from 'fs';
@@ -37,6 +38,7 @@ import {
   BatchCreateTimelineEntryDto,
 } from './dto';
 import { UploadsService } from '../uploads/uploads.service';
+import { UploadProgressService } from '../uploads/upload-progress.service';
 import { PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
 import { JwtPayload } from '../common/interfaces';
 import { PermissionResolverService } from '../common/services';
@@ -113,6 +115,7 @@ export class ConstructionProjectsService {
     private readonly docFolderRepo: EntityRepository<ConstructionDocumentFolder>,
     private readonly em: EntityManager,
     private readonly uploadsService: UploadsService,
+    private readonly uploadProgress: UploadProgressService,
     private readonly permissionResolver: PermissionResolverService,
     private readonly activityLog: ActivityLogService,
   ) {}
@@ -1812,11 +1815,52 @@ export class ConstructionProjectsService {
   }
 
   // LC-C: Upload a file as MOV evidence for an existing MOV entry
+  /**
+   * Attach a file to an existing MOV entry.
+   *
+   * Reports the same upload phases as the document and gallery paths, so every file a user
+   * can send from the COI screens is tracked the same way.
+   */
   async uploadMovFile(
     projectId: string,
     movEntryId: string,
     file: Express.Multer.File,
     userId: string,
+    uploadId?: string,
+  ): Promise<ConstructionMovEntry> {
+    if (uploadId) this.uploadProgress.open(uploadId, userId);
+    this.uploadProgress.emit(uploadId, userId, 'received', {
+      fileName: file?.originalname,
+    });
+    try {
+      const entry = await this.persistMovFile(
+        projectId,
+        movEntryId,
+        file,
+        userId,
+        uploadId,
+      );
+      this.uploadProgress.finish(uploadId, userId, {
+        fileName: file?.originalname,
+      });
+      return entry;
+    } catch (err) {
+      this.uploadProgress.fail(
+        uploadId,
+        userId,
+        err instanceof HttpException ? err.message : 'Upload failed',
+        { fileName: file?.originalname },
+      );
+      throw err;
+    }
+  }
+
+  private async persistMovFile(
+    projectId: string,
+    movEntryId: string,
+    file: Express.Multer.File,
+    userId: string,
+    uploadId?: string,
   ): Promise<ConstructionMovEntry> {
     await this.findOne(projectId);
     const entry = await this.movEntryRepo.findOne({
@@ -1827,16 +1871,29 @@ export class ConstructionProjectsService {
       throw new NotFoundException(`MOV entry ${movEntryId} not found`);
     if (!file) throw new BadRequestException('File is required');
 
+    this.uploadProgress.emit(uploadId, userId, 'validating', {
+      fileName: file.originalname,
+    });
+    this.uploadsService.validateFile(file);
+    this.uploadProgress.emit(uploadId, userId, 'storing', {
+      fileName: file.originalname,
+    });
     const uploadResult = await this.uploadsService.uploadFile(
       file,
       userId,
       'construction_mov',
       projectId,
     );
+    this.uploadProgress.emit(uploadId, userId, 'stored', {
+      fileName: uploadResult.originalName,
+    });
     entry.filePath = uploadResult.filePath;
     entry.fileName = file.originalname;
     entry.fileSize = file.size;
     entry.mimeType = file.mimetype;
+    this.uploadProgress.emit(uploadId, userId, 'persisting', {
+      fileName: file.originalname,
+    });
     await this.em.flush();
     this.logger.log(
       `MOV_FILE_UPLOADED: id=${movEntryId}, project=${projectId}, by=${userId}`,
@@ -2187,12 +2244,56 @@ export class ConstructionProjectsService {
     return entity;
   }
 
+  /**
+   * Upload a gallery image.
+   *
+   * Reports the same phases as a document upload over the caller's SSE channel, for the
+   * same reason: once the browser has sent the last byte it cannot see the storage write
+   * or the database commit, and a 10 MB photo spends real time in both.
+   */
   async createGalleryItem(
     projectId: string,
     file: Express.Multer.File,
     dto: CreateGalleryDto,
     userId: string,
     user?: JwtPayload,
+    uploadId?: string,
+  ): Promise<ConstructionGallery> {
+    if (uploadId) this.uploadProgress.open(uploadId, userId);
+    this.uploadProgress.emit(uploadId, userId, 'received', {
+      fileName: file?.originalname,
+    });
+    try {
+      const entity = await this.persistGalleryItem(
+        projectId,
+        file,
+        dto,
+        userId,
+        user,
+        uploadId,
+      );
+      this.uploadProgress.finish(uploadId, userId, {
+        fileName: file?.originalname,
+      });
+      return entity;
+    } catch (err) {
+      this.uploadProgress.fail(
+        uploadId,
+        userId,
+        err instanceof HttpException ? err.message : 'Upload failed',
+        { fileName: file?.originalname },
+      );
+      throw err;
+    }
+  }
+
+  private async persistGalleryItem(
+    projectId: string,
+    file: Express.Multer.File,
+    dto: CreateGalleryDto,
+    userId: string,
+    user?: JwtPayload,
+    uploadId?: string,
   ): Promise<ConstructionGallery> {
     await this.findOne(projectId);
 
@@ -2211,12 +2312,24 @@ export class ConstructionProjectsService {
       }
     }
 
+    this.uploadProgress.emit(uploadId, userId, 'validating', {
+      fileName: file.originalname,
+    });
+    // Reject an oversized or wrong-typed image before the storage write, so the failure is
+    // reported against the phase that actually rejected it.
+    this.uploadsService.validateFile(file);
+    this.uploadProgress.emit(uploadId, userId, 'storing', {
+      fileName: file.originalname,
+    });
     const uploadResult = await this.uploadsService.uploadFile(
       file,
       userId,
       'construction_gallery',
       projectId,
     );
+    this.uploadProgress.emit(uploadId, userId, 'stored', {
+      fileName: uploadResult.originalName,
+    });
 
     const entity = this.galleryRepo.create({
       projectId,
@@ -2228,6 +2341,9 @@ export class ConstructionProjectsService {
       imageTakenDate: dto.image_taken_date
         ? new Date(dto.image_taken_date)
         : undefined,
+    });
+    this.uploadProgress.emit(uploadId, userId, 'persisting', {
+      fileName: file.originalname,
     });
     await this.em.persist(entity).flush();
 
@@ -2289,12 +2405,62 @@ export class ConstructionProjectsService {
   // Phase JN-D: Document / Attachment / External Link uploads
   // ============================================================
 
+  /**
+   * Upload a file, or register an external link, against a project.
+   *
+   * When an uploadId is supplied the caller is watching an SSE channel, and each stage
+   * below is published to it. Those stages describe what happens AFTER the request body
+   * has arrived: Multer has already buffered the whole file before this method runs, so
+   * the transfer itself is not observable here. The browser measures that part with
+   * XMLHttpRequest upload progress.
+   */
   async addDocumentToProject(
     projectId: string,
     file: Express.Multer.File | undefined,
     dto: UploadDocumentDto,
     userId: string,
     user?: JwtPayload,
+    uploadId?: string,
+  ): Promise<Document> {
+    if (uploadId) this.uploadProgress.open(uploadId, userId);
+    this.uploadProgress.emit(uploadId, userId, 'received', {
+      fileName: file?.originalname ?? dto.title,
+    });
+    try {
+      const doc = await this.persistProjectDocument(
+        projectId,
+        file,
+        dto,
+        userId,
+        user,
+        uploadId,
+      );
+      this.uploadProgress.finish(uploadId, userId, {
+        fileName: doc.fileName,
+        document: wrap(doc).toJSON(),
+      });
+      return doc;
+    } catch (err) {
+      // Only an HttpException message is safe to republish: it is the same text the HTTP
+      // response already carries. Anything else (a driver error, for instance) would make
+      // the stream a second, less guarded disclosure path.
+      this.uploadProgress.fail(
+        uploadId,
+        userId,
+        err instanceof HttpException ? err.message : 'Upload failed',
+        { fileName: file?.originalname },
+      );
+      throw err;
+    }
+  }
+
+  private async persistProjectDocument(
+    projectId: string,
+    file: Express.Multer.File | undefined,
+    dto: UploadDocumentDto,
+    userId: string,
+    user?: JwtPayload,
+    uploadId?: string,
   ): Promise<Document> {
     await this.findOne(projectId);
     if (user) {
@@ -2335,7 +2501,23 @@ export class ConstructionProjectsService {
     let mimeType: string;
 
     if (file) {
+      // uploadFile() validates the file and then writes it to storage. On a large document
+      // the MinIO PUT is the slow step, and it is invisible to the browser, which is the
+      // whole reason these two events exist.
+      this.uploadProgress.emit(uploadId, userId, 'validating', {
+        fileName: file.originalname,
+      });
+      // Run the size/type/extension checks here so a rejected file fails during the
+      // 'validating' phase rather than appearing to fail mid-write. uploadFile() repeats
+      // them, which keeps it safe to call directly from anywhere else.
+      this.uploadsService.validateFile(file);
+      this.uploadProgress.emit(uploadId, userId, 'storing', {
+        fileName: file.originalname,
+      });
       const upload = await this.uploadsService.uploadFile(file, userId);
+      this.uploadProgress.emit(uploadId, userId, 'stored', {
+        fileName: upload.originalName,
+      });
       filePath = upload.filePath;
       fileName = upload.originalName;
       fileSize = upload.fileSize;
@@ -2379,6 +2561,9 @@ export class ConstructionProjectsService {
       version,
       uploadedBy: userId,
       createdBy: userId,
+    });
+    this.uploadProgress.emit(uploadId, userId, 'persisting', {
+      fileName,
     });
     await this.em.persistAndFlush(doc);
 
