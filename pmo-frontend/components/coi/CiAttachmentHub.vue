@@ -308,6 +308,18 @@ async function fetchChecklistRemarks() {
   }
 }
 
+// ── Upload progress ─────────────────────────────────────────
+// Transfer progress comes from XHR, the post-transfer phases from the backend's SSE
+// channel. Before this, a large document gave no feedback at all: the dialog simply sat
+// there while the browser sent bytes and the server wrote to MinIO.
+const {
+  tasks: uploadTasks,
+  isUploading: uploadsRunning,
+  overallPercent: uploadOverallPercent,
+  uploadDocument: trackedUploadDocument,
+  uploadGalleryItem: trackedUploadGalleryItem,
+} = useDocumentUpload(() => props.projectId)
+
 // ── Upload / delete (mode-aware) ────────────────────────────
 async function persistDoc(payload: { file: File; documentType: string; title?: string; description?: string }) {
   if (payload.file.size > 20 * 1024 * 1024) { toast.error('File exceeds 20 MB'); return }
@@ -325,12 +337,11 @@ async function persistDoc(payload: { file: File; documentType: string; title?: s
     return
   }
   try {
-    const fd = new FormData()
-    fd.append('file', payload.file)
-    fd.append('documentType', payload.documentType)
-    if (payload.title) fd.append('title', payload.title)
-    if (payload.description) fd.append('description', payload.description)
-    await api.upload(`/api/construction-projects/${props.projectId}/documents`, fd)
+    await trackedUploadDocument(payload.file, {
+      documentType: payload.documentType,
+      title: payload.title,
+      description: payload.description,
+    })
     toast.success('Document uploaded')
     await fetchDocuments()
     // SSS-C / OOO-C: keep the compliance checklist in sync (backend auto-links on upload)
@@ -544,12 +555,11 @@ async function persistGallery(file: File, caption: string, category: string, tak
     return
   }
   try {
-    const fd = new FormData()
-    fd.append('file', file)
-    if (caption) fd.append('caption', caption)
-    fd.append('category', category)
-    if (takenDate) fd.append('image_taken_date', takenDate)
-    await api.upload(`/api/construction-projects/${props.projectId}/gallery`, fd)
+    await trackedUploadGalleryItem(file, {
+      caption,
+      category,
+      image_taken_date: takenDate || undefined,
+    })
     toast.success('Image uploaded')
     await fetchGallery()
   } catch (err: unknown) {
@@ -753,6 +763,14 @@ defineExpose({ fetchDocuments, fetchGallery })
 
 <template>
   <div>
+    <!-- Live upload progress: the transfer first, then what the server is doing with the
+         file, so a slow upload never looks like a frozen dialog. -->
+    <CiUploadProgressPanel
+      :tasks="uploadTasks"
+      :running="uploadsRunning"
+      :overall-percent="uploadOverallPercent"
+    />
+
     <!-- Global filter bar (DDD-B: responsive grid — no label collision / clipping) -->
     <v-row dense class="mb-3 align-center">
       <v-col cols="12" sm="6" md="5">

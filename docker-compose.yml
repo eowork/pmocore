@@ -49,6 +49,12 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
       MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
       STORAGE_DRIVER: minio
+      # Global upload backstop (bytes), enforced by UploadsService for every upload.
+      # Must stay >= the largest per-route multer limit (20 MB on the COI document
+      # routes); per-route limits keep gallery and MOV stricter. Set here rather than
+      # left to env_file for the same reason as the MINIO_* block: `environment:` wins,
+      # so a stale copy in pmo-backend/.env cannot silently shrink it.
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-20971520}
       OAUTH_ALLOWED_DOMAIN: ${OAUTH_ALLOWED_DOMAIN:-carsu.edu.ph,csucc.edu.ph}
     depends_on:
       postgres:

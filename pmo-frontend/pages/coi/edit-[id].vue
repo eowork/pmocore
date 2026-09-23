@@ -883,41 +883,16 @@ const progAsOfDateMenu       = ref(false)
 const progDateCompletedMenu  = ref(false)
 // OE: Remarks helpers removed — handled by CiRemarksLog component
 
-// MH: Revision Order MOV upload state (immediate POST since project exists)
-const revisionMovLink         = ref('')
-const revisionMovFile         = ref<File | null>(null)
-const uploadingRevisionMov    = ref(false)
-async function uploadRevisionMov() {
-  if (!revisionMovLink.value && !revisionMovFile.value) return
-  uploadingRevisionMov.value = true
-  try {
-    if (revisionMovFile.value) {
-      const fd = new FormData()
-      fd.append('file', revisionMovFile.value)
-      fd.append('documentType', 'revision_order_mov')
-      fd.append('description', 'Variation Order MOV')
-      await api.upload(`/api/construction-projects/${projectId}/documents`, fd)
-    }
-    if (revisionMovLink.value.trim()) {
-      await api.post(`/api/construction-projects/${projectId}/documents`, {
-        documentType: 'revision_order_mov',
-        externalLink: revisionMovLink.value.trim(),
-        title: 'Variation Order MOV',
-        description: 'Documentary means of verification for variation orders',
-      })
-    }
-    toast.success('Variation Order MOV uploaded')
-    revisionMovLink.value = ''
-    revisionMovFile.value = null
-    // Refresh attached docs cache (function declared further below — hoisted)
-    try { await fetchDocs() } catch { /* non-blocking */ }
-  } catch (err: unknown) {
-    const apiError = err as { message?: string }
-    toast.error(apiError.message || 'Failed to upload MOV')
-  } finally {
-    uploadingRevisionMov.value = false
-  }
-}
+// Byte-level transfer progress plus the server's post-transfer phases for MOV evidence
+// files attached in the milestone and diary dialogs, rendered by CiUploadProgressPanel
+// inside each dialog. A MOV is often a photo or a scanned form, long enough to need
+// feedback rather than a button that appears to do nothing.
+const {
+  tasks: movUploadTasks,
+  isUploading: movUploadRunning,
+  overallPercent: movUploadPercent,
+  uploadMovFile: trackedUploadMovFile,
+} = useDocumentUpload(projectId)
 
 const deleteMilestoneDialog = ref(false)
 const deleteMilestoneTarget = ref<EditMilestoneItem | null>(null)
@@ -1070,13 +1045,6 @@ function getMilestoneStatusColor(status: string): string {
   return map[status] || 'grey'
 }
 
-const docFile = ref<File | null>(null)
-const docType = ref('attachment')
-// KO-F: Additional upload form fields (title + category alongside description)
-const docTitle = ref('')
-const docCategory = ref('')
-const docDescription = ref('')
-const docUploading = ref(false)
 
 // KO-F: KB-E document type taxonomy
 const documentTypes = ref<DocumentTypeOption[]>([])
@@ -1115,11 +1083,6 @@ const typeCodeToLabel = computed(() => {
   return map
 })
 
-// KQ-C: Auto-derive category (groupCode) when documentType selection changes
-watch(docType, (newType) => {
-  const match = documentTypes.value.find(t => t.typeCode === newType)
-  docCategory.value = match?.groupCode ?? ''
-})
 
 // KV-E2: Key docs vs Other docs split
 const keyDocTypeSet = new Set(KEY_DOC_TYPECODES as readonly string[])
@@ -1156,69 +1119,6 @@ const galleryFullscreen = ref(false)
 const checklistFullscreen = ref(false)
 const otherDocsFullscreen = ref(false)
 
-// KW-A2: Separate upload refs for Key Documents (isolated from Other Attachments)
-const keyDocFile      = ref<File | null>(null)
-const keyDocType      = ref('')
-const keyDocTitle     = ref('')
-const keyDocUploading = ref(false)
-
-// KW-A2: Key Documents upload function (isolated refs, no collision with Other Attachments)
-async function uploadKeyDoc() {
-  if (!keyDocFile.value) return
-  if (keyDocFile.value.size > 20 * 1024 * 1024) { toast.error('File exceeds 20 MB'); return }
-  keyDocUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', keyDocFile.value)
-    fd.append('documentType', keyDocType.value || 'other')
-    if (keyDocTitle.value) fd.append('title', keyDocTitle.value)
-    await api.upload(`/api/construction-projects/${projectId}/documents`, fd)
-    toast.success('Key document uploaded')
-    keyDocFile.value = null
-    keyDocType.value = ''
-    keyDocTitle.value = ''
-    await fetchDocs()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Upload failed')
-  } finally {
-    keyDocUploading.value = false
-  }
-}
-
-// ZP: Drag-and-drop upload handler for Key Documents and Other Attachments
-async function handleKeyDocDrop(event: DragEvent) {
-  if (!canUploadDocuments.value) return
-  const files = Array.from(event.dataTransfer?.files ?? [])
-  if (!files.length) return
-  const allowed = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip']
-  const valid = files.filter(f => allowed.some(ext => f.name.toLowerCase().endsWith(ext)))
-  if (!valid.length) { toast.error('No valid file types. Accepted: PDF, DOCX, XLSX, ZIP'); return }
-  for (const file of valid) {
-    if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} exceeds 20 MB`); continue }
-    const fd = new FormData()
-    fd.append('file', file)
-    fd.append('documentType', 'other')
-    try { await api.upload(`/api/construction-projects/${projectId}/documents`, fd) }
-    catch { toast.error(`Upload failed: ${file.name}`) }
-  }
-  await fetchDocs()
-  toast.success(`${valid.length} file(s) uploaded`)
-}
-
-async function handleOtherDocDrop(event: DragEvent) {
-  if (!canUploadDocuments.value) return
-  const files = Array.from(event.dataTransfer?.files ?? [])
-  if (!files.length) return
-  for (const file of files) {
-    if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} exceeds 20 MB`); continue }
-    const fd = new FormData()
-    fd.append('file', file)
-    try { await api.upload(`/api/construction-projects/${projectId}/documents`, fd) }
-    catch { toast.error(`Upload failed: ${file.name}`) }
-  }
-  await fetchDocs()
-  toast.success(`${files.length} file(s) uploaded`)
-}
 
 // KW-G: MOV evidence aggregated view
 const movEntries = ref<any[]>([])
@@ -1240,18 +1140,6 @@ async function handleRemarksUpdate(groupCode: string, remarks: string) {
   }
 }
 
-const profileImageFile = ref<File | null>(null)
-const profileImageCaption = ref('')
-// LD-B: optional photo capture date for profile uploads
-const profileImageTakenDate = ref('')
-const profileUploading = ref(false)
-
-const galleryImageFile = ref<File | null>(null)
-const galleryImageCaption = ref('')
-const imageCategory = ref('IN_PROGRESS')
-// LB-C: user-supplied photo capture date
-const galleryImageTakenDate = ref('')
-const imageUploading = ref(false)
 
 const linkUrl = ref('')
 const linkTitle = ref('')
@@ -1447,12 +1335,7 @@ async function saveMilestone() {
           const movId = (movRes as any)?.id ?? (movRes as any)?.data?.id
           if (mov.file && movId) {
             try {
-              const fd = new FormData()
-              fd.append('file', mov.file)
-              await api.post(
-                `/api/construction-projects/${projectId}/mov-entries/${movId}/upload-file`,
-                fd,
-              )
+              await trackedUploadMovFile(movId, mov.file)
             } catch {
               toast.warning(`MOV entry "${mov.title}" created but file upload failed — attach manually`)
             }
@@ -1628,12 +1511,7 @@ async function saveDiary() {
           const movId = (movRes as any)?.id ?? (movRes as any)?.data?.id
           if (mov.file && movId) {
             try {
-              const fd = new FormData()
-              fd.append('file', mov.file)
-              await api.post(
-                `/api/construction-projects/${projectId}/mov-entries/${movId}/upload-file`,
-                fd,
-              )
+              await trackedUploadMovFile(movId, mov.file)
             } catch {
               toast.warning(`MOV entry "${mov.title}" created but file upload failed — attach manually`)
             }
@@ -1698,91 +1576,6 @@ function getEntryTypeColor(entryType: string): string {
     QUARTERLY: 'warning',
   }
   return map[entryType] || 'grey'
-}
-
-async function uploadEditDoc() {
-  if (!docFile.value) return
-  if (docFile.value.size > 20 * 1024 * 1024) {
-    toast.error('File exceeds 20 MB. Use an external link instead.')
-    return
-  }
-  docUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', docFile.value)
-    fd.append('documentType', docType.value)
-    // KO-F: forward optional title + category to backend
-    if (docTitle.value) fd.append('title', docTitle.value)
-    if (docCategory.value) fd.append('category', docCategory.value)
-    if (docDescription.value) fd.append('description', docDescription.value)
-    await api.upload(`/api/construction-projects/${projectId}/documents`, fd)
-    toast.success('Document uploaded')
-    docFile.value = null
-    docType.value = 'attachment'
-    docTitle.value = ''
-    docCategory.value = ''
-    docDescription.value = ''
-    await fetchDocs()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to upload document')
-  } finally {
-    docUploading.value = false
-  }
-}
-
-async function uploadProfileImage() {
-  if (!profileImageFile.value) return
-  if (profileImageFile.value.size > 10 * 1024 * 1024) {
-    toast.error('Image exceeds 10 MB.')
-    return
-  }
-  profileUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', profileImageFile.value)
-    if (profileImageCaption.value) fd.append('caption', profileImageCaption.value)
-    fd.append('category', 'PROFILE')
-    // LD-B: include optional photo capture date
-    if (profileImageTakenDate.value) fd.append('image_taken_date', profileImageTakenDate.value)
-    await api.upload(`/api/construction-projects/${projectId}/gallery`, fd)
-    toast.success('Profile image uploaded')
-    profileImageFile.value = null
-    profileImageCaption.value = ''
-    profileImageTakenDate.value = ''
-    await fetchGallery()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to upload image')
-  } finally {
-    profileUploading.value = false
-  }
-}
-
-async function uploadGalleryImage() {
-  if (!galleryImageFile.value) return
-  if (galleryImageFile.value.size > 10 * 1024 * 1024) {
-    toast.error('Image exceeds 10 MB.')
-    return
-  }
-  imageUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', galleryImageFile.value)
-    if (galleryImageCaption.value) fd.append('caption', galleryImageCaption.value)
-    fd.append('category', imageCategory.value)
-    // LB-C: send user-supplied photo capture date when provided
-    if (galleryImageTakenDate.value) fd.append('image_taken_date', galleryImageTakenDate.value)
-    await api.upload(`/api/construction-projects/${projectId}/gallery`, fd)
-    toast.success('Image uploaded')
-    galleryImageFile.value = null
-    galleryImageCaption.value = ''
-    imageCategory.value = 'IN_PROGRESS'
-    galleryImageTakenDate.value = ''
-    await fetchGallery()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to upload image')
-  } finally {
-    imageUploading.value = false
-  }
 }
 
 async function submitEditLink() {
@@ -2454,6 +2247,12 @@ onBeforeUnmount(() => {
         </v-card-title>
         <v-divider />
         <v-card-text>
+          <!-- Live progress for MOV files queued in this dialog. -->
+          <CiUploadProgressPanel
+            :tasks="movUploadTasks"
+            :running="movUploadRunning"
+            :overall-percent="movUploadPercent"
+          />
           <v-row dense>
             <v-col cols="12">
               <v-text-field
@@ -2698,6 +2497,12 @@ onBeforeUnmount(() => {
         </v-card-title>
         <v-divider />
         <v-card-text class="pt-4">
+          <!-- Live progress for MOV files queued in this dialog. -->
+          <CiUploadProgressPanel
+            :tasks="movUploadTasks"
+            :running="movUploadRunning"
+            :overall-percent="movUploadPercent"
+          />
           <v-row dense>
             <v-col cols="12" sm="4">
               <v-select
