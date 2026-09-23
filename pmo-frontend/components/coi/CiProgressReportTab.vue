@@ -28,6 +28,50 @@ const toast = useToast ? useToast() : { success: console.log, error: console.err
 // ── View mode ───────────────────────────────────────────────────────────────
 const viewMode = ref<'list' | 'card' | 'table'>('list')
 
+/**
+ * Column limits of construction_progress_reports, mirrored from the backend DTO
+ * (pmo-backend/src/construction-projects/dto/create-progress-report.dto.ts).
+ *
+ * The backend rejects an out-of-range value with a 400, and before that it reached
+ * Postgres and surfaced as a bare 500. Capping the inputs here means the user sees the
+ * problem on the field being typed instead of after pressing Save. The server remains
+ * the authority; these are convenience guards, so keep both sides in step.
+ */
+const LIMITS = {
+  reportNumberMaxLength: 20,   // VARCHAR(20)
+  percentMin: 0,               // work accomplished cannot be negative
+  percentMax: 100,             // nor exceed the whole contract
+  slippageMin: -100,           // planned minus actual, so signed
+  slippageMax: 100,
+  percentElapsedMax: 999.99,   // time elapsed may pass 100 % on an overdue project
+  moneyMax: 9999999999999.99,  // DECIMAL(15,2)
+  daysMax: 2147483647,         // Postgres INTEGER
+}
+
+/** Vuetify rules treat an empty field as valid; every field below is optional. */
+function isBlank(v: unknown): boolean {
+  return v === null || v === undefined || v === ''
+}
+
+function maxLengthRule(max: number) {
+  return (v: unknown) =>
+    isBlank(v) || String(v).length <= max || `Maximum ${max} characters`
+}
+
+function rangeRule(min: number, max: number) {
+  return (v: unknown) => {
+    if (isBlank(v)) return true
+    const n = Number(v)
+    if (Number.isNaN(n)) return 'Must be a number'
+    return (n >= min && n <= max) || `Must be between ${min} and ${max}`
+  }
+}
+
+function integerRule() {
+  return (v: unknown) =>
+    isBlank(v) || Number.isInteger(Number(v)) || 'Must be a whole number'
+}
+
 // ── Dialog state ────────────────────────────────────────────────────────────
 const dialogOpen = ref(false)
 const editing = ref<ProgressReport | null>(null)
@@ -91,9 +135,41 @@ function openEdit(r: ProgressReport) {
   dialogOpen.value = true
 }
 
+/**
+ * Re-checks the limits the field rules display. Vuetify rules render the message but do
+ * not stop a submit on their own outside a v-form, so this guard is what actually keeps
+ * an out-of-range value from being sent. Returns the first problem, or null when clean.
+ */
+function firstLimitError(): string | null {
+  const f = form.value
+  const checks: Array<[string, unknown, (v: unknown) => boolean | string]> = [
+    ['Report Number', f.report_number, maxLengthRule(LIMITS.reportNumberMaxLength)],
+    ['Percentage Completion', f.percentage_completion, rangeRule(LIMITS.percentMin, LIMITS.percentMax)],
+    ['Planned Accomplishment', f.planned_accomplishment, rangeRule(LIMITS.percentMin, LIMITS.percentMax)],
+    ['Slippage', f.slippage, rangeRule(LIMITS.slippageMin, LIMITS.slippageMax)],
+    ['Cost Incurred This Period', f.cost_incurred_this_period, rangeRule(0, LIMITS.moneyMax)],
+    ['Cost Incurred to Date', f.cost_incurred_to_date, rangeRule(0, LIMITS.moneyMax)],
+    ['Calendar Days Elapsed', f.calendar_days_elapsed, rangeRule(0, LIMITS.daysMax)],
+    ['Calendar Days Elapsed', f.calendar_days_elapsed, integerRule()],
+    ['% Time Elapsed', f.percent_time_elapsed, rangeRule(LIMITS.percentMin, LIMITS.percentElapsedMax)],
+  ]
+  for (const [label, value, rule] of checks) {
+    const result = rule(value)
+    if (result !== true) return `${label}: ${result}`
+  }
+  return null
+}
+
 async function save() {
   if (!form.value.report_type || !form.value.report_date) {
     toast.error('Report Type and Report Date are required')
+    return
+  }
+
+  // Same limits as the field rules, enforced before the request leaves the browser.
+  const limitError = firstLimitError()
+  if (limitError) {
+    toast.error(limitError)
     return
   }
   submitting.value = true
@@ -532,6 +608,9 @@ const headers = [
                 v-model="form.report_number"
                 label="Report Number"
                 placeholder="e.g., MPR-2026-04"
+                :maxlength="LIMITS.reportNumberMaxLength"
+                :counter="LIMITS.reportNumberMaxLength"
+                :rules="[maxLengthRule(LIMITS.reportNumberMaxLength)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -551,7 +630,8 @@ const headers = [
               <v-text-field
                 v-model.number="form.percentage_completion"
                 label="Percentage Completion (%)"
-                type="number" min="0" max="100" suffix="%"
+                type="number" :min="LIMITS.percentMin" :max="LIMITS.percentMax" suffix="%"
+                :rules="[rangeRule(LIMITS.percentMin, LIMITS.percentMax)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -559,7 +639,8 @@ const headers = [
               <v-text-field
                 v-model.number="form.planned_accomplishment"
                 label="Planned Accomplishment (%)"
-                type="number" min="0" max="100" suffix="%"
+                type="number" :min="LIMITS.percentMin" :max="LIMITS.percentMax" suffix="%"
+                :rules="[rangeRule(LIMITS.percentMin, LIMITS.percentMax)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -567,8 +648,9 @@ const headers = [
               <v-text-field
                 v-model.number="form.slippage"
                 label="Slippage (%)"
-                type="number" suffix="%"
+                type="number" :min="LIMITS.slippageMin" :max="LIMITS.slippageMax" suffix="%"
                 hint="Negative = behind schedule"
+                :rules="[rangeRule(LIMITS.slippageMin, LIMITS.slippageMax)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -580,7 +662,8 @@ const headers = [
               <v-text-field
                 v-model.number="form.cost_incurred_this_period"
                 label="Cost Incurred This Period (PHP)"
-                type="number" min="0" prefix="₱"
+                type="number" min="0" :max="LIMITS.moneyMax" prefix="₱"
+                :rules="[rangeRule(0, LIMITS.moneyMax)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -588,7 +671,8 @@ const headers = [
               <v-text-field
                 v-model.number="form.cost_incurred_to_date"
                 label="Cost Incurred to Date (PHP)"
-                type="number" min="0" prefix="₱"
+                type="number" min="0" :max="LIMITS.moneyMax" prefix="₱"
+                :rules="[rangeRule(0, LIMITS.moneyMax)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -597,7 +681,8 @@ const headers = [
               <v-text-field
                 v-model.number="form.calendar_days_elapsed"
                 label="Calendar Days Elapsed"
-                type="number" min="0"
+                type="number" min="0" :max="LIMITS.daysMax" step="1"
+                :rules="[rangeRule(0, LIMITS.daysMax), integerRule()]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>
@@ -605,7 +690,8 @@ const headers = [
               <v-text-field
                 v-model.number="form.percent_time_elapsed"
                 label="% Time Elapsed"
-                type="number" min="0" max="100" suffix="%"
+                type="number" :min="LIMITS.percentMin" :max="LIMITS.percentElapsedMax" suffix="%"
+                :rules="[rangeRule(LIMITS.percentMin, LIMITS.percentElapsedMax)]"
                 density="compact" variant="outlined" hide-details="auto"
               />
             </v-col>

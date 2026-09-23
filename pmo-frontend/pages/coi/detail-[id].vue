@@ -336,27 +336,79 @@ interface DocumentItem {
   version?: number
   lifecycleStatus?: string
   uploadedBy?: string
+  // Joined display name of the uploader, sent by GET :id/documents.
+  uploadedByName?: string
 }
 
 const documents = ref<DocumentItem[]>([])
 const loadingDocuments = ref(false)
 
-// KC-D: Document preview type registry â€” used by Overview "Key Documents" panel
-// to surface compliance status for the four most-audited document categories.
-const DOCUMENT_PREVIEW_TYPES = [
-  { key: 'project_profile',        label: 'Project Profile',           match: ['profile', 'project profile'] },
-  { key: 'feasibility_study',      label: 'Feasibility Study',         match: ['feasibility'] },
-  { key: 'program_of_works',       label: 'Program of Works (POW)',    match: ['pow', 'program of works', 'bill of quantities', 'boq'] },
-  { key: 'certificate_completion', label: 'Certificate of Completion', match: ['certificate', 'completion'] },
+// KC-D: Key document cards for the Overview panel.
+//
+// Matching is by document type code, not by substring of the type plus file name. The
+// substring version matched 'pow' anywhere, so a file named "Power layout.pdf" counted as a
+// Program of Works, and it returned only the FIRST hit: a project holding three Project
+// Profile documents showed one and hid the rest, external links included.
+//
+// Several taxonomy codes describe the same concept (the CPES_* set duplicates GROUP_*, and
+// SD_ECO_017 is a third Certificate of Completion), so each card owns a list of codes.
+// Feasibility Study keeps its own legacy code: the active taxonomy folds feasibility into
+// PROJECT_PROFILE, and listing both codes on one card would double-count those documents.
+const KEY_DOCUMENT_CARDS = [
+  { key: 'project_profile',        label: 'Project Profile',           icon: 'mdi-file-account-outline', typeCodes: ['PROJECT_PROFILE'] },
+  { key: 'feasibility_study',      label: 'Feasibility Study',         icon: 'mdi-file-search-outline',  typeCodes: ['FEASIBILITY_STUDY'] },
+  { key: 'program_of_works',       label: 'Program of Works (POW)',    icon: 'mdi-file-table-outline',   typeCodes: ['POW', 'CPES_POW'] },
+  { key: 'certificate_completion', label: 'Certificate of Completion', icon: 'mdi-certificate-outline',  typeCodes: ['CERTIFICATE_OF_COMPLETION', 'CPES_CERT_COMPLETION', 'SD_ECO_017'] },
 ]
 
-function findDocumentPreview(docs: DocumentItem[], typeKey: string): DocumentItem | null {
-  const type = DOCUMENT_PREVIEW_TYPES.find(t => t.key === typeKey)
-  if (!type) return null
-  return docs.find(doc => {
-    const haystack = `${doc.documentType || ''} ${doc.fileName || ''}`.toLowerCase()
-    return type.match.some(m => haystack.includes(m))
-  }) || null
+interface KeyDocumentSummary {
+  key: string
+  label: string
+  icon: string
+  typeCodes: string[]
+  docs: DocumentItem[]
+  fileCount: number
+  linkCount: number
+  latest: DocumentItem | null
+}
+
+/** True for a document stored as a URL rather than bytes (Drive MOV or any external link). */
+function isExternalLinkDoc(doc: DocumentItem): boolean {
+  return doc.mimeType === 'application/x-google-drive-link' ||
+    doc.mimeType === 'application/x-external-link'
+}
+
+// Every document per card, newest first — files and links together, since a key document
+// may legitimately be one uploaded file, several revisions, a Drive link, or a mix.
+const keyDocumentSummaries = computed<KeyDocumentSummary[]>(() =>
+  KEY_DOCUMENT_CARDS.map(card => {
+    const docs = documents.value
+      .filter(d => card.typeCodes.includes(d.documentType || ''))
+      .slice()
+      .sort((a, b) => ((a.createdAt || '') > (b.createdAt || '') ? -1 : 1))
+    return {
+      key: card.key,
+      label: card.label,
+      icon: card.icon,
+      typeCodes: [...card.typeCodes],
+      docs,
+      fileCount: docs.filter(d => !isExternalLinkDoc(d)).length,
+      linkCount: docs.filter(isExternalLinkDoc).length,
+      latest: docs[0] ?? null,
+    }
+  })
+)
+
+// Key document viewer. CiRepositoryModal is reused in view mode rather than writing a
+// second list: it already separates files from links, streams a file through the
+// authenticated download endpoint and opens a link in a new tab.
+const keyDocModalOpen = ref(false)
+const keyDocModalCard = ref<KeyDocumentSummary | null>(null)
+function openKeyDocModal(summary: KeyDocumentSummary) {
+  keyDocModalCard.value = summary
+  keyDocModalOpen.value = true
+  // Resolves type codes to their human labels inside the modal; guarded by docTypesLoaded.
+  fetchDocTypes()
 }
 
 // File upload dialog state â€” removed in KE-F (Detail page is view-only; upload via Edit Project Details)
@@ -1644,26 +1696,31 @@ onMounted(() => {
                       <v-chip v-if="documents.length" size="x-small" variant="tonal" color="primary">{{ documents.length }}</v-chip>
                     </div>
                     <v-row dense>
-                      <v-col v-for="docType in DOCUMENT_PREVIEW_TYPES" :key="docType.key" cols="12">
+                      <v-col v-for="card in keyDocumentSummaries" :key="card.key" cols="12">
                         <v-card variant="outlined" class="pa-3 h-100">
-                          <div class="d-flex justify-space-between align-center mb-1">
-                            <span class="text-subtitle-2 font-weight-medium">{{ docType.label }}</span>
-                            <v-chip v-if="findDocumentPreview(documents, docType.key)" color="success" size="x-small" variant="tonal">Uploaded</v-chip>
+                          <div class="d-flex justify-space-between align-center ga-2 mb-1">
+                            <span class="text-subtitle-2 font-weight-medium d-flex align-center ga-1">
+                              <v-icon :icon="card.icon" size="16" color="primary" />
+                              {{ card.label }}
+                            </span>
+                            <v-chip v-if="card.docs.length" color="success" size="x-small" variant="tonal">
+                              {{ card.docs.length }} on file
+                            </v-chip>
                             <v-chip v-else color="warning" size="x-small" variant="tonal">Not Uploaded</v-chip>
                           </div>
-                          <template v-if="findDocumentPreview(documents, docType.key)">
+                          <template v-if="card.docs.length">
                             <div class="text-caption text-grey">
-                              {{ findDocumentPreview(documents, docType.key)?.fileName || '—' }}
-                              <span v-if="findDocumentPreview(documents, docType.key)?.createdAt">
-                                · {{ formatDate(findDocumentPreview(documents, docType.key)!.createdAt || '') }}
-                              </span>
+                              {{ card.fileCount }} {{ card.fileCount === 1 ? 'file' : 'files' }}
+                              · {{ card.linkCount }} {{ card.linkCount === 1 ? 'link' : 'links' }}
+                              <span v-if="card.latest?.createdAt">· latest {{ formatDate(card.latest.createdAt) }}</span>
                             </div>
+                            <div class="text-caption text-truncate">{{ card.latest?.fileName }}</div>
                             <v-btn
-                              v-if="findDocumentPreview(documents, docType.key)?.filePath"
                               variant="text" size="x-small" color="primary" class="mt-1 pa-0"
-                              @click="downloadDoc(findDocumentPreview(documents, docType.key))"
+                              prepend-icon="mdi-folder-open-outline"
+                              @click="openKeyDocModal(card)"
                             >
-                              View Document
+                              View Documents ({{ card.docs.length }})
                             </v-btn>
                           </template>
                           <div v-else class="text-caption text-grey">No matching document on file.</div>
@@ -2635,6 +2692,20 @@ onMounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Key document viewer: every file and link recorded under one key document type. -->
+    <CiRepositoryModal
+      v-if="keyDocModalCard"
+      v-model="keyDocModalOpen"
+      :title="keyDocModalCard.label"
+      :icon="keyDocModalCard.icon"
+      color="primary"
+      :type-codes="keyDocModalCard.typeCodes"
+      :doc-types="docTypes"
+      :documents="keyDocModalCard.docs"
+      :project-id="projectId"
+      mode="view"
+    />
 
     <!-- KD-B: Scroll-to-top FAB -->
     <CiScrollToTopFab />

@@ -165,5 +165,8 @@ export const KEY_DOC_TYPECODES = ['PROJECT_PROFILE', 'FEASIBILITY_STUDY', 'HGDG_
 export interface StagedQueue {
   docs: { file: File; documentType: string; description: string }[]
   images: { file: File; caption: string; category: string }[]
-  links: { url: string; title: string; description: string }[]
+  // documentType attributes a link to a document type the same way an upload is
+  // attributed. Optional for backward compatibility: an omitted value falls back to the
+  // generic 'link' type at persist time.
+  links: { url: string; title: string; description: string; documentType?: string }[]
 }

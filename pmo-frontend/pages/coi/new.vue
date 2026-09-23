@@ -248,7 +248,9 @@ const tabOrder = PROJECT_TAB_ORDER
 // JO-D: Pending uploads (staged in browser memory until project is created)
 interface PendingDoc { file: File; documentType: string; description: string }
 interface PendingImage { file: File; caption: string; category: string }
-interface PendingLink { url: string; title: string; description: string }
+// documentType mirrors StagedQueue.links: a staged link keeps the type the user chose in
+// the attachment hub, so it lands as a document of that type instead of an unclassified one.
+interface PendingLink { url: string; title: string; description: string; documentType?: string }
 const pendingDocs = ref<PendingDoc[]>([])
 const pendingImages = ref<PendingImage[]>([])
 const pendingLinks = ref<PendingLink[]>([])
@@ -673,7 +675,7 @@ async function runSubmit(): Promise<SubmitResult> {
     for (const lk of pendingLinks.value) {
       try {
         await api.post(`/api/construction-projects/${projectId}/documents`, {
-          documentType: 'link',
+          documentType: lk.documentType || 'link',
           externalLink: lk.url,
           title: lk.title || undefined,
           description: lk.description || undefined,
