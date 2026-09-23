@@ -142,6 +142,15 @@ async function submitLink() {
 }
 
 // LC-C: two-step file upload — create entry first, then upload file
+// Transfer progress plus the server's post-transfer phases for the evidence file. A MOV
+// is often a photo or a scanned form, so the wait is long enough to need feedback.
+const {
+  tasks: movUploadTasks,
+  isUploading: movUploadRunning,
+  overallPercent: movUploadPercent,
+  uploadMovFile: trackedUploadMovFile,
+} = useDocumentUpload(() => props.projectId)
+
 async function submitFile() {
   if (!fileInput.value) { toast.error('Please select a file.'); return }
   if (fileInput.value.size > 15 * 1024 * 1024) { toast.error('File must be ≤ 15 MB.'); return }
@@ -157,9 +166,7 @@ async function submitFile() {
       entry_date: formEntryDate.value || undefined,
       remarks: formRemarks.value || undefined,
     })
-    const fd = new FormData()
-    fd.append('file', fileInput.value)
-    await api.upload(`/api/construction-projects/${props.projectId}/mov-entries/${(created as any).id}/upload-file`, fd)
+    await trackedUploadMovFile((created as any).id, fileInput.value)
     toast.success('File evidence added.')
     resetForm()
     await fetchEntries()
@@ -204,6 +211,11 @@ watch(
 
 <template>
   <div>
+    <CiUploadProgressPanel
+      :tasks="movUploadTasks"
+      :running="movUploadRunning"
+      :overall-percent="movUploadPercent"
+    />
     <div class="d-flex align-center mb-2 ga-2">
       <v-icon icon="mdi-link-variant" size="small" color="primary" />
       <span class="text-subtitle-2 font-weight-medium">Means of Verification (MOV)</span>
