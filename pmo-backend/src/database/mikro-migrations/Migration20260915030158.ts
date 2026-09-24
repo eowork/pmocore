@@ -1203,7 +1203,6 @@ export class Migration20260915030158 extends Migration {
     this.addSql(`drop index if exists "users_email_active_unique";`);
     this.addSql(`drop index if exists "users_google_id_active_unique";`);
     this.addSql(`drop index if exists "users_username_active_unique";`);
-    this.addSql(`alter table "users" drop constraint chk_users_rank_level;`);
 
     // this.addSql(
     //   `alter table "users" add constraint "users_username_unique" unique ("username");`,

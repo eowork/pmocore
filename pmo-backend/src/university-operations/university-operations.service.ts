@@ -27,6 +27,7 @@ import {
   QueryOperationDto,
   CreateIndicatorDto,
   CreateIndicatorQuarterlyDto,
+  UpdateIndicatorQuarterlyDto,
   CreateFinancialDto,
   FundType,
 } from './dto';
@@ -1601,6 +1602,30 @@ export class UniversityOperationsService {
         ? toNumber(record.override_variance)
         : null;
 
+    // An override rate is entered precisely because the auto-calculation is wrong for this
+    // record, so the variance derived from the same quarterly totals is wrong too. When no
+    // explicit variance override was given, restate the variance the override rate implies
+    // (actual - target, where actual = target x rate) instead of publishing a figure the
+    // encoder has already declared incorrect. An explicit override_variance still wins.
+    let overrideRateVariance: number | null = null;
+    // A zero target makes the rate meaningless, so there is nothing to derive from it and
+    // the quarterly figures remain the better answer.
+    if (
+      overrideVarianceAnnual === null &&
+      overrideRate !== null &&
+      effectiveTarget !== null &&
+      effectiveTarget !== 0
+    ) {
+      const rawRateVariance = effectiveTarget * (overrideRate / 100 - 1);
+      overrideRateVariance = Math.max(
+        MIN_VARIANCE,
+        Math.min(rawRateVariance, MAX_VARIANCE),
+      );
+    }
+
+    const effectiveVariance =
+      overrideVarianceAnnual ?? overrideRateVariance ?? variance;
+
     return {
       ...record,
       // Phase HD: total_target/total_accomplishment return effective values (override ?? raw) — Directive 383
@@ -1624,9 +1649,17 @@ export class UniversityOperationsService {
       override_total_target: formatDecimal(overrideTotalTarget, 4),
       override_total_actual: formatDecimal(overrideTotalActual, 4),
       // Phase GY/GZ: Annual override fields only (Directive 359)
-      variance: formatDecimal(overrideVarianceAnnual ?? variance, 4),
+      variance: formatDecimal(effectiveVariance, 4),
       override_variance: formatDecimal(overrideVarianceAnnual, 2),
       computed_variance: formatDecimal(variance, 4),
+      // Lets the UI say why a variance differs from the quarterly sums, instead of leaving
+      // the reader to guess whether an override is in play.
+      variance_source:
+        overrideVarianceAnnual !== null
+          ? 'override_variance'
+          : overrideRateVariance !== null
+            ? 'override_rate'
+            : 'computed',
       // Phase FY-2: computed_rate = auto-calculated, accomplishment_rate = override if set
       computed_rate: formatDecimal(accomplishmentRate, 2),
       accomplishment_rate: formatDecimal(overrideRate ?? accomplishmentRate, 2),
@@ -1800,7 +1833,7 @@ export class UniversityOperationsService {
   async updateIndicatorQuarterlyData(
     operationId: string,
     indicatorId: string,
-    dto: Partial<CreateIndicatorQuarterlyDto>,
+    dto: UpdateIndicatorQuarterlyDto,
     userId: string,
     user: JwtPayload,
   ): Promise<any> {
