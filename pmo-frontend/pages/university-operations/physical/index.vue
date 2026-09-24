@@ -691,6 +691,7 @@ async function openEntryDialogDirect(indicator: any) {
       score_q4: existingData.score_q4 || '',
       remarks: existingData.remarks || '',
       override_rate: existingData.override_rate ?? null,
+      override_variance: existingData.override_variance ?? null,
       _existingId: existingData.id || null,
     }
   } else {
@@ -736,7 +737,10 @@ async function openEntryDialogDirect(indicator: any) {
         score_q3: priorData.score_q3 || '',
         score_q4: priorData.score_q4 || '',
         remarks: priorData.remarks || '',
-        override_rate: null, // Phase FY-2: do not inherit prior quarter's override
+        // Overrides are a judgement about one quarter's own figures, so neither the rate
+        // nor the variance override is carried over from the prior quarter.
+        override_rate: null,
+        override_variance: null,
         _existingId: preservedId,
       }
       wasPrefilled.value = true
@@ -751,6 +755,7 @@ async function openEntryDialogDirect(indicator: any) {
         score_q1: '', score_q2: '', score_q3: '', score_q4: '',
         remarks: '',
         override_rate: null,
+        override_variance: null,
         _existingId: preservedId,
       }
     }
@@ -777,6 +782,8 @@ function sanitizeNumericPayload(data: any): any {
     'accomplishment_q2',
     'accomplishment_q3',
     'accomplishment_q4',
+    'override_rate',
+    'override_variance',
   ]
 
   const sanitized = { ...data }
@@ -857,6 +864,10 @@ async function saveQuarterlyData() {
       score_q3: entryForm.value.score_q3,
       score_q4: entryForm.value.score_q4,
       remarks: entryForm.value.remarks,
+      // Without these two the override inputs were write-only: the dialog showed them,
+      // the server never received them, and the column kept its old value (Directives 213/359).
+      override_rate: entryForm.value.override_rate,
+      override_variance: entryForm.value.override_variance,
     }
 
     // Phase DV-A: Sanitize empty strings to null for numeric fields
@@ -946,6 +957,18 @@ async function saveQuarterlyData() {
   }
 }
 
+/**
+ * Read an override input as a number, or null when it is blank.
+ *
+ * v-model.number leaves an empty string behind when the user deletes the field's contents,
+ * and 0 is a legitimate override value, so a plain falsy check would silently discard it.
+ */
+function toNullableNumber(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 // Phase FY-1: DBM BAR1 standard — ALL indicator types use SUM (Directive 211/212)
 const computedPreview = computed(() => {
   const f = entryForm.value
@@ -961,12 +984,31 @@ const computedPreview = computed(() => {
     ? actuals.reduce((a, b) => Number(a) + Number(b), 0)
     : null
 
-  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
-  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+  const computedVariance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const computedRate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
     ? (totalActual / totalTarget) * 100
     : null
 
-  return { totalTarget, totalActual, variance, rate }
+  // Mirror the server's precedence (computeIndicatorMetrics) so the dialog previews the
+  // figures that will actually be stored: explicit variance override first, then the
+  // variance implied by an override rate, then the auto-calculation.
+  const overrideRate = toNullableNumber(f.override_rate)
+  const overrideVariance = toNullableNumber(f.override_variance)
+
+  // A zero target makes the rate meaningless, so nothing is derived from it there.
+  const rateVariance = overrideVariance === null && overrideRate !== null && totalTarget !== null && totalTarget !== 0
+    ? totalTarget * (overrideRate / 100 - 1)
+    : null
+
+  const variance = overrideVariance ?? rateVariance ?? computedVariance
+  const rate = overrideRate ?? computedRate
+  const varianceSource = overrideVariance !== null
+    ? 'override_variance'
+    : rateVariance !== null
+      ? 'override_rate'
+      : 'computed'
+
+  return { totalTarget, totalActual, variance, rate, computedVariance, computedRate, varianceSource }
 })
 
 // Phase EM-C: Submit quarterly report for the current FY+quarter (single API call)
@@ -1955,28 +1997,54 @@ onMounted(async () => {
                   Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}
                 </v-chip>
                 <!-- Phase FY-2: Override active badge -->
-                <v-chip v-if="entryForm.override_rate !== null && entryForm.override_rate !== ''" color="warning" variant="tonal" size="small">
+                <v-chip v-if="computedPreview.varianceSource !== 'computed'" color="warning" variant="tonal" size="small">
                   <v-icon start size="x-small">mdi-pencil-circle</v-icon>
-                  Override Applied: {{ entryForm.override_rate }}%
+                  Override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
                 </v-chip>
               </div>
-              <!-- Phase FY-2: Optional rate override input (Directive 213) -->
-              <v-text-field
-                v-model.number="entryForm.override_rate"
-                label="Override Rate (%) — Optional"
-                type="number"
-                variant="outlined"
-                density="compact"
-                :min="0"
-                :max="9999.99"
-                clearable
-                hide-details="auto"
-                hint="Leave blank to use auto-calculated rate. Override does not affect Target or Actual values."
-                persistent-hint
-                class="mt-1"
-                style="max-width: 280px;"
-                @click:clear="entryForm.override_rate = null"
-              />
+
+              <!-- Overrides are entered when the auto-calculation is wrong for this record:
+                   the rate override also restates the variance, unless a variance override
+                   is given explicitly. -->
+              <div class="d-flex ga-3 flex-wrap mt-1">
+                <v-text-field
+                  v-model.number="entryForm.override_rate"
+                  label="Override Rate (%) — Optional"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  :min="0"
+                  :max="9999.99"
+                  clearable
+                  hide-details="auto"
+                  hint="Leave blank to use the auto-calculated rate. Also restates Variance unless overridden below. Does not change Target or Actual."
+                  persistent-hint
+                  style="max-width: 280px;"
+                  @click:clear="entryForm.override_rate = null"
+                />
+                <v-text-field
+                  v-model.number="entryForm.override_variance"
+                  label="Override Variance — Optional"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  :min="-999999.99"
+                  :max="999999.99"
+                  clearable
+                  hide-details="auto"
+                  hint="Leave blank to derive Variance from the override rate, or from the quarterly totals."
+                  persistent-hint
+                  style="max-width: 280px;"
+                  @click:clear="entryForm.override_variance = null"
+                />
+              </div>
+
+              <div
+                v-if="computedPreview.varianceSource !== 'computed' && computedPreview.computedVariance !== null"
+                class="text-caption text-grey-darken-1 mt-2"
+              >
+                Auto-calculated variance was {{ formatNumber(computedPreview.computedVariance) }}; the override above replaces it.
+              </div>
             </v-card-text>
           </v-card>
         </v-card-text>
