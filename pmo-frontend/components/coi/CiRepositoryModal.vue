@@ -4,6 +4,8 @@
 // AAA-H adds modal-local search/filter/sort, drag-drop batch upload, client-side
 // pagination, uploader info, and a recent-activity panel.
 
+import type { UploadTask } from '~/composables/useDocumentUpload'
+
 interface RepoDocType {
   typeCode: string
   typeLabel: string
@@ -44,6 +46,13 @@ interface Props {
   mode?: 'view' | 'edit' | 'staging'
   expandUpload?: boolean
   projectId?: string
+  /**
+   * Uploads in flight for this repository.
+   *
+   * The card underneath shows the same tasks, but the modal sits on top of it while the
+   * upload runs, so the progress is repeated here rather than hidden behind the overlay.
+   */
+  uploads?: UploadTask[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -53,6 +62,7 @@ const props = withDefaults(defineProps<Props>(), {
   mode: 'view',
   expandUpload: false,
   projectId: '',
+  uploads: () => [],
 })
 
 const emit = defineEmits<{
@@ -349,6 +359,29 @@ async function downloadDoc(doc: RepoDoc) {
             {{ t.typeLabel }}
           </v-btn>
         </div>
+
+        <!-- Live progress for uploads started from this repository. -->
+        <v-expand-transition>
+          <v-card v-if="uploads.length" variant="tonal" color="info" class="mb-3" rounded="lg">
+            <v-card-text class="py-3">
+              <div v-for="task in uploads" :key="task.id" class="mb-2">
+                <div class="d-flex justify-space-between align-center ga-2 text-caption">
+                  <span class="text-truncate" style="max-width: 60%">{{ task.fileName }}</span>
+                  <span :class="task.error ? 'text-error' : 'text-grey-darken-1'" class="text-right">
+                    {{ task.error || task.label }}
+                  </span>
+                </div>
+                <v-progress-linear
+                  :model-value="task.percent"
+                  :color="task.error ? 'error' : task.phase === 'done' ? 'success' : 'info'"
+                  height="6"
+                  rounded
+                  class="mt-1"
+                />
+              </div>
+            </v-card-text>
+          </v-card>
+        </v-expand-transition>
 
         <!-- Upload form + drag-drop zone (AAA-H-2) -->
         <v-expand-transition>

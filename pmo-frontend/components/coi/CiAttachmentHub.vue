@@ -7,6 +7,7 @@
 // Directive ZY-D1: this is the ONLY place attachment sections are rendered.
 
 import { KEY_DOC_TYPECODES, type StagedQueue } from '~/utils/coiFormState'
+import type { UploadTask } from '~/composables/useDocumentUpload'
 import { qualifyBackendUrl } from '~/utils/adapters'
 
 interface HubDoc {
@@ -101,6 +102,12 @@ const gallery = ref<HubGallery[]>([])
 const docTypeGroups = ref<HubDocTypeGroup[]>([])
 const loadingDocs = ref(false)
 const docsError = ref<string | null>(null)   // VVV-B: surface GET /documents failures
+// Taxonomy load state. The document-type taxonomy drives the Supporting Documents cards
+// and decides whether the Compliance Repository section exists at all, so when it fails to
+// load those two sections quietly disappear — previously with nothing on screen to say why.
+const loadingDocTypes = ref(false)
+const docTypesError = ref<string | null>(null)
+const docTypesLoaded = ref(false)
 const loadingGallery = ref(false)
 const deletingDoc = reactive<Record<string, boolean>>({})
 const deletingGallery = reactive<Record<string, boolean>>({})
@@ -260,6 +267,8 @@ async function fetchGallery() {
   }
 }
 async function fetchDocTypes() {
+  loadingDocTypes.value = true
+  docTypesError.value = null
   try {
     const res = await api.get<HubDocTypeGroup[] | { data: HubDocTypeGroup[] }>(
       '/api/construction-projects/document-types/grouped',
@@ -272,11 +281,43 @@ async function fetchDocTypes() {
         templateUrl: qualifyBackendUrl(t.templateUrl, apiBase) || null,
       })),
     }))
-  } catch (err) {
+    docTypesLoaded.value = true
+  } catch (err: unknown) {
     console.error('[CiAttachmentHub] fetch grouped doc types failed:', err)
     docTypeGroups.value = []
+    docTypesLoaded.value = false
+    // 403 is its own diagnosis: the route is behind @RequireModule('coi'), so an account
+    // without that module access sees the same empty result as a missing taxonomy.
+    const status = (err as { statusCode?: number })?.statusCode
+    docTypesError.value =
+      status === 403
+        ? 'Your account does not have access to the document taxonomy, so Supporting Documents and the Compliance Repository cannot be shown.'
+        : (err as { message?: string })?.message ||
+          'Could not load the document taxonomy. Supporting Documents and the Compliance Repository are unavailable.'
+  } finally {
+    loadingDocTypes.value = false
   }
 }
+
+/**
+ * True when the taxonomy loaded successfully but carries nothing this hub can render.
+ *
+ * A 200 with no rows is a different fault from a failed request — it means the reference
+ * data was never seeded in this environment — and it produces the same vanished sections,
+ * so it gets its own message rather than silence.
+ */
+const docTypesEmpty = computed(
+  () => docTypesLoaded.value && !docTypesError.value && docTypeGroups.value.length === 0,
+)
+
+/** Groups that exist but have no downloadable template, so their cards cannot render. */
+const missingTemplateGroups = computed(() => {
+  if (!docTypesLoaded.value || docTypesError.value) return []
+  return ['SD_ORDERS', 'SD_REPORTS', 'SD_CERTS']
+    .map((code) => docTypeGroups.value.find((g) => g.groupCode === code))
+    .filter((g): g is HubDocTypeGroup => !!g && g.types.every((t) => !t.templateUrl))
+    .map((g) => g.groupLabel || g.groupCode)
+})
 
 function normalizeChecklistRemarks(raw: unknown): Record<string, ChecklistRemarkEntry[]> {
   const source = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {}
@@ -308,6 +349,40 @@ async function fetchChecklistRemarks() {
   }
 }
 
+// ── Upload progress ─────────────────────────────────────────
+// Transfer progress comes from XHR, the post-transfer phases from the backend's SSE
+// channel. Before this, a large document gave no feedback at all: the dialog simply sat
+// there while the browser sent bytes and the server wrote to MinIO.
+const {
+  tasks: uploadTasks,
+  uploadDocument: trackedUploadDocument,
+  uploadGalleryItem: trackedUploadGalleryItem,
+} = useDocumentUpload(() => props.projectId)
+
+/**
+ * The in-flight uploads belonging to one repository card.
+ *
+ * Each task carries the document type it was filed under, so a card asks for the tasks
+ * matching its own type codes. '__MISC__' is the Miscellaneous sentinel: anything not
+ * claimed by a managed repository lands there, which mirrors how otherDocs is built.
+ */
+function uploadsForCodes(codes: string[]): UploadTask[] {
+  const docTasks = uploadTasks.value.filter((t) => t.resource === 'documents')
+  if (codes[0] === '__MISC__') {
+    return docTasks.filter((t) => !t.typeCode || !managedCodes.value.has(t.typeCode))
+  }
+  return docTasks.filter((t) => !!t.typeCode && codes.includes(t.typeCode))
+}
+
+/** Gallery uploads have no document type, so they are matched by resource instead. */
+const galleryUploads = computed(() => uploadTasks.value.filter((t) => t.resource === 'gallery'))
+const galleryUploadsRunning = computed(() => galleryUploads.value.some((t) => !t.done))
+const galleryUploadPercent = computed(() => {
+  const active = galleryUploads.value.filter((t) => !t.done)
+  if (!active.length) return 0
+  return Math.round(active.reduce((sum, t) => sum + t.percent, 0) / active.length)
+})
+
 // ── Upload / delete (mode-aware) ────────────────────────────
 async function persistDoc(payload: { file: File; documentType: string; title?: string; description?: string }) {
   if (payload.file.size > 20 * 1024 * 1024) { toast.error('File exceeds 20 MB'); return }
@@ -325,12 +400,11 @@ async function persistDoc(payload: { file: File; documentType: string; title?: s
     return
   }
   try {
-    const fd = new FormData()
-    fd.append('file', payload.file)
-    fd.append('documentType', payload.documentType)
-    if (payload.title) fd.append('title', payload.title)
-    if (payload.description) fd.append('description', payload.description)
-    await api.upload(`/api/construction-projects/${props.projectId}/documents`, fd)
+    await trackedUploadDocument(payload.file, {
+      documentType: payload.documentType,
+      title: payload.title,
+      description: payload.description,
+    })
     toast.success('Document uploaded')
     await fetchDocuments()
     // SSS-C / OOO-C: keep the compliance checklist in sync (backend auto-links on upload)
@@ -544,12 +618,11 @@ async function persistGallery(file: File, caption: string, category: string, tak
     return
   }
   try {
-    const fd = new FormData()
-    fd.append('file', file)
-    if (caption) fd.append('caption', caption)
-    fd.append('category', category)
-    if (takenDate) fd.append('image_taken_date', takenDate)
-    await api.upload(`/api/construction-projects/${props.projectId}/gallery`, fd)
+    await trackedUploadGalleryItem(file, {
+      caption,
+      category,
+      image_taken_date: takenDate || undefined,
+    })
     toast.success('Image uploaded')
     await fetchGallery()
   } catch (err: unknown) {
@@ -582,6 +655,22 @@ async function deleteGalleryItem(id: string) {
 const linkUrl = ref('')
 const linkTitle = ref('')
 const linkDescription = ref('')
+/**
+ * Document type carried by an external link.
+ *
+ * Links used to be posted with the hardcoded type 'link', which put them outside every
+ * type-based view: a Google Drive MOV for the Program of Works could never show up under
+ * Program of Works, only in the flat attachment list. Typing a link the same way an upload
+ * is typed makes it a first-class document of that type.
+ *
+ * LINK_FALLBACK_TYPE keeps the old behaviour for a link the user does not classify.
+ */
+const LINK_FALLBACK_TYPE = 'link'
+const linkDocType = ref<string>(LINK_FALLBACK_TYPE)
+const linkDocTypeItems = computed(() => [
+  { title: 'Unclassified link', value: LINK_FALLBACK_TYPE },
+  ...allDocTypes.value.map((t) => ({ title: `[${t.groupLabel}] ${t.typeLabel}`, value: t.typeCode })),
+])
 const URL_RE = /^https?:\/\/.+/i
 // MMM-C: immutable removal of a staged external link
 function removeStagedLink(i: number) {
@@ -592,19 +681,19 @@ function removeStagedLink(i: number) {
 async function submitLink() {
   if (!linkUrl.value || !URL_RE.test(linkUrl.value)) { toast.error('Must be a valid URL starting with https://'); return }
   if (isStaging.value) {
-    emitStaged({ links: [...(props.modelValue?.links ?? []), { url: linkUrl.value, title: linkTitle.value, description: linkDescription.value }] })
-    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''
+    emitStaged({ links: [...(props.modelValue?.links ?? []), { url: linkUrl.value, title: linkTitle.value, description: linkDescription.value, documentType: linkDocType.value }] })
+    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''; linkDocType.value = LINK_FALLBACK_TYPE
     return
   }
   try {
     await api.post(`/api/construction-projects/${props.projectId}/documents`, {
-      documentType: 'link',
+      documentType: linkDocType.value || LINK_FALLBACK_TYPE,
       externalLink: linkUrl.value,
       title: linkTitle.value || undefined,
       description: linkDescription.value || undefined,
     })
     toast.success('External link added')
-    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''
+    linkUrl.value = ''; linkTitle.value = ''; linkDescription.value = ''; linkDocType.value = LINK_FALLBACK_TYPE
     await fetchDocuments()
   } catch (err: unknown) {
     toast.error((err as { message?: string })?.message || 'Failed to add link')
@@ -772,6 +861,52 @@ defineExpose({ fetchDocuments, fetchGallery })
       </v-tab>
     </v-tabs>
 
+    <!-- Taxonomy state. Without it the Supporting Documents cards and the whole
+         Compliance Repository section silently disappear, which reads as a missing
+         feature rather than missing reference data. -->
+    <v-alert
+      v-if="docTypesError"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="mb-3"
+      icon="mdi-alert-outline"
+    >
+      <div class="d-flex align-center ga-2 flex-wrap">
+        <span>{{ docTypesError }}</span>
+        <v-spacer />
+        <v-btn size="small" variant="tonal" color="warning" prepend-icon="mdi-refresh" :loading="loadingDocTypes" @click="fetchDocTypes">
+          Retry
+        </v-btn>
+      </div>
+    </v-alert>
+
+    <v-alert
+      v-else-if="docTypesEmpty"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="mb-3"
+      icon="mdi-database-alert-outline"
+    >
+      The document taxonomy is empty in this environment, so Supporting Documents and the
+      Compliance Repository cannot be shown. The reference data is created by database
+      migrations — ask an administrator to confirm they have all been applied.
+    </v-alert>
+
+    <v-alert
+      v-else-if="missingTemplateGroups.length"
+      type="info"
+      variant="tonal"
+      density="compact"
+      class="mb-3"
+      icon="mdi-file-alert-outline"
+    >
+      No blank templates are registered for {{ missingTemplateGroups.join(', ') }}, so those
+      Supporting Documents cards are not shown. An administrator can upload a template per
+      document type to bring them back.
+    </v-alert>
+
     <!-- VVV-B: document-load error state (covers Key + Supporting Documents) -->
     <v-alert
       v-if="docsError && hasProject"
@@ -790,7 +925,7 @@ defineExpose({ fetchDocuments, fetchGallery })
       </div>
     </v-alert>
 
-    <v-window v-model="activeSection">
+      <v-window v-model="activeSection">
       <!-- ===== Section 1: Key Documents ===== -->
       <v-window-item value="key">
         <v-row dense>
@@ -800,6 +935,7 @@ defineExpose({ fetchDocuments, fetchGallery })
               :doc-count="keyCardStats[def.typeCode].docCount"
               :latest-upload="keyCardStats[def.typeCode].latestUpload"
               :can-upload="canUpload"
+              :uploads="uploadsForCodes([def.typeCode])"
               @open="openRepo(def.label, def.icon, def.color, [def.typeCode])"
               @upload="openRepo(def.label, def.icon, def.color, [def.typeCode], true)"
             />
@@ -810,6 +946,7 @@ defineExpose({ fetchDocuments, fetchGallery })
               :doc-count="otherKeyStats.docCount"
               :latest-upload="otherKeyStats.latestUpload"
               :can-upload="canUpload"
+              :uploads="uploadsForCodes(otherKeyCodes)"
               @open="openRepo('Other Key Documents', 'mdi-file-star-outline', 'warning', otherKeyCodes)"
               @upload="openRepo('Other Key Documents', 'mdi-file-star-outline', 'warning', otherKeyCodes, true)"
             />
@@ -821,6 +958,7 @@ defineExpose({ fetchDocuments, fetchGallery })
                 :doc-count="customSectionStats[sec.typeCode].docCount"
                 :latest-upload="customSectionStats[sec.typeCode].latestUpload"
                 :can-upload="canUpload"
+                :uploads="uploadsForCodes([sec.typeCode])"
                 @open="openRepo(sec.label, 'mdi-folder-plus-outline', 'blue-grey', [sec.typeCode])"
                 @upload="openRepo(sec.label, 'mdi-folder-plus-outline', 'blue-grey', [sec.typeCode], true)"
               />
@@ -861,6 +999,15 @@ defineExpose({ fetchDocuments, fetchGallery })
           </v-card-title>
           <v-divider />
           <v-card-text>
+            <!-- Gallery images carry no document type, so they cannot be routed to a
+                 repository card; their progress stays here, inside the Gallery section. -->
+            <CiUploadProgressPanel
+              :tasks="galleryUploads"
+              :running="galleryUploadsRunning"
+              :overall-percent="galleryUploadPercent"
+              title="Uploading"
+            />
+
             <!-- XXX-E: Construction documentation guide -->
             <v-alert type="info" variant="tonal" density="compact" class="mb-3" icon="mdi-camera-outline">
               Document site progress regularly. Photos are used for accomplishment validation, inspection evidence, and milestone verification.
@@ -926,6 +1073,7 @@ defineExpose({ fetchDocuments, fetchGallery })
                   :latest-upload="supportingCardStats[t.code]?.latestUpload ?? null"
                   :template-url="t.url"
                   :can-upload="canUpload"
+                  :uploads="uploadsForCodes([t.code])"
                   @open="openRepo(t.label, g.icon, g.color, [t.code])"
                   @upload="openRepo(t.label, g.icon, g.color, [t.code], true)"
                 />
@@ -948,6 +1096,7 @@ defineExpose({ fetchDocuments, fetchGallery })
                   :doc-count="supportingSectionStats[sec.typeCode]?.docCount ?? 0"
                   :latest-upload="supportingSectionStats[sec.typeCode]?.latestUpload ?? null"
                   :can-upload="canUpload"
+                  :uploads="uploadsForCodes([sec.typeCode])"
                   @open="openRepo(sec.label, 'mdi-folder-outline', 'blue-grey', [sec.typeCode])"
                   @upload="openRepo(sec.label, 'mdi-folder-outline', 'blue-grey', [sec.typeCode], true)"
                 />
@@ -1005,6 +1154,7 @@ defineExpose({ fetchDocuments, fetchGallery })
               :latest-upload="cpesCardStats[t.typeCode]?.latestUpload ?? null"
               :template-url="t.templateUrl ?? null"
               :can-upload="canUpload"
+              :uploads="uploadsForCodes([t.typeCode])"
               @open="openRepo(t.typeLabel, 'mdi-certificate-outline', 'teal', [t.typeCode])"
               @upload="openRepo(t.typeLabel, 'mdi-certificate-outline', 'teal', [t.typeCode], true)"
             />
@@ -1051,6 +1201,7 @@ defineExpose({ fetchDocuments, fetchGallery })
               :doc-count="otherDocs.length"
               :latest-upload="miscLatestUpload"
               :can-upload="canUpload"
+              :uploads="uploadsForCodes(['__MISC__'])"
               @open="openMiscRepo()"
               @upload="openMiscRepo(true)"
             />
@@ -1083,8 +1234,9 @@ defineExpose({ fetchDocuments, fetchGallery })
           </v-list>
         </template>
         <v-row v-if="canUpload" dense>
-          <v-col cols="12" sm="7"><v-text-field v-model="linkUrl" label="External URL" placeholder="https://..." prepend-inner-icon="mdi-link" variant="outlined" density="comfortable" hide-details /></v-col>
-          <v-col cols="12" sm="3"><v-text-field v-model="linkTitle" label="Title" variant="outlined" density="comfortable" hide-details /></v-col>
+          <v-col cols="12" sm="5"><v-text-field v-model="linkUrl" label="External URL" placeholder="https://..." prepend-inner-icon="mdi-link" variant="outlined" density="comfortable" hide-details /></v-col>
+          <v-col cols="12" sm="3"><v-select v-model="linkDocType" :items="linkDocTypeItems" label="Document Type" variant="outlined" density="comfortable" hide-details /></v-col>
+          <v-col cols="12" sm="2"><v-text-field v-model="linkTitle" label="Title" variant="outlined" density="comfortable" hide-details /></v-col>
           <v-col cols="12" sm="2"><v-btn color="info" block prepend-icon="mdi-link-plus" :disabled="!linkUrl" @click="submitLink">{{ isStaging ? 'Stage' : 'Add' }}</v-btn></v-col>
         </v-row>
       </v-window-item>
@@ -1110,6 +1262,7 @@ defineExpose({ fetchDocuments, fetchGallery })
       :mode="mode"
       :expand-upload="repoExpandUpload"
       :project-id="hasProject ? projectId : ''"
+      :uploads="uploadsForCodes(activeRepo.typeCodes)"
       @upload="onRepoUpload"
       @link="onRepoLink"
       @delete="deleteDocument"

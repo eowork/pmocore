@@ -15,8 +15,12 @@ import {
   UploadedFile,
   Res,
   StreamableFile,
+  Sse,
+  Headers,
+  MessageEvent,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import type { Observable } from 'rxjs';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ConstructionProjectsService } from './construction-projects.service';
@@ -45,6 +49,7 @@ import {
   UpdateDocumentFolderDto,
 } from './dto';
 import { JwtAuthGuard, RolesGuard, ModuleAccessGuard } from '../auth/guards';
+import { UploadProgressService } from '../uploads/upload-progress.service';
 import { Roles, CurrentUser, RequireModule } from '../auth/decorators';
 import { JwtPayload } from '../common/interfaces';
 
@@ -56,7 +61,10 @@ import { JwtPayload } from '../common/interfaces';
 @UseGuards(JwtAuthGuard, RolesGuard, ModuleAccessGuard)
 @RequireModule('coi')
 export class ConstructionProjectsController {
-  constructor(private readonly service: ConstructionProjectsService) {}
+  constructor(
+    private readonly service: ConstructionProjectsService,
+    private readonly uploadProgress: UploadProgressService,
+  ) {}
 
   // --- Read Operations: All authenticated roles can view ---
 
@@ -188,7 +196,10 @@ export class ConstructionProjectsController {
   // a module-level Approver/Manager before the service check ever ran.
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Publish (approve) a draft (Admin, or Approver/Manager module level)' })
+  @ApiOperation({
+    summary:
+      'Publish (approve) a draft (Admin, or Approver/Manager module level)',
+  })
   publish(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -199,7 +210,8 @@ export class ConstructionProjectsController {
   @Patch(':id/approve')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Approve (publish) a draft (Admin, or Approver/Manager module level) — alias for /publish',
+    summary:
+      'Approve (publish) a draft (Admin, or Approver/Manager module level) — alias for /publish',
   })
   approve(
     @Param('id', ParseUUIDPipe) id: string,
@@ -210,7 +222,10 @@ export class ConstructionProjectsController {
 
   @Post(':id/reject')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reject a draft with notes (Admin, or Approver/Manager module level)' })
+  @ApiOperation({
+    summary:
+      'Reject a draft with notes (Admin, or Approver/Manager module level)',
+  })
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('notes') notes: string,
@@ -428,8 +443,10 @@ export class ConstructionProjectsController {
     @Param('movEntryId', ParseUUIDPipe) movEntryId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: JwtPayload,
+    // Same optional SSE channel id as the document and gallery uploads.
+    @Headers('x-upload-id') uploadId?: string,
   ) {
-    return this.service.uploadMovFile(id, movEntryId, file, user.sub);
+    return this.service.uploadMovFile(id, movEntryId, file, user.sub, uploadId);
   }
 
   // --- POW routes REMOVED (Phase ME, 2026-05-21) ---
@@ -692,8 +709,17 @@ export class ConstructionProjectsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: CreateGalleryDto,
     @CurrentUser() user: JwtPayload,
+    // Same optional SSE channel id as the document upload; see uploadDocument above.
+    @Headers('x-upload-id') uploadId?: string,
   ) {
-    return this.service.createGalleryItem(id, file, dto, user.sub, user);
+    return this.service.createGalleryItem(
+      id,
+      file,
+      dto,
+      user.sub,
+      user,
+      uploadId,
+    );
   }
 
   @Patch(':id/gallery/:galleryId')
@@ -795,8 +821,44 @@ export class ConstructionProjectsController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: UploadDocumentDto,
     @CurrentUser() user: JwtPayload,
+    // Optional: the id of the SSE channel the client opened before sending the file.
+    // Sent as a header rather than a form field because the body is validated against
+    // UploadDocumentDto with forbidNonWhitelisted, and because it is transport metadata
+    // rather than part of the document.
+    @Headers('x-upload-id') uploadId?: string,
   ) {
-    return this.service.addDocumentToProject(id, file, dto, user.sub, user);
+    return this.service.addDocumentToProject(
+      id,
+      file,
+      dto,
+      user.sub,
+      user,
+      uploadId,
+    );
+  }
+
+  // Server-Sent Events channel for one upload.
+  //
+  // The client generates the uploadId, subscribes here FIRST, then POSTs the file with the
+  // same id in X-Upload-Id. Events already emitted are replayed on subscribe, so the order
+  // is a convenience rather than a race to win, and the stream completes on done/failed.
+  //
+  // Consume it with fetch + ReadableStream, not EventSource: EventSource cannot send an
+  // Authorization header, and this route is behind the same JWT and module guards as the
+  // rest of the controller. The channel is bound to the subscribing user, so one user
+  // cannot attach to another user's upload and read their file names.
+  @Sse(':id/uploads/progress/:uploadId')
+  @Roles() // any authenticated user with 'coi' access; the channel itself is owner-scoped
+  @ApiOperation({
+    summary:
+      'Live progress for one file upload — document or gallery image (Server-Sent Events)',
+  })
+  uploadProgressStream(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('uploadId', ParseUUIDPipe) uploadId: string,
+    @CurrentUser() user: JwtPayload,
+  ): Observable<MessageEvent> {
+    return this.uploadProgress.stream(uploadId, user.sub);
   }
 
   // JQ-C-2: Delete a document or external link from a project.
