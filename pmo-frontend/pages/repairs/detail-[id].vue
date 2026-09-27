@@ -3,7 +3,9 @@ import { adaptRepairDetail, type UIRepairDetail, type BackendRepairProjectDetail
 import { getPublicationStatusColor } from '~/utils/status-colors'
 
 definePageMeta({
-  middleware: 'auth',
+  // 'permission' was missing here, so the repair detail page was the one route under a gated
+  // prefix that no module guard ever ran on.
+  middleware: ['auth', 'permission'],
 })
 
 const route = useRoute()

@@ -7,8 +7,10 @@
  *
  * SECURITY: Backend must still enforce permissions. This is UX enhancement only.
  */
+import { gatedModuleForPath } from '~/composables/usePermissions'
+
 export default defineNuxtRouteMiddleware((to) => {
-  const { canManageUsers, isSuperAdmin, isAdmin, canAdd, canEdit, isContractor, canApprove, canAccessModule } = usePermissions()
+  const { canManageUsers, isSuperAdmin, isAdmin, canAdd, canEdit, isContractor, canApprove, canAccessModule, canViewModule } = usePermissions()
 
   // QB: Contractor route isolation — allow only /dashboard, /coi, /login, /contractor paths
   if (isContractor.value) {
@@ -34,11 +36,21 @@ export default defineNuxtRouteMiddleware((to) => {
     return // Skip all other guards for contractors
   }
 
-  // PHASE BBBE (Track 2 / Task H): module VIEW routes (/coi, /repairs, /university-operations and
-  // their detail pages) are open to all authenticated users — the dashboard/list/analytics/overview
-  // are universally viewable. WRITE routes (/coi/new, /coi/edit-*, …) remain gated by canAdd/canEdit
-  // below (level-based), and the backend ModuleAccessGuard is authoritative. The former BBBA-1b
-  // default-deny view redirect was removed (it caused the broken-dashboard 403 UX, R-342/R-344).
+  // MODULE ENTRY GATE — Infrastructure Projects, Repair Projects and University Operations.
+  //
+  // Supersedes the BBBE Track 2 / Task H rule that made every project module universally
+  // viewable: a locked sidebar entry is pointless if typing the URL still opens the page. A
+  // user with no grant for the module lands on Request Access instead, which is the remedy,
+  // rather than a dead end on the dashboard. Admins, SuperAdmins and the public COI pages are
+  // unaffected; the backend guards remain the authority for the data itself.
+  const gatedModule = gatedModuleForPath(to.path)
+  if (gatedModule && !canViewModule(gatedModule)) {
+    console.warn(`[Permission] Module locked: ${to.path} requires access to ${gatedModule}`)
+    return navigateTo({
+      path: '/access-request',
+      query: { module: gatedModule, denied: to.fullPath },
+    })
+  }
 
   // User management routes: SuperAdmin or Admin with canManageUsers permission
   if (to.path.startsWith('/users')) {

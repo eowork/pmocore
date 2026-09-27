@@ -73,7 +73,23 @@ async function cancelRequest(r: AccessRequest) {
   }
 }
 
-onMounted(loadMine)
+// A locked module redirects here with ?module=<key>&denied=<path>. Naming the module the user
+// was turned away from — and pre-selecting it — keeps the redirect from reading as a dead end.
+const route = useRoute()
+const deniedModule = computed(() => {
+  const m = route.query.module
+  const value = Array.isArray(m) ? m[0] : m
+  return value && ACCESS_REQUEST_MODULE_OPTIONS.some(o => o.value === value) ? value : ''
+})
+
+onMounted(async () => {
+  // After loadMine, so a module with a request already pending is no longer offered and is
+  // not pre-selected into a value the dropdown does not carry.
+  await loadMine()
+  if (deniedModule.value && requestableModules.value.some(m => m.value === deniedModule.value)) {
+    form.value.requested_module = deniedModule.value
+  }
+})
 </script>
 
 <template>
@@ -82,6 +98,18 @@ onMounted(loadMine)
       <v-icon color="primary">mdi-lock-open-outline</v-icon>
       <h1 class="text-h6 font-weight-bold mb-0">Request Module Access</h1>
     </div>
+
+    <v-alert
+      v-if="deniedModule"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="mb-4"
+      icon="mdi-lock-outline"
+    >
+      <strong>{{ labelForAccessModule(deniedModule) }}</strong> is locked for your account.
+      An administrator has to grant you an access level before you can open it.
+    </v-alert>
 
     <v-card elevation="1" rounded="lg" class="mb-4">
       <v-card-text>
