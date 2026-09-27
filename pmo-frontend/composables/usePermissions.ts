@@ -108,6 +108,33 @@ const CONTRACTOR_ALLOWED_MODULES = ['coi', 'dashboard']
 // backend ModuleAccessGuard: no override ⇒ reads pass, writes 403).
 const GATED_MODULES = ['coi', 'repairs', 'university_operations']
 
+/**
+ * Route prefixes of the modules whose entry is gated, mapped to their override/level key.
+ *
+ * Longest prefix first: /university-operations/physical must resolve before the parent so a
+ * sub-module grant is judged against its own key.
+ */
+export const GATED_MODULE_ROUTES: { prefix: string; module: string }[] = [
+  { prefix: '/university-operations', module: 'university_operations' },
+  { prefix: '/repairs', module: 'repairs' },
+  { prefix: '/coi', module: 'coi' },
+]
+
+/**
+ * Routes under a gated prefix that are NOT gated — the public project pages, which render on
+ * the public layout without authentication at all.
+ */
+const GATE_EXEMPT_PREFIXES = ['/coi/public']
+
+/** The gated module a path belongs to, or null when the path is ungated or exempt. */
+export function gatedModuleForPath(path: string): string | null {
+  if (GATE_EXEMPT_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) return null
+  const hit = GATED_MODULE_ROUTES.find(
+    ({ prefix }) => path === prefix || path.startsWith(prefix + '/'),
+  )
+  return hit?.module ?? null
+}
+
 export function usePermissions() {
   const authStore = useAuthStore()
 
@@ -247,6 +274,35 @@ export function usePermissions() {
     // project/operational modules (read-only). "Viewing ≠ modifying." Write capability is gated
     // separately by canAdd/canEdit (level-based). Supersedes the BBBA default-deny on reads (R-344).
     return true
+  }
+
+  /**
+   * Whether the user may ENTER a gated module at all (sidebar lock + route guard).
+   *
+   * Distinct from canAccessModule, which treats every project module as universally viewable.
+   * That rule (BBBE Track 2 / Task H) let anyone who typed the URL land inside COI, Repairs or
+   * University Operations. Entry to those three now requires an actual grant: an explicit
+   * module override, or a per-module level from an approved access request. Admins and
+   * SuperAdmins administer every project module, so they are never locked out.
+   *
+   * University Operations resolves across its parent key and both per-pillar sub-keys, since a
+   * Physical-only or Financial-only grant never rolls up into the parent (same rule the backend
+   * applies in UniversityOperationsService.UO_LEVEL_KEYS).
+   */
+  function canViewModule(moduleId: string): boolean {
+    if (isSuperAdmin.value) return true
+    if (isContractor.value) {
+      return CONTRACTOR_ALLOWED_MODULES.includes(moduleId.toLowerCase())
+    }
+
+    const key = normalizeModuleKey(moduleId)
+    if (!GATED_MODULES.includes(key)) return canAccessModule(moduleId)
+    if (isAdmin.value) return true
+
+    const keys = key === 'university_operations' ? UO_LEVEL_KEYS : [key]
+    return keys.some(
+      (k) => moduleOverrides.value[k] === true || !!moduleLevels.value[k],
+    )
   }
 
   /**
@@ -425,6 +481,7 @@ export function usePermissions() {
 
     // Module access (for sidebar filtering)
     canAccessModule,
+    canViewModule,
     moduleOverrides,
     moduleLevels,
     moduleAssignments,
