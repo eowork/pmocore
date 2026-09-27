@@ -4,7 +4,23 @@ import { useDisplay } from 'vuetify'
 const router = useRouter()
 const authStore = useAuthStore()
 const api = useApi()
-const { canAccessAdmin, canManageUsers, canAccessModule, currentRole, isSuperAdmin, isContractor, canApprove } = usePermissions()
+const { canAccessAdmin, canManageUsers, canAccessModule, canViewModule, currentRole, isSuperAdmin, isContractor, canApprove } = usePermissions()
+
+/**
+ * Whether a gated module is locked for this user.
+ *
+ * Locked entries stay visible on purpose: hiding them leaves a user wondering where a module
+ * went, whereas a padlock says the module exists and access can be requested. The route guard
+ * in middleware/permission.ts enforces the same rule for anyone typing the URL.
+ */
+function isModuleLocked(moduleKey: string): boolean {
+  return !canViewModule(moduleKey)
+}
+
+/** Request Access, pre-aimed at the module whose padlock was clicked. */
+function lockedTo(moduleKey: string) {
+  return { path: '/access-request', query: { module: moduleKey } }
+}
 
 // PHASE BBCH (Track 1, R-372): approval authority via Layer 1 (admin) OR Layer 3 (Approver/Manager
 // module level) in any reviewable module — drives Pending Reviews nav visibility.
@@ -304,8 +320,28 @@ async function handleLogout() {
           class="mb-1 ga-1"
         />
 
+        <!-- University Operations — locked users get a padlocked entry that routes to Request
+             Access instead of an expandable group with unreachable children. -->
+        <v-list-item
+          v-if="isModuleLocked('university_operations')"
+          :to="lockedTo('university_operations')"
+          prepend-icon="mdi-school"
+          append-icon="mdi-lock-outline"
+          color="primary"
+          rounded="lg"
+          class="mb-1 nav-locked-item"
+        >
+          <template #title>
+            University Operations
+            <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Locked</v-chip>
+          </template>
+          <v-tooltip activator="parent" location="end">
+            No access level granted — click to request access
+          </v-tooltip>
+        </v-list-item>
+
         <!-- T-NAV: University Operations — expandable group (same v-list-group pattern as User Management) -->
-        <v-list-group v-if="canAccessModule('university_operations')" v-model="uoOpen" value="universityOps">
+        <v-list-group v-else-if="canAccessModule('university_operations')" v-model="uoOpen" value="universityOps">
           <template #activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-school" title="University Operations" color="primary" rounded="lg" class="mb-1" />
           </template>
@@ -343,8 +379,27 @@ async function handleLogout() {
           </v-list-item>
         </v-list-group>
 
+        <!-- Infrastructure Projects — padlocked entry when no access level is granted. -->
+        <v-list-item
+          v-if="isModuleLocked('coi')"
+          :to="lockedTo('coi')"
+          prepend-icon="mdi-office-building"
+          append-icon="mdi-lock-outline"
+          color="primary"
+          rounded="lg"
+          class="mb-1 nav-locked-item"
+        >
+          <template #title>
+            Infrastructure Projects
+            <v-chip size="x-small" variant="tonal" color="grey" class="ml-2">Locked</v-chip>
+          </template>
+          <v-tooltip activator="parent" location="end">
+            No access level granted — click to request access
+          </v-tooltip>
+        </v-list-item>
+
         <!-- T-NAV: Infrastructure Projects (COI) — expandable group (same v-list-group pattern as User Management) -->
-        <v-list-group v-if="canAccessModule('coi')" v-model="coiOpen" value="infraProjects">
+        <v-list-group v-else-if="canAccessModule('coi')" v-model="coiOpen" value="infraProjects">
           <template #activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-office-building" title="Infrastructure Projects" color="primary" rounded="lg" class="mb-1" />
           </template>
@@ -388,16 +443,29 @@ async function handleLogout() {
         <v-list-item
           v-for="item in mainModules.filter(m => m.key !== 'dashboard')"
           :key="item.to"
-          :to="item.to"
+          :to="isModuleLocked(item.key) ? lockedTo(item.key) : item.to"
           :prepend-icon="item.icon"
+          :append-icon="isModuleLocked(item.key) ? 'mdi-lock-outline' : undefined"
           color="primary"
           rounded="lg"
           class="mb-1 ga-1"
+          :class="{ 'nav-locked-item': isModuleLocked(item.key) }"
         >
           <template #title>
             {{ item.title }}
+            <!-- A locked module shows only the padlock: its dev status is beside the point
+                 until the user can open it at all. -->
             <v-chip
-              v-if="item.key === 'repairs' || item.key === 'gad'"
+              v-if="isModuleLocked(item.key)"
+              size="x-small"
+              variant="tonal"
+              color="grey"
+              class="ml-2"
+            >
+              Locked
+            </v-chip>
+            <v-chip
+              v-else-if="item.key === 'repairs' || item.key === 'gad'"
               size="x-small"
               variant="tonal"
               color="grey"
@@ -406,6 +474,9 @@ async function handleLogout() {
               Soon
             </v-chip>
           </template>
+          <v-tooltip v-if="isModuleLocked(item.key)" activator="parent" location="end">
+            No access level granted — click to request access
+          </v-tooltip>
         </v-list-item>
       </v-list>
 
@@ -575,6 +646,15 @@ html {
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   line-height: 1.3;
+}
+
+/* Locked module rows stay legible but visibly inactive — dimmed rather than hidden, so the
+   module's existence (and the way to request it) is still discoverable. */
+.nav-locked-item {
+  opacity: 0.55;
+}
+.nav-locked-item:hover {
+  opacity: 0.8;
 }
 
 /* T-NAV: Child nav items — flush indent matching v-list-group__items override above */
