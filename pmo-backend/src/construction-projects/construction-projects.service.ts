@@ -330,17 +330,25 @@ export class ConstructionProjectsService {
     const params: any[] = [];
 
     const queryAny = query as any;
-    // Visibility scope (supersedes PHASE BBBF Track 1/R-353's "universally viewable" policy):
-    // Admin/SuperAdmin see everything. Everyone else — any role/level, Contractor included —
-    // sees ONLY projects they created or are explicitly assigned to. Scoped server-side off the
-    // JWT-authenticated user id (not left to the frontend), and ANDed with any other filter
-    // below rather than short-circuited by one (the prior `else if` let a publication_status
-    // filter bypass the Contractor-only scoping entirely).
-    if (user && !this.permissionResolver.isAdmin(user)) {
+    // Visibility scope: the project list is a directory of the institution's portfolio, not a
+    // personal work queue. Every authenticated user who holds 'coi' module access sees every
+    // project, whether or not they created or were assigned to it. The previous owner/assigned
+    // filter hid the portfolio from the very people expected to read it, and it bought no real
+    // secrecy: findOne() has always served any project by id to an institutional user.
+    //
+    // Authority is deliberately unchanged. Every write still passes through
+    // assertProjectPermission(), which admits exactly three parties — Admin, the project owner,
+    // and a user whose record_assignments row carries the matching permission. Seeing a project
+    // is not being able to act on it.
+    //
+    // Contractors stay record-scoped. That is external-personnel isolation (QD-C), enforced the
+    // same way in findOne(), and is a separate rule from the institutional visibility policy
+    // relaxed here. The condition is ANDed with the filters below, never replaced by one.
+    if (user && this.permissionResolver.isContractor(user)) {
       conditions.push(
-        `(cp.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?))`,
+        `EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?)`,
       );
-      params.push(user.sub, user.sub);
+      params.push(user.sub);
     }
 
     if (queryAny.publication_status) {
@@ -1477,6 +1485,15 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMilestone[]> {
     await this.findOne(projectId);
+    // Record-scope guard. The single-create route above has always had one; the batch route
+    // did not, and was reachable by anyone holding 'coi' module access.
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canCreate',
+      );
     const entities = dto.items.map((item) =>
       this.milestoneRepo.create({
         projectId,
@@ -1512,6 +1529,14 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionTimelineEntry[]> {
     await this.findOne(projectId);
+    // Record-scope guard — parity with the single-create timeline route.
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canCreate',
+      );
     const entities = dto.items.map((item) =>
       this.timelineEntryRepo.create({
         projectId,
@@ -1747,6 +1772,10 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMovEntry> {
     await this.findOne(projectId);
+    // Record-scope guard: a MOV entry is project evidence, so creating one is a write on the
+    // project and needs the same assignment check as any other sub-resource.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canCreate');
 
     // Validate the related entity exists and belongs to this project
     if (dto.related_entity_type === 'MILESTONE') {
@@ -1800,6 +1829,9 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<void> {
     await this.findOne(projectId);
+    // Record-scope guard — deleting evidence is a write on the project.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canDelete');
     const count = await this.movEntryRepo.nativeDelete({
       id: movEntryId,
       projectId,
@@ -1827,7 +1859,14 @@ export class ConstructionProjectsService {
     file: Express.Multer.File,
     userId: string,
     uploadId?: string,
+    // Optional so existing call sites keep compiling; the controller always passes it, and
+    // without it the record-scope guard below cannot run.
+    user?: JwtPayload,
   ): Promise<ConstructionMovEntry> {
+    // Record-scope guard, before any progress channel is opened — a caller with no claim on
+    // the project should be refused rather than handed a live upload channel.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canUpload');
     if (uploadId) this.uploadProgress.open(uploadId, userId);
     this.uploadProgress.emit(uploadId, userId, 'received', {
       fileName: file?.originalname,
@@ -2031,6 +2070,10 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionDocumentChecklist> {
     await this.findOne(projectId);
+    // Record-scope guard: the checklist records compliance status for this project, so
+    // changing it is a project write.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
     const entity = await this.docChecklistRepo.findOne({
       id: itemId,
       projectId,
@@ -2119,6 +2162,9 @@ export class ConstructionProjectsService {
   ): Promise<void> {
     const entity = await this.cpRepo.findOne({ id: projectId });
     if (!entity) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — checklist remarks are stored on the project row itself.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
     const current: Record<
       string,
       string | Array<{ text: string; author: string; timestamp: string }>
@@ -2175,6 +2221,9 @@ export class ConstructionProjectsService {
   ): Promise<Array<{ id: string; label: string; typeCode: string }>> {
     const entity = await this.cpRepo.findOne({ id: projectId });
     if (!entity) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — custom Key Document sections are per-project configuration.
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     entity.customKeySections = Array.isArray(sections) ? sections : [];
     await this.em.flush();
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
@@ -2193,6 +2242,9 @@ export class ConstructionProjectsService {
   ): Promise<Array<{ id: string; label: string; typeCode: string }>> {
     const entity = await this.cpRepo.findOne({ id: projectId });
     if (!entity) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — custom Supporting Document folders are per-project configuration.
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     entity.customSupportingSections = Array.isArray(sections) ? sections : [];
     await this.em.flush();
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
@@ -2296,6 +2348,10 @@ export class ConstructionProjectsService {
     uploadId?: string,
   ): Promise<ConstructionGallery> {
     await this.findOne(projectId);
+    // Record-scope guard, at the single choke point the upload route and any future caller
+    // both pass through.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canUpload');
 
     if (!file) throw new BadRequestException('Image file is required');
 
@@ -2363,8 +2419,13 @@ export class ConstructionProjectsService {
     galleryId: string,
     dto: Partial<CreateGalleryDto>,
     userId: string,
+    // Optional so existing call sites keep compiling; the controller always passes it.
+    user?: JwtPayload,
   ): Promise<ConstructionGallery> {
     const entity = await this.findGalleryItem(projectId, galleryId);
+    // Record-scope guard — editing a caption or category is still a project write.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
 
     if (dto.caption !== undefined) entity.caption = dto.caption;
     if (dto.category !== undefined) entity.category = dto.category;
@@ -3045,6 +3106,8 @@ export class ConstructionProjectsService {
     document: Document;
   }> {
     await this.findOne(projectId);
+    // Record-scope guard — submitting a document version writes to the project's checklist.
+    await this.assertProjectPermission(projectId, user.sub, user, 'canUpload');
     const checklistItem = await this.docChecklistRepo.findOne({
       id: checklistItemId,
       projectId,
@@ -3153,6 +3216,8 @@ export class ConstructionProjectsService {
   ): Promise<ConstructionDiaryEntry> {
     const project = await this.cpRepo.findOne({ id: projectId });
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — the delete counterpart already had one.
+    await this.assertProjectPermission(projectId, user.sub, user, 'canCreate');
 
     const entry = this.diaryRepo.create({
       projectId,
@@ -3183,6 +3248,8 @@ export class ConstructionProjectsService {
         `Diary entry ${entryId} not found for project ${projectId}`,
       );
     }
+    // Record-scope guard — the delete counterpart already had one.
+    await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     const before = {
       entryDate: entry.entryDate,
       title: entry.title,
