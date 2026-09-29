@@ -88,7 +88,7 @@ services:
     ports:
       - "${FRONTEND_PORT:-3001}:3000"
   minio:
-    image: 'quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z'
+    image: 'ghcr.io/coollabsio/minio:RELEASE.2025-04-22T22-12-26Z'
     restart: unless-stopped
     command:
       - server
