@@ -446,7 +446,14 @@ export class ConstructionProjectsController {
     // Same optional SSE channel id as the document and gallery uploads.
     @Headers('x-upload-id') uploadId?: string,
   ) {
-    return this.service.uploadMovFile(id, movEntryId, file, user.sub, uploadId);
+    return this.service.uploadMovFile(
+      id,
+      movEntryId,
+      file,
+      user.sub,
+      uploadId,
+      user,
+    );
   }
 
   // --- POW routes REMOVED (Phase ME, 2026-05-21) ---
@@ -731,7 +738,7 @@ export class ConstructionProjectsController {
     @Body() dto: Partial<CreateGalleryDto>,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.updateGalleryItem(id, galleryId, dto, user.sub);
+    return this.service.updateGalleryItem(id, galleryId, dto, user.sub, user);
   }
 
   @Delete(':id/gallery/:galleryId')

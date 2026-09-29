@@ -220,6 +220,19 @@ function canRejectItem(project: UIProject): boolean {
   return myProjectPermissions(project)?.canApprove === true
 }
 
+// The list now shows every project in the portfolio, not only the ones the user owns or is
+// assigned to, so most rows carry no action beyond View. Saying that outright is clearer than
+// a menu that silently collapses to a single item — the reader learns why, and what to do
+// about it, rather than assuming the page is broken.
+function hasAnyProjectAction(project: UIProject): boolean {
+  return canEditItem(project)
+    || canDeleteItem(project)
+    || canSubmitForReview(project)
+    || canWithdraw(project)
+    || canApproveItem(project)
+    || canRejectItem(project)
+}
+
 // --- Meatball Menu Actions ---
 
 async function submitForReview(project: UIProject) {
@@ -1305,6 +1318,7 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
               </template>
               <v-list density="compact" min-width="180">
                 <v-list-item prepend-icon="mdi-eye" title="View" @click.stop="viewProject(p)" />
+                <v-list-item v-if="!hasAnyProjectAction(p)" disabled prepend-icon="mdi-lock-outline" title="View only — not assigned" class="text-caption" />
                 <v-list-item v-if="canEditItem(p)" prepend-icon="mdi-pencil" title="Edit" @click.stop="editProject(p)" />
                 <v-list-item v-if="canSubmitForReview(p)" prepend-icon="mdi-send" title="Submit for Review" @click.stop="submitForReview(p)" />
                 <v-list-item v-if="canWithdraw(p)" prepend-icon="mdi-undo" title="Withdraw" class="text-orange" @click.stop="withdrawSubmission(p)" />
@@ -1339,6 +1353,7 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
                 </template>
                 <v-list density="compact" min-width="170">
                   <v-list-item prepend-icon="mdi-eye" title="View" @click="viewProject(p)" />
+                  <v-list-item v-if="!hasAnyProjectAction(p)" disabled prepend-icon="mdi-lock-outline" title="View only — not assigned" class="text-caption" />
                   <v-list-item v-if="canEditItem(p)" prepend-icon="mdi-pencil" title="Edit" @click="editProject(p)" />
                   <v-list-item v-if="canSubmitForReview(p)" prepend-icon="mdi-send" title="Submit for Review" @click="submitForReview(p)" />
                   <v-list-item v-if="canWithdraw(p)" prepend-icon="mdi-undo" title="Withdraw" class="text-orange" @click="withdrawSubmission(p)" />
@@ -1473,6 +1488,16 @@ onMounted(() => { fetchProjects(); fetchAnalytics() })
               <!-- View (always visible) -->
               <v-list-item @click="viewProject(item)" prepend-icon="mdi-eye">
                 <v-list-item-title>View</v-list-item-title>
+              </v-list-item>
+
+              <!-- View-only notice: no owner/assignment claim on this project -->
+              <v-list-item
+                v-if="!hasAnyProjectAction(item)"
+                disabled
+                prepend-icon="mdi-lock-outline"
+                class="text-caption"
+              >
+                <v-list-item-title>View only — not assigned</v-list-item-title>
               </v-list-item>
 
               <!-- Edit (conditional) -->
