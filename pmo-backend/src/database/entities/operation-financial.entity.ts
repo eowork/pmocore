@@ -1,4 +1,11 @@
-import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  Entity,
+  Enum,
+  Filter,
+  Index,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/core';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
 @Entity({ tableName: 'operation_financials' })
@@ -32,7 +39,13 @@ export class OperationFinancial {
   @Property({ nullable: true, length: 50 })
   projectCode?: string;
 
-  @Property({ nullable: true, length: 4 })
+  // varchar(4) guarded by the chk_expense_class CHECK constraint — see the note on
+  // ConstructionDocumentChecklist.submissionStatus for why this must be declared as an enum.
+  @Enum({
+    items: ['PS', 'MOOE', 'CO'],
+    columnType: 'varchar(4)',
+    nullable: true,
+  })
   expenseClass?: string;
 
   @Property({ nullable: true, columnType: 'numeric(15,2)' })

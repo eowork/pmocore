@@ -1,4 +1,29 @@
-import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  Collection,
+  Entity,
+  Filter,
+  Index,
+  ManyToOne,
+  OneToMany,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/core';
+import { ConstructionProjectRepository } from '../../construction-projects/construction-project.repository';
+import { Contractor } from './contractor.entity';
+import { ConstructionDiaryEntry } from './construction-diary-entry.entity';
+import { ConstructionDocumentChecklist } from './construction-document-checklist.entity';
+import { ConstructionDocumentFolder } from './construction-document-folder.entity';
+import { ConstructionDocumentSubmission } from './construction-document-submission.entity';
+import { ConstructionGallery } from './construction-gallery.entity';
+import { ConstructionMilestone } from './construction-milestone.entity';
+import { ConstructionMovEntry } from './construction-mov-entry.entity';
+import { ConstructionProgressReport } from './construction-progress-report.entity';
+import { ConstructionRevisionOrder } from './construction-revision-order.entity';
+import { ConstructionSubcategory } from './construction-subcategory.entity';
+import { ConstructionTimelineEntry } from './construction-timeline-entry.entity';
+import { FundingSource } from './funding-source.entity';
+import { Project } from './project.entity';
+import { User } from './user.entity';
 
 type ChecklistRemarkEntry = {
   text: string;
@@ -17,29 +42,45 @@ type ChecklistRemarkEntry = {
     'CREATE UNIQUE INDEX construction_projects_project_code_active_idx ON construction_projects (project_code) WHERE deleted_at IS NULL',
 })
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'construction_projects' })
+// The repository is bound here rather than registered separately so that
+// @InjectRepository(ConstructionProject) hands back ConstructionProjectRepository, with its
+// list query, everywhere the entity's repository is requested. The lazy callback is what
+// mikro-orm expects and keeps the reference from being read at decoration time.
+@Entity({
+  tableName: 'construction_projects',
+  repository: () => ConstructionProjectRepository,
+})
 export class ConstructionProject {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
-  // FIX: 'bigserial' as a plain columnType carries no default in mikro-orm's own
-  // metadata (it's not a recognized auto-increment marker the way @PrimaryKey({
-  // autoincrement: true }) is), so the differ saw "entity has no default" vs "DB has
-  // DEFAULT nextval(...)" and generated a migration that dropped it — construction
-  // project creation (raw INSERT in construction-projects.service.ts, which never
-  // supplies this column) then hit a NOT NULL violation once that migration ran.
-  // Declaring the real underlying type (bigint, what Postgres itself reports for a
-  // bigserial column) plus the exact live default expression keeps future diffs a no-op.
+  // This column is a bigserial: bigint, backed by construction_projects_infra_project_uid_seq.
+  //
+  // An earlier attempt declared columnType 'bigserial' alone, which carries no default in
+  // mikro-orm's metadata, so the differ generated a migration that dropped the DEFAULT —
+  // construction project creation (raw INSERT in construction-projects.service.ts, which
+  // never supplies this column) then hit a NOT NULL violation once that migration ran.
+  // Spelling the default out with defaultRaw did not settle it either: mikro-orm introspects
+  // a sequence-backed column as autoincrement with no default, so the entity's explicit
+  // default read as a difference and the same two statements were regenerated on every diff.
+  // autoincrement: true is how mikro-orm models exactly this column, and it diffs clean.
   @Property({
     columnType: 'bigint',
     unique: true,
-    defaultRaw:
-      "nextval('construction_projects_infra_project_uid_seq'::regclass)",
+    autoincrement: true,
   })
   infraProjectUid!: number;
 
   @Property({ columnType: 'uuid', unique: true })
   projectId!: string;
+
+  @ManyToOne(() => Project, {
+    fieldName: 'project_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  parentProject!: Project;
 
   // Plain lookup index (coredata_schema.sql:3530-3533) — separate from the partial
   // unique index above (which only enforces uniqueness among non-deleted rows).
@@ -87,6 +128,25 @@ export class ConstructionProject {
   @Property({ nullable: true, columnType: 'uuid' })
   contractorId?: string;
 
+  // Named contractorRef rather than contractor because the free-text column below already
+  // owns that name — it is the pre-contractors-table fallback the list query still reads.
+  //
+  // Every relation on this entity carries the same three options:
+  // persist: false — the uuid scalar above stays the writer, so existing write paths are
+  //   untouched and the column is never mapped twice on INSERT.
+  // hidden: true — the relation is excluded from JSON, so endpoints that return this entity
+  //   directly (findMyDrafts and the child-entity routes) serialise exactly as before.
+  // createForeignKeyConstraint: false — this database has no foreign keys; declaring a
+  //   relation must not make the schema differ want to add one.
+  @ManyToOne(() => Contractor, {
+    fieldName: 'contractor_id',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  contractorRef?: Contractor;
+
   @Property({ nullable: true, length: 255 })
   contractor?: string;
 
@@ -125,6 +185,15 @@ export class ConstructionProject {
   @Property({ nullable: true, columnType: 'uuid' })
   fundingSourceId?: string;
 
+  @ManyToOne(() => FundingSource, {
+    fieldName: 'funding_source_id',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  fundingSourceRef?: FundingSource;
+
   // AAAK: Two-Level Funding — Level 1 (controlled category, used for analytics/filtering)
   @Property({ nullable: true, length: 30 })
   primaryFundingSource?: string;
@@ -135,6 +204,15 @@ export class ConstructionProject {
 
   @Property({ nullable: true, columnType: 'uuid' })
   subcategoryId?: string;
+
+  @ManyToOne(() => ConstructionSubcategory, {
+    fieldName: 'subcategory_id',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  subcategory?: ConstructionSubcategory;
 
   @Property({ length: 50 })
   campus!: string;
@@ -172,11 +250,29 @@ export class ConstructionProject {
   @Property({ nullable: true, columnType: 'uuid' })
   submittedBy?: string;
 
+  @ManyToOne(() => User, {
+    fieldName: 'submitted_by',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  submitter?: User;
+
   @Property({ nullable: true, columnType: 'timestamptz' })
   submittedAt?: Date;
 
   @Property({ nullable: true, columnType: 'uuid' })
   reviewedBy?: string;
+
+  @ManyToOne(() => User, {
+    fieldName: 'reviewed_by',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  reviewer?: User;
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   reviewedAt?: Date;
@@ -189,6 +285,14 @@ export class ConstructionProject {
 
   @Property({ columnType: 'uuid' })
   createdBy!: string;
+
+  @ManyToOne(() => User, {
+    fieldName: 'created_by',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  creator!: User;
 
   @Property({ nullable: true, columnType: 'uuid' })
   updatedBy?: string;
@@ -364,4 +468,50 @@ export class ConstructionProject {
   // MC: Structured personnel groups
   @Property({ nullable: true, columnType: 'jsonb' })
   personnelGroups?: any;
+
+  // Inverse sides. These own no column, so they add nothing to the schema diff; hidden: true
+  // keeps them out of JSON so a project serialised without populate() looks the same as it
+  // always has. Load them explicitly with populate() — never with eager: true, which would
+  // join on every single query that touches a project, including every write path.
+  @OneToMany(() => ConstructionMilestone, (e) => e.project, { hidden: true })
+  milestones = new Collection<ConstructionMilestone>(this);
+
+  @OneToMany(() => ConstructionTimelineEntry, (e) => e.project, {
+    hidden: true,
+  })
+  timelineEntries = new Collection<ConstructionTimelineEntry>(this);
+
+  @OneToMany(() => ConstructionRevisionOrder, (e) => e.project, {
+    hidden: true,
+  })
+  revisionOrders = new Collection<ConstructionRevisionOrder>(this);
+
+  @OneToMany(() => ConstructionProgressReport, (e) => e.project, {
+    hidden: true,
+  })
+  progressReports = new Collection<ConstructionProgressReport>(this);
+
+  @OneToMany(() => ConstructionDocumentChecklist, (e) => e.project, {
+    hidden: true,
+  })
+  documentChecklist = new Collection<ConstructionDocumentChecklist>(this);
+
+  @OneToMany(() => ConstructionDocumentSubmission, (e) => e.project, {
+    hidden: true,
+  })
+  documentSubmissions = new Collection<ConstructionDocumentSubmission>(this);
+
+  @OneToMany(() => ConstructionDocumentFolder, (e) => e.project, {
+    hidden: true,
+  })
+  documentFolders = new Collection<ConstructionDocumentFolder>(this);
+
+  @OneToMany(() => ConstructionDiaryEntry, (e) => e.project, { hidden: true })
+  diaryEntries = new Collection<ConstructionDiaryEntry>(this);
+
+  @OneToMany(() => ConstructionGallery, (e) => e.project, { hidden: true })
+  gallery = new Collection<ConstructionGallery>(this);
+
+  @OneToMany(() => ConstructionMovEntry, (e) => e.project, { hidden: true })
+  movEntries = new Collection<ConstructionMovEntry>(this);
 }

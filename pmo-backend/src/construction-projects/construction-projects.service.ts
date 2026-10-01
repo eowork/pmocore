@@ -61,6 +61,7 @@ import {
   Project,
   Document,
 } from '../database/entities';
+import { ConstructionProjectRepository } from './construction-project.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -72,18 +73,10 @@ export type PublicationStatus =
 @Injectable()
 export class ConstructionProjectsService {
   private readonly logger = new Logger(ConstructionProjectsService.name);
-  private readonly ALLOWED_SORTS = [
-    'created_at',
-    'title',
-    'status',
-    'start_date',
-    'target_completion_date',
-    'physical_progress',
-  ];
 
   constructor(
     @InjectRepository(ConstructionProject)
-    private readonly cpRepo: EntityRepository<ConstructionProject>,
+    private readonly cpRepo: ConstructionProjectRepository,
     @InjectRepository(ConstructionMilestone)
     private readonly milestoneRepo: EntityRepository<ConstructionMilestone>,
     @InjectRepository(ConstructionTimelineEntry)
@@ -304,7 +297,8 @@ export class ConstructionProjectsService {
     userId: string,
     user: JwtPayload,
   ): Promise<boolean> {
-    if (await this.permissionResolver.canApproveModule(user, 'coi')) return true;
+    if (await this.permissionResolver.canApproveModule(user, 'coi'))
+      return true;
     const conn = this.em.getConnection();
     const rows = await conn.execute(
       `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
@@ -320,16 +314,8 @@ export class ConstructionProjectsService {
     query: QueryConstructionProjectDto,
     user?: JwtPayload,
   ): Promise<PaginatedResponse<any>> {
-    const { page = 1, limit = 20, sort = 'created_at', order = 'desc' } = query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 20 } = query;
 
-    const sortColumn = this.ALLOWED_SORTS.includes(sort) ? sort : 'created_at';
-    const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-    const conditions: string[] = ['cp.deleted_at IS NULL'];
-    const params: any[] = [];
-
-    const queryAny = query as any;
     // Visibility scope: the project list is a directory of the institution's portfolio, not a
     // personal work queue. Every authenticated user who holds 'coi' module access sees every
     // project, whether or not they created or were assigned to it. The previous owner/assigned
@@ -343,96 +329,20 @@ export class ConstructionProjectsService {
     //
     // Contractors stay record-scoped. That is external-personnel isolation (QD-C), enforced the
     // same way in findOne(), and is a separate rule from the institutional visibility policy
-    // relaxed here. The condition is ANDed with the filters below, never replaced by one.
-    if (user && this.permissionResolver.isContractor(user)) {
-      conditions.push(
-        `EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?)`,
-      );
-      params.push(user.sub);
-    }
+    // relaxed here. The policy decision belongs here; the repository only applies the
+    // restriction it is handed, ANDed with the query's own filters.
+    const restrictToAssignedUserId =
+      user && this.permissionResolver.isContractor(user) ? user.sub : null;
 
-    if (queryAny.publication_status) {
-      conditions.push(`cp.publication_status = ?`);
-      params.push(queryAny.publication_status);
-    }
-
-    if (query.status) {
-      conditions.push(`cp.status = ?`);
-      params.push(query.status);
-    }
-    if (query.campus) {
-      conditions.push(`cp.campus = ?`);
-      params.push(query.campus);
-    }
-    if (query.contractor_id) {
-      conditions.push(`cp.contractor_id = ?`);
-      params.push(query.contractor_id);
-    }
-    if (query.funding_source_id) {
-      conditions.push(`cp.funding_source_id = ?`);
-      params.push(query.funding_source_id);
-    }
-    // AAAK: Two-Level Funding filters — primary (controlled Level-1 exact match) +
-    // description (free-text Level-2 partial match).
-    if (query.primary_funding_source) {
-      conditions.push(`cp.primary_funding_source = ?`);
-      params.push(query.primary_funding_source);
-    }
-    if (query.funding_source_description) {
-      conditions.push(`cp.funding_source_description ILIKE ?`);
-      params.push(`%${query.funding_source_description}%`);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const conn = this.em.getConnection();
-
-    const countResult = await conn.execute(
-      `SELECT COUNT(*) FROM construction_projects cp WHERE ${whereClause}`,
-      params,
-    );
-    const total = parseInt(countResult[0].count, 10);
-
-    const dataResult = await conn.execute(
-      `SELECT cp.id, cp.infra_project_uid, cp.project_id, cp.project_code, cp.title,
-              cp.description, cp.status, cp.campus, cp.start_date, cp.target_completion_date,
-              cp.physical_progress, cp.financial_progress, cp.contract_amount,
-              cp.contractor_id, cp.funding_source_id, cp.publication_status, cp.created_at,
-              cp.updated_at, cp.project_duration,
-              cp.submitted_by, cp.submitted_at,
-              cp.original_start_date, cp.revised_start_date,
-              cp.original_completion_date, cp.revised_completion_date,
-              cp.primary_funding_source, cp.funding_source_description,
-              fs.name as funding_source_name,
-              COALESCE(c.name, cp.contractor) as contractor_name,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              (SELECT COALESCE(json_agg(json_build_object(
-                  'id', u.id,
-                  'name', u.first_name || ' ' || u.last_name,
-                  'email', u.email,
-                  'role', ra.role,
-                  'department', ra.department,
-                  'phone', ra.phone,
-                  'personnel_category', ra.personnel_category,
-                  'project_role', ra.project_role,
-                  'permissions', ra.permissions,
-                  'user_role', (SELECT r.name FROM user_roles ur
-                                JOIN roles r ON ur.role_id = r.id
-                                WHERE ur.user_id = u.id LIMIT 1)
-                )), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id) as assigned_users
-       FROM construction_projects cp
-       LEFT JOIN users submitter ON cp.submitted_by = submitter.id
-       LEFT JOIN funding_sources fs ON cp.funding_source_id = fs.id
-       LEFT JOIN contractors c ON cp.contractor_id = c.id
-       WHERE ${whereClause}
-       ORDER BY cp.${sortColumn} ${sortOrder}
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
+    const { rows, total } = await this.cpRepo.findAllConstructionProject(
+      query,
+      {
+        restrictToAssignedUserId,
+      },
     );
 
     // VD-A: deny-by-default for contractor assignments with null permissions
-    const transformed = dataResult.map((p: any) =>
+    const transformed = rows.map((p: any) =>
       this.applyContractorDenyDefault(p),
     );
     return createPaginatedResponse(transformed, total, page, limit);
