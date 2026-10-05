@@ -1463,23 +1463,11 @@ export class ConstructionProjectsService {
         user,
         'canCreate',
       );
-    const entities = dto.items.map((item) =>
-      this.timelineEntryRepo.create({
-        projectId,
-        entryType: item.entry_type || 'WEEKLY',
-        entryDate: item.entry_date ? new Date(item.entry_date) : undefined,
-        periodLabel: item.period_label,
-        title: item.title,
-        description: item.description,
-        weather: item.weather,
-        manpowerCount: item.manpower_count ?? undefined,
-        equipmentUsed: item.equipment_used,
-        workAccomplished: item.work_accomplished,
-        issuesEncountered: item.issues_encountered,
-        reporterType: item.reporter_type,
-      }),
+    const entities = await this.timelineEntryRepo.createManyForProject(
+      projectId,
+      dto.items,
+      user?.sub,
     );
-    await this.em.persist(entities).flush();
     this.logger.log(
       `BATCH_TIMELINE_CREATED: ${entities.length} items, project=${projectId}`,
     );
@@ -1495,10 +1483,7 @@ export class ConstructionProjectsService {
     projectId: string,
   ): Promise<ConstructionTimelineEntry[]> {
     await this.findOne(projectId);
-    return this.timelineEntryRepo.find(
-      { projectId },
-      { orderBy: { entryDate: 'desc' } },
-    );
+    return this.timelineEntryRepo.findByProject(projectId);
   }
 
   async createTimelineEntry(
@@ -1510,50 +1495,11 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     if (user)
       await this.assertProjectPermission(projectId, userId, user, 'canCreate');
-    const entity = this.timelineEntryRepo.create({
+    const entity = await this.timelineEntryRepo.createForProject(
       projectId,
-      entryType: dto.entry_type || 'WEEKLY',
-      entryDate: new Date(dto.entry_date),
-      periodLabel: dto.period_label,
-      title: dto.title,
-      description: dto.description,
-      weather: dto.weather,
-      manpowerCount: dto.manpower_count,
-      equipmentUsed: dto.equipment_used,
-      workAccomplished: dto.work_accomplished,
-      issuesEncountered: dto.issues_encountered,
-      reporterType: dto.reporter_type,
-      // GGG-F: WAR fields
-      warNumber: dto.war_number,
-      reportingPeriodStart: dto.reporting_period_start
-        ? new Date(dto.reporting_period_start)
-        : undefined,
-      reportingPeriodEnd: dto.reporting_period_end
-        ? new Date(dto.reporting_period_end)
-        : undefined,
-      personnelEquipmentConstraints: dto.personnel_equipment_constraints,
-      mitigationMeasures: dto.mitigation_measures,
-      lookAheadActivities: dto.look_ahead_activities,
-      accomplishments: dto.accomplishments,
-      signatories: dto.signatories,
-      // GGG-F: MPR fields
-      mprNumber: dto.mpr_number,
-      reportingPeriodMonth: dto.reporting_period_month
-        ? new Date(dto.reporting_period_month)
-        : undefined,
-      workItems: dto.work_items,
-      accomplishmentSummaryPercent: dto.accomplishment_summary_percent,
-      percentTimeElapsed: dto.percent_time_elapsed,
-      originalContractAmount: dto.original_contract_amount,
-      revisedContractAmount: dto.revised_contract_amount,
-      // ZZZ-G: structured Project Concerns list
-      concernsList: dto.concerns_list,
-      // BBB-C: WAR/MPR financial billing fields
-      billingAmountThisPeriod: dto.billing_amount_this_period,
-      financialAccomplishmentPercent: dto.financial_accomplishment_percent,
-      createdBy: userId,
-    });
-    await this.em.persist(entity).flush();
+      dto,
+      userId,
+    );
     this.logger.log(
       `TIMELINE_ENTRY_CREATED: id=${entity.id}, project=${projectId}, by=${userId}`,
     );
@@ -1574,75 +1520,14 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     if (user)
       await this.assertProjectPermission(projectId, userId, user, 'canEdit');
-    const entity = await this.timelineEntryRepo.findOne({
-      id: entryId,
+    const entity = await this.timelineEntryRepo.findOneForProject(
       projectId,
-    });
+      entryId,
+    );
     if (!entity)
       throw new NotFoundException(`Timeline entry ${entryId} not found`);
 
-    if (dto.entry_type !== undefined) entity.entryType = dto.entry_type;
-    if (dto.entry_date !== undefined)
-      entity.entryDate = new Date(dto.entry_date);
-    if (dto.period_label !== undefined) entity.periodLabel = dto.period_label;
-    if (dto.title !== undefined) entity.title = dto.title;
-    if (dto.description !== undefined) entity.description = dto.description;
-    if (dto.weather !== undefined) entity.weather = dto.weather;
-    if (dto.manpower_count !== undefined)
-      entity.manpowerCount = dto.manpower_count;
-    if (dto.equipment_used !== undefined)
-      entity.equipmentUsed = dto.equipment_used;
-    if (dto.work_accomplished !== undefined)
-      entity.workAccomplished = dto.work_accomplished;
-    if (dto.issues_encountered !== undefined)
-      entity.issuesEncountered = dto.issues_encountered;
-    if (dto.reporter_type !== undefined)
-      entity.reporterType = dto.reporter_type;
-    // GGG-F: WAR fields
-    if (dto.war_number !== undefined) entity.warNumber = dto.war_number;
-    if (dto.reporting_period_start !== undefined)
-      entity.reportingPeriodStart = dto.reporting_period_start
-        ? new Date(dto.reporting_period_start)
-        : undefined;
-    if (dto.reporting_period_end !== undefined)
-      entity.reportingPeriodEnd = dto.reporting_period_end
-        ? new Date(dto.reporting_period_end)
-        : undefined;
-    if (dto.personnel_equipment_constraints !== undefined)
-      entity.personnelEquipmentConstraints =
-        dto.personnel_equipment_constraints;
-    if (dto.mitigation_measures !== undefined)
-      entity.mitigationMeasures = dto.mitigation_measures;
-    if (dto.look_ahead_activities !== undefined)
-      entity.lookAheadActivities = dto.look_ahead_activities;
-    if (dto.accomplishments !== undefined)
-      entity.accomplishments = dto.accomplishments;
-    if (dto.signatories !== undefined) entity.signatories = dto.signatories;
-    // GGG-F: MPR fields
-    if (dto.mpr_number !== undefined) entity.mprNumber = dto.mpr_number;
-    if (dto.reporting_period_month !== undefined)
-      entity.reportingPeriodMonth = dto.reporting_period_month
-        ? new Date(dto.reporting_period_month)
-        : undefined;
-    if (dto.work_items !== undefined) entity.workItems = dto.work_items;
-    if (dto.accomplishment_summary_percent !== undefined)
-      entity.accomplishmentSummaryPercent = dto.accomplishment_summary_percent;
-    if (dto.percent_time_elapsed !== undefined)
-      entity.percentTimeElapsed = dto.percent_time_elapsed;
-    if (dto.original_contract_amount !== undefined)
-      entity.originalContractAmount = dto.original_contract_amount;
-    if (dto.revised_contract_amount !== undefined)
-      entity.revisedContractAmount = dto.revised_contract_amount;
-    // ZZZ-G: structured Project Concerns list
-    if (dto.concerns_list !== undefined)
-      entity.concernsList = dto.concerns_list;
-    // BBB-C: WAR/MPR financial billing fields
-    if (dto.billing_amount_this_period !== undefined)
-      entity.billingAmountThisPeriod = dto.billing_amount_this_period;
-    if (dto.financial_accomplishment_percent !== undefined)
-      entity.financialAccomplishmentPercent =
-        dto.financial_accomplishment_percent;
-    await this.em.flush();
+    await this.timelineEntryRepo.updateFromDto(entity, dto);
 
     this.logger.log(
       `TIMELINE_ENTRY_UPDATED: id=${entryId}, project=${projectId}, by=${userId}`,
@@ -1662,10 +1547,10 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     if (user)
       await this.assertProjectPermission(projectId, userId, user, 'canDelete');
-    const count = await this.timelineEntryRepo.nativeDelete({
-      id: entryId,
+    const count = await this.timelineEntryRepo.deleteForProject(
       projectId,
-    });
+      entryId,
+    );
     if (count === 0)
       throw new NotFoundException(`Timeline entry ${entryId} not found`);
     this.logger.log(
@@ -1714,10 +1599,10 @@ export class ConstructionProjectsService {
           `Milestone ${dto.related_entity_id} not found in project ${projectId}`,
         );
     } else {
-      const t = await this.timelineEntryRepo.findOne({
-        id: dto.related_entity_id,
+      const t = await this.timelineEntryRepo.findOneForProject(
         projectId,
-      });
+        dto.related_entity_id,
+      );
       if (!t)
         throw new NotFoundException(
           `Timeline entry ${dto.related_entity_id} not found in project ${projectId}`,
@@ -1946,9 +1831,7 @@ export class ConstructionProjectsService {
    * project, lazily seeds checklist rows from the active type reference
    * (one row per active document type). Idempotent — re-call is safe.
    */
-  async findDocumentChecklist(
-    projectId: string,
-  ): Promise<
+  async findDocumentChecklist(projectId: string): Promise<
     Array<
       ConstructionDocumentChecklist & {
         documentType?: ConstructionDocumentType;
