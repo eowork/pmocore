@@ -681,113 +681,93 @@ export class ConstructionProjectsService {
       const effectiveContractAmount =
         dto.cost_amount ?? dto.contract_amount ?? null;
 
-      let cpResult: any;
+      // The insert goes through the ORM so the column list, the jsonb handling and the
+      // decimal conversions all come from the entity rather than from a 70-placeholder
+      // VALUES list that had to be kept in sync by eye.
+      //
+      // Note em.create / em.persist, not this.cpRepo: the repository is bound to the
+      // request EntityManager, while em here is the transactional fork. Persisting through
+      // the repository would run the insert outside this transaction.
+      const project = this.cpRepo.create({
+        projectId: projectId,
+        projectCode: dto.project_code,
+        title: dto.title,
+        description: dto.description,
+        idealInfrastructureImage: dto.ideal_infrastructure_image,
+        beneficiaries: dto.beneficiaries,
+        summary: dto.summary,
+        scope: dto.scope,
+        facilities: dto.facilities,
+        objectives: dto.objectives,
+        keyFeatures: dto.key_features,
+        originalContractDuration: dto.original_contract_duration,
+        implementationPeriod: dto.implementation_period,
+        contractNumber: dto.contract_number,
+        contractorId: dto.contractor_id,
+        contractor: dto.contractor,
+        contractAmount: toDecimal(effectiveContractAmount),
+        startDate: toDate(dto.start_date),
+        targetCompletionDate: toDate(dto.target_completion_date),
+        actualCompletionDate: toDate(dto.actual_completion_date),
+        projectDuration: dto.project_duration,
+        projectEngineer: dto.project_engineer,
+        projectManager: dto.project_manager,
+        buildingType: dto.building_type,
+        floorArea: toDecimal(dto.floor_area),
+        numberOfFloors: dto.number_of_floors,
+        fundingSourceId: dto.funding_source_id,
+        subcategoryId: dto.subcategory_id,
+        campus: dto.campus,
+        status: dto.status,
+        latitude: toDecimal(dto.latitude),
+        longitude: toDecimal(dto.longitude),
+        physicalProgress: toDecimal(dto.physical_progress ?? 0)!,
+        financialProgress: toDecimal(dto.financial_progress ?? 0)!,
+        targetPhysicalProgress: toDecimal(dto.target_physical_progress ?? 100)!,
+        targetFinancialProgress: toDecimal(
+          dto.target_financial_progress ?? 100,
+        )!,
+        metadata: dto.metadata,
+        createdBy: userId,
+        publicationStatus,
+        submittedBy,
+        submittedAt,
+        assignedTo: dto.assigned_to || undefined,
+        spatialCoverage: dto.spatial_coverage,
+        municipality: dto.municipality,
+        province: dto.province,
+        coImplementingAgency: dto.co_implementing_agency,
+        attachedAgency: dto.attached_agency,
+        originalStartDate: toDate(dto.original_start_date),
+        revisedStartDate: toDate(dto.revised_start_date),
+        originalCompletionDate: toDate(dto.original_completion_date),
+        revisedCompletionDate: toDate(dto.revised_completion_date),
+        revisedProjectDuration: dto.revised_project_duration,
+        asOfDate: toDate(dto.as_of_date),
+        costIncurredToDate: toDecimal(dto.cost_incurred_to_date),
+        rdpAlignment: dto.rdp_alignment,
+        socioeconomicAgenda: dto.socioeconomic_agenda,
+        csuLikhaGoals: dto.csu_likha_goals,
+        sdgGoals: dto.sdg_goals,
+        rdp2017Alignment: dto.rdp2017_alignment,
+        pointAgenda10: dto.point_agenda_10,
+        beneficiaryList: dto.beneficiary_list,
+        fundingSourceType: dto.funding_source_type,
+        additionalFundingSources: dto.additional_funding_sources,
+        remarksLog: dto.remarks_log ?? [],
+        personnelGroups: dto.personnel_groups,
+        // FFF-B: Others-tab JSONB fields — persisted at creation so an edit reload shows
+        // the correct data. They default to an empty array, never null.
+        statusUpdates: dto.status_updates ?? [],
+        readinessDocuments: dto.readiness_documents ?? [],
+        signatories: dto.signatories ?? [],
+        // AAAK: Two-Level Funding — Level 1 defaults to OTHER if omitted, Level 2 free text
+        primaryFundingSource: dto.primary_funding_source ?? 'OTHER',
+        fundingSourceDescription: dto.funding_source_description,
+      });
+
       try {
-        cpResult = await conn.execute(
-          `INSERT INTO construction_projects
-           (project_id, project_code, title, description, ideal_infrastructure_image, beneficiaries,
-            summary, scope, facilities,
-            objectives, key_features, original_contract_duration, implementation_period, contract_number, contractor_id, contractor,
-            contract_amount, start_date, target_completion_date, actual_completion_date, project_duration, project_engineer,
-            project_manager, building_type, floor_area, number_of_floors, funding_source_id,
-            subcategory_id, campus, status, latitude, longitude,
-            physical_progress, financial_progress, target_physical_progress, target_financial_progress,
-            metadata, created_by,
-            publication_status, submitted_by, submitted_at, assigned_to,
-            spatial_coverage, municipality, province,
-            co_implementing_agency, attached_agency,
-            original_start_date, revised_start_date, original_completion_date, revised_completion_date, revised_project_duration,
-            as_of_date, cost_incurred_to_date,
-            rdp_alignment, socioeconomic_agenda, csu_likha_goals, sdg_goals, rdp2017_alignment, point_agenda_10, beneficiary_list,
-            funding_source_type, additional_funding_sources,
-            remarks_log, personnel_groups,
-            status_updates, readiness_documents, signatories,
-            primary_funding_source, funding_source_description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           RETURNING *`,
-          [
-            projectId,
-            dto.project_code,
-            dto.title,
-            dto.description,
-            dto.ideal_infrastructure_image,
-            dto.beneficiaries ?? null,
-            dto.summary ?? null,
-            dto.scope ?? null,
-            dto.facilities ?? null,
-            dto.objectives ? JSON.stringify(dto.objectives) : null,
-            dto.key_features ? JSON.stringify(dto.key_features) : null,
-            dto.original_contract_duration,
-            dto.implementation_period ?? null,
-            dto.contract_number,
-            dto.contractor_id,
-            dto.contractor ?? null,
-            effectiveContractAmount,
-            dto.start_date,
-            dto.target_completion_date,
-            dto.actual_completion_date,
-            dto.project_duration,
-            dto.project_engineer,
-            dto.project_manager,
-            dto.building_type,
-            dto.floor_area,
-            dto.number_of_floors,
-            dto.funding_source_id,
-            dto.subcategory_id,
-            dto.campus,
-            dto.status,
-            dto.latitude,
-            dto.longitude,
-            dto.physical_progress ?? 0,
-            dto.financial_progress ?? 0,
-            dto.target_physical_progress ?? 100,
-            dto.target_financial_progress ?? 100,
-            dto.metadata ? JSON.stringify(dto.metadata) : null,
-            userId,
-            publicationStatus,
-            submittedBy,
-            submittedAt,
-            dto.assigned_to || null,
-            dto.spatial_coverage ?? null,
-            dto.municipality ?? null,
-            dto.province ?? null,
-            dto.co_implementing_agency ?? null,
-            dto.attached_agency ?? null,
-            dto.original_start_date ?? null,
-            dto.revised_start_date ?? null,
-            dto.original_completion_date ?? null,
-            dto.revised_completion_date ?? null,
-            dto.revised_project_duration ?? null,
-            dto.as_of_date ?? null,
-            dto.cost_incurred_to_date ?? null,
-            dto.rdp_alignment ? JSON.stringify(dto.rdp_alignment) : null,
-            dto.socioeconomic_agenda
-              ? JSON.stringify(dto.socioeconomic_agenda)
-              : null,
-            dto.csu_likha_goals ? JSON.stringify(dto.csu_likha_goals) : null,
-            dto.sdg_goals ? JSON.stringify(dto.sdg_goals) : null,
-            dto.rdp2017_alignment
-              ? JSON.stringify(dto.rdp2017_alignment)
-              : null,
-            dto.point_agenda_10 ? JSON.stringify(dto.point_agenda_10) : null,
-            dto.beneficiary_list ? JSON.stringify(dto.beneficiary_list) : null,
-            dto.funding_source_type ?? null,
-            dto.additional_funding_sources
-              ? JSON.stringify(dto.additional_funding_sources)
-              : null,
-            dto.remarks_log ? JSON.stringify(dto.remarks_log) : '[]',
-            dto.personnel_groups ? JSON.stringify(dto.personnel_groups) : null,
-            // FFF-B: Others-tab JSONB fields — persist at creation so edit reload shows correct data
-            dto.status_updates ? JSON.stringify(dto.status_updates) : '[]',
-            dto.readiness_documents
-              ? JSON.stringify(dto.readiness_documents)
-              : '[]',
-            dto.signatories ? JSON.stringify(dto.signatories) : '[]',
-            // AAAK: Two-Level Funding — Level 1 defaults to OTHER if omitted, Level 2 free text
-            dto.primary_funding_source ?? 'OTHER',
-            dto.funding_source_description ?? null,
-          ],
-        );
+        await this.cpRepo.getEntityManager().persist(project).flush();
       } catch (err: any) {
         if (err?.code === '23505') {
           throw new ConflictException(
@@ -797,7 +777,7 @@ export class ConstructionProjectsService {
         throw err;
       }
 
-      const recordId = cpResult[0].id;
+      const recordId = project.id;
 
       // Phase JW-E: prefer rich `assignments[]` (with role/department/phone)
       // over legacy `assigned_user_ids[]` when both are present.
@@ -844,7 +824,16 @@ export class ConstructionProjectsService {
       this.fireLog(user, ActivityAction.CREATE, recordId, {
         projectCode: dto.project_code,
       });
-      return cpResult[0];
+
+      // The endpoint has always answered with the inserted row exactly as Postgres stores
+      // it — snake_case keys, every column, including the ones the database filled in.
+      // Reading it back keeps that response identical; serialising the entity instead would
+      // hand callers camelCase keys and a different set of fields.
+      const [created] = await conn.execute(
+        `SELECT * FROM construction_projects WHERE id = ?`,
+        [recordId],
+      );
+      return created;
     });
   }
 
@@ -3500,4 +3489,23 @@ export class ConstructionProjectsService {
       progressReportId: reportId,
     });
   }
+}
+
+/**
+ * Parse a DTO date field for a date/timestamp column. The DTOs carry dates as strings; an
+ * empty string or null means "no date", which has to stay undefined rather than becoming an
+ * Invalid Date.
+ */
+function toDate(value?: string | null): Date | undefined {
+  return value ? new Date(value) : undefined;
+}
+
+/**
+ * Render a numeric DTO field for a decimal column. mikro-orm maps decimal/numeric columns to
+ * string so the exact value survives the round trip — JavaScript numbers cannot hold every
+ * decimal the database accepts. The DTOs declare these fields as numbers, so the conversion
+ * happens here rather than being repeated at each assignment.
+ */
+function toDecimal(value?: number | null): string | undefined {
+  return value === null || value === undefined ? undefined : String(value);
 }
