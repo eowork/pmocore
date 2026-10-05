@@ -8,7 +8,7 @@ import {
   PrimaryKey,
   Property,
 } from '@mikro-orm/core';
-import { ConstructionProjectRepository } from '../../construction-projects/construction-project.repository';
+import { ConstructionProjectRepository } from '../../construction-projects/repository/construction-project.repository';
 import { Contractor } from './contractor.entity';
 import { ConstructionDiaryEntry } from './construction-diary-entry.entity';
 import { ConstructionDocumentChecklist } from './construction-document-checklist.entity';

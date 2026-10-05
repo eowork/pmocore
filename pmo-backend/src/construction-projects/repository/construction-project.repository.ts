@@ -2,14 +2,14 @@ import { EntityRepository } from '@mikro-orm/core';
 import type { FilterQuery, QueryOrderMap } from '@mikro-orm/core';
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
-import type { ConstructionProject } from '../database/entities/construction-project.entity';
+import type { ConstructionProject } from '../../database/entities/construction-project.entity';
 // The remaining entities are imported from their own files rather than the entities barrel,
 // which would reach back through construction-project.entity and reopen that same cycle.
-import { RecordAssignment } from '../database/entities/record-assignment.entity';
-import { Role } from '../database/entities/role.entity';
-import { User } from '../database/entities/user.entity';
-import { UserRole } from '../database/entities/user-role.entity';
-import type { QueryConstructionProjectDto } from './dto';
+import { RecordAssignment } from '../../database/entities/record-assignment.entity';
+import { Role } from '../../database/entities/role.entity';
+import { User } from '../../database/entities/user.entity';
+import { UserRole } from '../../database/entities/user-role.entity';
+import type { QueryConstructionProjectDto } from '../dto';
 
 // Sortable columns, keyed by the snake_case name the query string uses and mapped to the
 // entity property the ORM orders by. Anything not on this list falls back to created_at.

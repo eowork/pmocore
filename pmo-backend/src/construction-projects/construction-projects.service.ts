@@ -1,41 +1,41 @@
 import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
-  Logger,
-  StreamableFile,
   HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { EntityRepository, EntityManager, wrap } from '@mikro-orm/core';
 import type { FilterQuery } from '@mikro-orm/core';
+import { EntityManager, EntityRepository, wrap } from '@mikro-orm/core';
 import { createPaginatedResponse, PaginatedResponse } from '../common/dto';
 import {
-  CreateConstructionProjectDto,
-  UpdateConstructionProjectDto,
-  QueryConstructionProjectDto,
-  CreateMilestoneDto,
-  CreateGalleryDto,
-  QueryGalleryDto,
-  UploadDocumentDto,
-  CreateTimelineEntryDto,
-  UpdateTimelineEntryDto,
-  CreateRevisionOrderDto,
-  UpdateRevisionOrderDto,
-  CreateProgressReportDto,
-  UpdateProgressReportDto,
-  UpdateDocumentChecklistDto,
-  CreateDiaryEntryDto,
-  UpdateDiaryEntryDto,
-  CreateMovEntryDto,
   BatchCreateMilestoneDto,
   BatchCreateTimelineEntryDto,
+  CreateConstructionProjectDto,
+  CreateDiaryEntryDto,
+  CreateGalleryDto,
+  CreateMilestoneDto,
+  CreateMovEntryDto,
+  CreateProgressReportDto,
+  CreateRevisionOrderDto,
+  CreateTimelineEntryDto,
+  QueryConstructionProjectDto,
+  QueryGalleryDto,
+  UpdateConstructionProjectDto,
+  UpdateDiaryEntryDto,
+  UpdateDocumentChecklistDto,
+  UpdateProgressReportDto,
+  UpdateRevisionOrderDto,
+  UpdateTimelineEntryDto,
+  UploadDocumentDto,
 } from './dto';
 import { UploadsService } from '../uploads/uploads.service';
 import { UploadProgressService } from '../uploads/upload-progress.service';
@@ -45,23 +45,23 @@ import { PermissionResolverService } from '../common/services';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import {
-  ConstructionProject,
-  ConstructionMilestone,
-  ConstructionTimelineEntry,
-  ConstructionRevisionOrder,
-  ConstructionProgressReport,
-  ConstructionDocumentType,
-  ConstructionDocumentChecklist,
-  ConstructionDocumentSubmission,
-  ConstructionDocumentFolder,
   ConstructionDiaryEntry,
+  ConstructionDocumentChecklist,
+  ConstructionDocumentFolder,
+  ConstructionDocumentSubmission,
+  ConstructionDocumentType,
   ConstructionGallery,
+  ConstructionMilestone,
   ConstructionMovEntry,
-  RecordAssignment,
-  Project,
+  ConstructionProgressReport,
+  ConstructionProject,
+  ConstructionRevisionOrder,
+  ConstructionTimelineEntry,
   Document,
+  Project,
+  RecordAssignment,
 } from '../database/entities';
-import { ConstructionProjectRepository } from './construction-project.repository';
+import { ConstructionProjectRepository } from './repository/construction-project.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -1229,7 +1229,7 @@ export class ConstructionProjectsService {
   }
 
   async findPendingReview(user: JwtPayload): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException('Only Admin can view pending reviews');
     }
 
@@ -1244,18 +1244,22 @@ export class ConstructionProjectsService {
       if (accessCheck.length === 0) return [];
     }
 
-    const result = await conn.execute(
-      `SELECT cp.id, cp.project_code, cp.title, cp.campus, cp.publication_status,
-              cp.submitted_by, cp.submitted_at, cp.created_at,
+    return await conn.execute(
+      `SELECT cp.id,
+              cp.project_code,
+              cp.title,
+              cp.campus,
+              cp.publication_status,
+              cp.submitted_by,
+              cp.submitted_at,
+              cp.created_at,
               u.first_name || ' ' || u.last_name as submitter_name
        FROM construction_projects cp
-       LEFT JOIN users u ON cp.submitted_by = u.id
+              LEFT JOIN users u ON cp.submitted_by = u.id
        WHERE cp.publication_status = 'PENDING_REVIEW'
          AND cp.deleted_at IS NULL
-       ORDER BY cp.submitted_at ASC`,
+       ORDER BY cp.submitted_at `,
     );
-
-    return result;
   }
 
   async findMyDrafts(userId: string): Promise<ConstructionProject[]> {
