@@ -202,10 +202,14 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     if (userIds.length === 0) return new Map();
 
     const em = this.getEntityManager();
-    const [users, userRoles] = await Promise.all([
-      em.find(User, { id: { $in: userIds } }, { filters: false }),
-      em.find(UserRole, { userId: { $in: userIds } }),
-    ]);
+    const usersQuery = em.find(
+      User,
+      { id: { $in: userIds } },
+      { filters: false },
+    );
+    const userRolesQuery = em.find(UserRole, { userId: { $in: userIds } });
+    const users = await usersQuery;
+    const userRoles = await userRolesQuery;
 
     const roleNames = new Map<string, string>();
     const roleIds = unique(userRoles.map((ur) => ur.roleId));
