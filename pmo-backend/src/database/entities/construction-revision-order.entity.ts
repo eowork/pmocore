@@ -1,12 +1,18 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionRevisionOrderRepository
+} from '../../construction-projects/repository/construction-revision-order.repository';
 
 /**
  * Phase ND-A (2026-05-21): Audit-tracked revision orders (VOR/CTE/WSO/WRO/etc.).
  * Many-to-one with construction_projects. Latest APPROVED revision mirrors
  * dates and duration back to the project record for fast listing/display.
  */
-@Entity({ tableName: 'construction_revision_orders' })
+@Entity({
+  tableName: 'construction_revision_orders',
+  repository: () => ConstructionRevisionOrderRepository,
+})
 export class ConstructionRevisionOrder {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

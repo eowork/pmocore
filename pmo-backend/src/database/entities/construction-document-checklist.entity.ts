@@ -1,5 +1,8 @@
 import { Entity, Enum, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionDocumentChecklistRepository
+} from '../../construction-projects/repository/construction-document-checklist.repository';
 
 /**
  * Phase KB-E: Per-project document checklist instances.
@@ -10,7 +13,10 @@ import { ConstructionProject } from './construction-project.entity';
  * in the existing flat documents table). Decoupled lifecycle: a checklist
  * item exists for compliance tracking even before any file is uploaded.
  */
-@Entity({ tableName: 'construction_document_checklist' })
+@Entity({
+  tableName: 'construction_document_checklist',
+  repository: () => ConstructionDocumentChecklistRepository,
+})
 export class ConstructionDocumentChecklist {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

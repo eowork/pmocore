@@ -1,7 +1,13 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionDocumentSubmissionRepository
+} from '../../construction-projects/repository/construction-document-submission.repository';
 
-@Entity({ tableName: 'construction_document_submissions' })
+@Entity({
+  tableName: 'construction_document_submissions',
+  repository: () => ConstructionDocumentSubmissionRepository,
+})
 export class ConstructionDocumentSubmission {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

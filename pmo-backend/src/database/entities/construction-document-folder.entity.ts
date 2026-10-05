@@ -6,9 +6,13 @@ import {
   Property,
 } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import { ConstructionDocumentFolderRepository } from '../../construction-projects/repository/construction-document-folder.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'construction_document_folders' })
+@Entity({
+  tableName: 'construction_document_folders',
+  repository: () => ConstructionDocumentFolderRepository,
+})
 export class ConstructionDocumentFolder {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

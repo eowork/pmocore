@@ -74,6 +74,8 @@ import { ConstructionMovEntryRepository } from './repository/construction-mov-en
 import { RecordAssignmentRepository } from './repository/record-assignment.repository';
 import { ConstructionDocumentSubmissionRepository } from './repository/construction-document-submission.repository';
 import { ConstructionDocumentFolderRepository } from './repository/construction-document-folder.repository';
+import {ProjectRepository} from "../projects/repository/project.repository";
+import {DocumentRepository} from "../documents/repository/document.repository";
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -111,9 +113,9 @@ export class ConstructionProjectsService {
     @InjectRepository(RecordAssignment)
     private readonly assignmentRepo: RecordAssignmentRepository,
     @InjectRepository(Project)
-    private readonly projectRepo: EntityRepository<Project>,
+    private readonly projectRepo: ProjectRepository,
     @InjectRepository(Document)
-    private readonly documentRepo: EntityRepository<Document>,
+    private readonly documentRepo: DocumentRepository,
     @InjectRepository(ConstructionDocumentSubmission)
     private readonly docSubmissionRepo: ConstructionDocumentSubmissionRepository,
     @InjectRepository(ConstructionDocumentFolder)

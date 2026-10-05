@@ -1,5 +1,8 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionMovEntryRepository
+} from '../../construction-projects/repository/construction-mov-entry.repository';
 
 /**
  * Phase KO: MOV (Means of Verification) evidence entries.
@@ -8,7 +11,10 @@ import { ConstructionProject } from './construction-project.entity';
  * Polymorphic relation by `relatedEntityType` + `relatedEntityId` —
  * validated at service layer (no FK at DB level).
  */
-@Entity({ tableName: 'construction_mov_entries' })
+@Entity({
+  tableName: 'construction_mov_entries',
+  repository: () => ConstructionMovEntryRepository,
+})
 export class ConstructionMovEntry {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

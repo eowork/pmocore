@@ -1,12 +1,18 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionProgressReportRepository
+} from '../../construction-projects/repository/construction-progress-report.repository';
 
 /**
  * Phase NE-A (2026-05-21): Chronological progress reports (MPR/WAR-aligned).
  * Many-to-one with construction_projects. Latest report mirrors percentage,
  * cost incurred, and as-of date back to the project record for fast display.
  */
-@Entity({ tableName: 'construction_progress_reports' })
+@Entity({
+  tableName: 'construction_progress_reports',
+  repository: () => ConstructionProgressReportRepository,
+})
 export class ConstructionProgressReport {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
