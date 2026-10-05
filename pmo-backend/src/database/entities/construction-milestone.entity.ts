@@ -1,7 +1,15 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
+import { ConstructionMilestoneRepository } from '../../construction-projects/repository/construction-milestone.repository';
 
-@Entity({ tableName: 'construction_milestones' })
+// The repository is bound here so that @InjectRepository(ConstructionMilestone) hands back
+// ConstructionMilestoneRepository, with its query methods, wherever the entity's repository
+// is requested. The lazy callback is what mikro-orm expects and keeps the reference from
+// being read at decoration time.
+@Entity({
+  tableName: 'construction_milestones',
+  repository: () => ConstructionMilestoneRepository,
+})
 export class ConstructionMilestone {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

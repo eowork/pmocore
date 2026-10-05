@@ -11,7 +11,7 @@ import {
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuid4 } from 'uuid';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import type { FilterQuery } from '@mikro-orm/core';
 import { EntityManager, EntityRepository, wrap } from '@mikro-orm/core';
@@ -37,7 +37,7 @@ import {
   UpdateTimelineEntryDto,
   UploadDocumentDto,
 } from './dto';
-import { UploadsService } from '../uploads/uploads.service';
+import { UploadsService } from '../uploads';
 import { UploadProgressService } from '../uploads/upload-progress.service';
 import { PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
 import { JwtPayload } from '../common/interfaces';
@@ -624,7 +624,7 @@ export class ConstructionProjectsService {
       );
     }
 
-    const projectId = dto.project_id || uuidv4();
+    const projectId = dto.project_id || uuid4();
     const publicationStatus: PublicationStatus = 'DRAFT';
     const submittedBy = userId;
     const submittedAt = new Date();
