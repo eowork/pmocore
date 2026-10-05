@@ -33,7 +33,7 @@ const devProxyTarget =
 
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
-  devtools: { enabled: process.env.NODE_ENV !== 'production' },
+  devtools: { enabled: false },
 
   // OB (2026-05-21): Disable Nuxt's default path-prefix for nested component dirs.
   // Without this, components/coi/CiFoo.vue auto-resolves as <CoiCiFoo> not <CiFoo>,

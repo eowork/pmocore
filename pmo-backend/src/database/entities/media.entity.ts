@@ -1,4 +1,4 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, Enum, Filter, PrimaryKey, Property } from '@mikro-orm/core';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
 @Entity({ tableName: 'media' })
@@ -12,7 +12,13 @@ export class Media {
   @Property({ columnType: 'uuid' })
   mediableId!: string;
 
-  @Property({ columnType: 'media_type_enum' })
+  // Native postgres enum. Declared with @Enum + nativeEnumName so mikro-orm models it the
+  // same way it introspects it; as a plain @Property the differ saw "enum in DB, varchar in
+  // entity" and generated a retype on every diff that never actually converged.
+  @Enum({
+    items: ['IMAGE', 'VIDEO', 'DOCUMENT', 'OTHER'],
+    nativeEnumName: 'media_type_enum',
+  })
   mediaType!: string;
 
   @Property({ length: 255 })

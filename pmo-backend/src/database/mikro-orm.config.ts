@@ -32,6 +32,18 @@ const config: Options<PostgreSqlDriver> = {
     path: './dist/database/mikro-migrations',
     pathTs: './src/database/mikro-migrations',
     glob: '!(*.d).{js,ts}',
+    // Never generate destructive statements. The immediate reason is the module_type enum:
+    // no entity column maps to it (user_module_assignments.module is plain text), so the
+    // differ wants to DROP TYPE it — but it is the parameter type of the SQL function
+    // user_has_module_access(uuid, module_type), which permission-resolver.service.ts calls
+    // on every module access check. Postgres would refuse the drop because of that
+    // dependency, so the statement served only to make every generated migration fail.
+    //
+    // The general reason is the same one that keeps this schema free of foreign keys: this
+    // database predates the entity definitions and holds objects the ORM does not model.
+    // A drop this tool infers is far more likely to be a gap in the mapping than a real
+    // intention, so drops are written by hand, in their own migration, deliberately.
+    safe: true,
   },
   filters: {
     notDeleted: { cond: { deletedAt: null }, default: false },

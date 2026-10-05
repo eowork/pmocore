@@ -1,4 +1,8 @@
-import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
+import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionMovEntryRepository
+} from '../../construction-projects/repository/construction-mov-entry.repository';
 
 /**
  * Phase KO: MOV (Means of Verification) evidence entries.
@@ -7,13 +11,32 @@ import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
  * Polymorphic relation by `relatedEntityType` + `relatedEntityId` —
  * validated at service layer (no FK at DB level).
  */
-@Entity({ tableName: 'construction_mov_entries' })
+@Entity({
+  tableName: 'construction_mov_entries',
+  repository: () => ConstructionMovEntryRepository,
+})
 export class ConstructionMovEntry {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
   @Property({ columnType: 'uuid' })
   projectId!: string;
+
+  // Read-only link back to the owning project, so queries can populate() the parent.
+  //
+  // persist: false — project_id stays owned by the projectId scalar above, which every
+  //   existing write path sets. Two properties mapping one column collide on INSERT.
+  // hidden: true — keeps the relation out of JSON, so endpoints returning this entity
+  //   directly serialise exactly as they did before.
+  // createForeignKeyConstraint: false — this database has no foreign keys; declaring a
+  //   relation must not make the schema differ want to add one.
+  @ManyToOne(() => ConstructionProject, {
+    fieldName: 'project_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  project!: ConstructionProject;
 
   @Property({ length: 20 })
   relatedEntityType!: 'MILESTONE' | 'TIMELINE_ENTRY';
