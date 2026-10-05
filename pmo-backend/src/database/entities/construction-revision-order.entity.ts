@@ -1,17 +1,40 @@
-import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
+import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionRevisionOrderRepository
+} from '../../construction-projects/repository/construction-revision-order.repository';
 
 /**
  * Phase ND-A (2026-05-21): Audit-tracked revision orders (VOR/CTE/WSO/WRO/etc.).
  * Many-to-one with construction_projects. Latest APPROVED revision mirrors
  * dates and duration back to the project record for fast listing/display.
  */
-@Entity({ tableName: 'construction_revision_orders' })
+@Entity({
+  tableName: 'construction_revision_orders',
+  repository: () => ConstructionRevisionOrderRepository,
+})
 export class ConstructionRevisionOrder {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
   @Property({ columnType: 'uuid' })
   projectId!: string;
+
+  // Read-only link back to the owning project, so queries can populate() the parent.
+  //
+  // persist: false — project_id stays owned by the projectId scalar above, which every
+  //   existing write path sets. Two properties mapping one column collide on INSERT.
+  // hidden: true — keeps the relation out of JSON, so endpoints returning this entity
+  //   directly serialise exactly as they did before.
+  // createForeignKeyConstraint: false — this database has no foreign keys; declaring a
+  //   relation must not make the schema differ want to add one.
+  @ManyToOne(() => ConstructionProject, {
+    fieldName: 'project_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  project!: ConstructionProject;
 
   @Property({ type: 'integer' })
   revisionNumber!: number;

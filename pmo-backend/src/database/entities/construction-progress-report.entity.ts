@@ -1,17 +1,40 @@
-import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
+import { ConstructionProject } from './construction-project.entity';
+import {
+  ConstructionProgressReportRepository
+} from '../../construction-projects/repository/construction-progress-report.repository';
 
 /**
  * Phase NE-A (2026-05-21): Chronological progress reports (MPR/WAR-aligned).
  * Many-to-one with construction_projects. Latest report mirrors percentage,
  * cost incurred, and as-of date back to the project record for fast display.
  */
-@Entity({ tableName: 'construction_progress_reports' })
+@Entity({
+  tableName: 'construction_progress_reports',
+  repository: () => ConstructionProgressReportRepository,
+})
 export class ConstructionProgressReport {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
   @Property({ columnType: 'uuid' })
   projectId!: string;
+
+  // Read-only link back to the owning project, so queries can populate() the parent.
+  //
+  // persist: false — project_id stays owned by the projectId scalar above, which every
+  //   existing write path sets. Two properties mapping one column collide on INSERT.
+  // hidden: true — keeps the relation out of JSON, so endpoints returning this entity
+  //   directly serialise exactly as they did before.
+  // createForeignKeyConstraint: false — this database has no foreign keys; declaring a
+  //   relation must not make the schema differ want to add one.
+  @ManyToOne(() => ConstructionProject, {
+    fieldName: 'project_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  project!: ConstructionProject;
 
   @Property({ length: 20 })
   reportType!: string; // 'MONTHLY' | 'QUARTERLY' | 'AD_HOC' | 'WEEKLY'

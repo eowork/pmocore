@@ -1,11 +1,18 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  ConstructionDocumentTypeRepository
+} from '../../construction-projects/repository/construction-document-type.repository';
+
 
 /**
  * Phase KB-E: Reference table for CPES/infrastructure document types.
  * Seeded at migration time with 27 standard types across 6 groups.
  * Admin-extensible via the construction-document-types endpoints.
  */
-@Entity({ tableName: 'construction_document_types' })
+@Entity({
+  tableName: 'construction_document_types',
+  repository: () => ConstructionDocumentTypeRepository,
+})
 export class ConstructionDocumentType {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
