@@ -1,4 +1,5 @@
 import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
+import { ProjectRepository } from '../../projects/repository/project.repository';
 
 // Phase JN-A: project_code uniqueness is a partial index (WHERE deleted_at IS NULL,
 // coredata_schema.sql:4594-4597), not a plain unique constraint — a soft-deleted
@@ -11,7 +12,7 @@ import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
     'CREATE UNIQUE INDEX projects_project_code_active_idx ON projects (project_code) WHERE deleted_at IS NULL',
 })
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'projects' })
+@Entity({ tableName: 'projects', repository: () => ProjectRepository })
 export class Project {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

@@ -12,9 +12,99 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import type {
+  TimelineAccomplishment,
+  TimelineConcern,
+  TimelineSignatory,
+  TimelineWorkItem,
+} from '../../database/entities/construction-timeline-entry.entity';
+
+// Each item class implements the matching interface on ConstructionTimelineEntry, so the
+// validated request shape and the persisted shape are checked against each other at compile
+// time. Date fields are @IsString, not @IsDateString: the form initialises every row's date
+// to '' and only fills it when the user picks one, and @IsOptional() skips null/undefined
+// but not ''. Numeric fields are @IsOptional() so the form's explicit nulls pass through.
+export class AccomplishmentItemDto implements TimelineAccomplishment {
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @IsOptional()
+  @IsNumber()
+  percentage?: number | null;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+}
+
+export class SignatoryItemDto implements TimelineSignatory {
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @IsOptional()
+  @IsString()
+  userName?: string;
+
+  @IsOptional()
+  @IsString()
+  position?: string;
+
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @IsOptional()
+  @IsString()
+  date?: string;
+}
+
+/** MPR itemised work breakdown — one row per contract line item. */
+export class WorkItemDto implements TimelineWorkItem {
+  @IsOptional()
+  @IsString()
+  itemNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsNumber()
+  quantity?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  unitCost?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  weightNumber?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  actualPercentToDate?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  costToDate?: number | null;
+}
 
 // ZZZ-G: structured Project Concern item (shared by WAR/MPR/timelogs)
-export class ConcernItemDto {
+export class ConcernItemDto implements TimelineConcern {
   @IsOptional()
   @IsString()
   title?: string;
@@ -145,11 +235,15 @@ export class CreateTimelineEntryDto {
 
   @IsOptional()
   @IsArray()
-  accomplishments?: Record<string, any>[];
+  @ValidateNested({ each: true })
+  @Type(() => AccomplishmentItemDto)
+  accomplishments?: AccomplishmentItemDto[];
 
   @IsOptional()
   @IsArray()
-  signatories?: Record<string, any>[];
+  @ValidateNested({ each: true })
+  @Type(() => SignatoryItemDto)
+  signatories?: SignatoryItemDto[];
 
   // GGG-F: MPR fields
   @IsOptional()
@@ -163,7 +257,9 @@ export class CreateTimelineEntryDto {
 
   @IsOptional()
   @IsArray()
-  work_items?: Record<string, any>[];
+  @ValidateNested({ each: true })
+  @Type(() => WorkItemDto)
+  work_items?: WorkItemDto[];
 
   @IsOptional()
   @IsNumber()
