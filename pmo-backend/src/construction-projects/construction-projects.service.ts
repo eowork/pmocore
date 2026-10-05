@@ -62,6 +62,18 @@ import {
   RecordAssignment,
 } from '../database/entities';
 import { ConstructionProjectRepository } from './repository/construction-project.repository';
+import { ConstructionMilestoneRepository } from './repository/construction-milestone.repository';
+import { ConstructionTimelineEntryRepository } from './repository/construction-timeline-entry.repository';
+import { ConstructionRevisionOrderRepository } from './repository/construction-revision-order.repository';
+import { ConstructionProgressReportRepository } from './repository/construction-progress-report.repository';
+import { ConstructionDocumentTypeRepository } from './repository/construction-document-type.repository';
+import { ConstructionDocumentChecklistRepository } from './repository/construction-document-checklist.repository';
+import { ConstructionDiaryEntryRepository } from './repository/construction-diary-entry.repository';
+import { ConstructionGalleryRepository } from './repository/construction-gallery.repository';
+import { ConstructionMovEntryRepository } from './repository/construction-mov-entry.repository';
+import { RecordAssignmentRepository } from './repository/record-assignment.repository';
+import { ConstructionDocumentSubmissionRepository } from './repository/construction-document-submission.repository';
+import { ConstructionDocumentFolderRepository } from './repository/construction-document-folder.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -78,34 +90,34 @@ export class ConstructionProjectsService {
     @InjectRepository(ConstructionProject)
     private readonly cpRepo: ConstructionProjectRepository,
     @InjectRepository(ConstructionMilestone)
-    private readonly milestoneRepo: EntityRepository<ConstructionMilestone>,
+    private readonly milestoneRepo: ConstructionMilestoneRepository,
     @InjectRepository(ConstructionTimelineEntry)
-    private readonly timelineEntryRepo: EntityRepository<ConstructionTimelineEntry>,
+    private readonly timelineEntryRepo: ConstructionTimelineEntryRepository,
     @InjectRepository(ConstructionRevisionOrder)
-    private readonly revisionOrderRepo: EntityRepository<ConstructionRevisionOrder>,
+    private readonly revisionOrderRepo: ConstructionRevisionOrderRepository,
     @InjectRepository(ConstructionProgressReport)
-    private readonly progressReportRepo: EntityRepository<ConstructionProgressReport>,
+    private readonly progressReportRepo: ConstructionProgressReportRepository,
     @InjectRepository(ConstructionDocumentType)
-    private readonly docTypeRepo: EntityRepository<ConstructionDocumentType>,
+    private readonly docTypeRepo: ConstructionDocumentTypeRepository,
     @InjectRepository(ConstructionDocumentChecklist)
-    private readonly docChecklistRepo: EntityRepository<ConstructionDocumentChecklist>,
+    private readonly docChecklistRepo: ConstructionDocumentChecklistRepository,
     @InjectRepository(ConstructionDiaryEntry)
-    private readonly diaryRepo: EntityRepository<ConstructionDiaryEntry>,
+    private readonly diaryRepo: ConstructionDiaryEntryRepository,
     // NI: financialRepo removed
     @InjectRepository(ConstructionGallery)
-    private readonly galleryRepo: EntityRepository<ConstructionGallery>,
+    private readonly galleryRepo: ConstructionGalleryRepository,
     @InjectRepository(ConstructionMovEntry)
-    private readonly movEntryRepo: EntityRepository<ConstructionMovEntry>,
+    private readonly movEntryRepo: ConstructionMovEntryRepository,
     @InjectRepository(RecordAssignment)
-    private readonly assignmentRepo: EntityRepository<RecordAssignment>,
+    private readonly assignmentRepo: RecordAssignmentRepository,
     @InjectRepository(Project)
     private readonly projectRepo: EntityRepository<Project>,
     @InjectRepository(Document)
     private readonly documentRepo: EntityRepository<Document>,
     @InjectRepository(ConstructionDocumentSubmission)
-    private readonly docSubmissionRepo: EntityRepository<ConstructionDocumentSubmission>,
+    private readonly docSubmissionRepo: ConstructionDocumentSubmissionRepository,
     @InjectRepository(ConstructionDocumentFolder)
-    private readonly docFolderRepo: EntityRepository<ConstructionDocumentFolder>,
+    private readonly docFolderRepo: ConstructionDocumentFolderRepository,
     private readonly em: EntityManager,
     private readonly uploadsService: UploadsService,
     private readonly uploadProgress: UploadProgressService,
