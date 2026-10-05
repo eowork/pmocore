@@ -3012,7 +3012,7 @@ export class ConstructionProjectsService {
       content: dto.content,
       authorId: user.sub,
     });
-    await this.em.persistAndFlush(entry);
+    await this.em.persist(entry).flush();
 
     this.fireLog(user, ActivityAction.CREATE, entry.id, {
       entityType: 'diary_entry',
@@ -3083,7 +3083,7 @@ export class ConstructionProjectsService {
       title: entry.title,
       content: entry.content,
     };
-    await this.em.removeAndFlush(entry);
+    await this.em.remove(entry).flush();
     this.fireLog(user, ActivityAction.DELETE, entryId, {
       entityType: 'diary_entry',
       projectId,
@@ -3121,18 +3121,14 @@ export class ConstructionProjectsService {
         ],
       },
     );
-    const conn = this.em.getConnection();
-    await conn.execute(
-      `UPDATE construction_projects
-       SET revised_start_date = ?, revised_completion_date = ?, revised_project_duration = ?,
-           updated_at = NOW()
-       WHERE id = ?`,
-      [
-        latest?.newStartDate ?? null,
-        latest?.newCompletionDate ?? null,
-        latest?.newDuration ?? null,
-        projectId,
-      ],
+
+    const updated = this.cpRepo.nativeUpdate(
+      { id: projectId },
+      {
+        revisedStartDate: latest?.newStartDate ?? null,
+        revisedCompletionDate: latest?.newCompletionDate ?? null,
+        revisedProjectDuration: latest?.newDuration ?? null,
+      },
     );
   }
 
