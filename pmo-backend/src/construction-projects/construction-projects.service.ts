@@ -13,8 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuid4 } from 'uuid';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import type { FilterQuery } from '@mikro-orm/core';
-import { EntityManager, EntityRepository, wrap } from '@mikro-orm/core';
+import { EntityManager, FilterQuery, QueryOrder, wrap } from '@mikro-orm/core';
 import { createPaginatedResponse, PaginatedResponse } from '../common/dto';
 import {
   BatchCreateMilestoneDto,
@@ -74,8 +73,8 @@ import { ConstructionMovEntryRepository } from './repository/construction-mov-en
 import { RecordAssignmentRepository } from './repository/record-assignment.repository';
 import { ConstructionDocumentSubmissionRepository } from './repository/construction-document-submission.repository';
 import { ConstructionDocumentFolderRepository } from './repository/construction-document-folder.repository';
-import {ProjectRepository} from "../projects/repository/project.repository";
-import {DocumentRepository} from "../documents/repository/document.repository";
+import { ProjectRepository } from '../projects/repository/project.repository';
+import { DocumentRepository } from '../documents/repository/document.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -140,23 +139,6 @@ export class ConstructionProjectsService {
       .catch(() => {});
   }
 
-  /**
-   * Delegate to centralized permission resolver
-   * @deprecated Use this.permissionResolver.isAdmin() directly
-   */
-  private isAdmin(user: JwtPayload): boolean {
-    return this.permissionResolver.isAdmin(user);
-  }
-
-  private normalizeUserCampusToRecordCampus(
-    userCampus: string | null | undefined,
-  ): string | null {
-    if (!userCampus) return null;
-    if (userCampus === 'Butuan Campus') return 'MAIN';
-    if (userCampus === 'Cabadbaran') return 'CABADBARAN';
-    return null;
-  }
-
   private async updateRecordAssignments(
     recordId: string,
     userIds: string[],
@@ -171,9 +153,9 @@ export class ConstructionProjectsService {
         recordId,
         userId,
       });
-      this.em.persist(assignment);
+      this.assignmentRepo.getEntityManager().persist(assignment);
     }
-    await this.em.flush();
+    await this.assignmentRepo.getEntityManager().flush();
   }
 
   // VD-A: Deny-by-default for contractor assignments with null permissions JSONB.
@@ -1752,9 +1734,9 @@ export class ConstructionProjectsService {
    * Used by frontend to render checklist categories and admin extension UI.
    */
   async findDocumentTypes(): Promise<ConstructionDocumentType[]> {
-    return this.docTypeRepo.find(
+    return await this.docTypeRepo.find(
       { isActive: true },
-      { orderBy: { groupCode: 'asc', sortOrder: 'asc' } },
+      { orderBy: { groupCode: QueryOrder.ASC, sortOrder: QueryOrder.ASC } },
     );
   }
 
@@ -1771,7 +1753,9 @@ export class ConstructionProjectsService {
   > {
     const all = await this.docTypeRepo.find(
       { isActive: true },
-      { orderBy: { groupCode: 'asc', sortOrder: 'asc' } },
+      {
+        orderBy: [{ groupCode: QueryOrder.ASC }, { sortOrder: QueryOrder.ASC }],
+      },
     );
     const groups = new Map<
       string,
@@ -1796,29 +1780,26 @@ export class ConstructionProjectsService {
 
   /**
    * ZX-2: Flat map of typeCode → templateUrl for all active document types.
-   * Lets the hub show "template available" indicators without re-fetching
+   * Lets the hub show "template-available" indicators without re-fetching
    * the full type list.
    */
   async getDocumentTypeTemplateStatus(): Promise<
     { typeCode: string; templateUrl: string | null }[]
   > {
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `SELECT type_code, template_url
-         FROM construction_document_types
-        WHERE is_active = true
-        ORDER BY group_code ASC, sort_order ASC`,
+    const docTypes = await this.docTypeRepo.find(
+      { isActive: true },
+      {
+        orderBy: [{ groupCode: QueryOrder.ASC }, { sortOrder: QueryOrder.ASC }],
+      },
     );
-    return (
-      rows as Array<{ type_code: string; template_url: string | null }>
-    ).map((r) => ({
-      typeCode: r.type_code,
-      templateUrl: r.template_url ?? null,
+    return docTypes.map((t) => ({
+      typeCode: t.typeLabel,
+      templateUrl: t.templateUrl ?? null,
     }));
   }
 
   /**
-   * KB-E: Returns the per-project document checklist. On first call for a
+   * KB-E: Returns the per-project document checklist. On the first call for a
    * project, lazily seeds checklist rows from the active type reference
    * (one row per active document type). Idempotent — re-call is safe.
    */
@@ -1833,7 +1814,7 @@ export class ConstructionProjectsService {
 
     const activeTypes = await this.docTypeRepo.find(
       { isActive: true },
-      { orderBy: { groupCode: 'asc', sortOrder: 'asc' } },
+      { orderBy: [{ groupCode: QueryOrder.ASC, sortOrder: QueryOrder.ASC }] },
     );
 
     // Lazy initialization: insert missing checklist items
@@ -2066,9 +2047,12 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
 
     const { page = 1, limit = 20, sort = 'uploadedAt', order = 'desc' } = query;
-    const sortKey = ['uploadedAt', 'category'].includes(sort)
-      ? sort
+    type sortKeyType = 'uploadedAt' | 'category';
+
+    const sortKey: sortKeyType = ['uploadedAt', 'category'].includes(sort)
+      ? (sort as sortKeyType)
       : 'uploadedAt';
+
     const sortOrder = (order.toLowerCase() === 'asc' ? 'asc' : 'desc') as
       | 'asc'
       | 'desc';
@@ -2079,7 +2063,9 @@ export class ConstructionProjectsService {
     const [items, total] = await this.galleryRepo.findAndCount(where, {
       limit,
       offset: (page - 1) * limit,
-      orderBy: { [sortKey]: sortOrder },
+      orderBy: {
+        [sortKey]: sortOrder == 'asc' ? QueryOrder.ASC : QueryOrder.DESC,
+      },
     });
 
     return createPaginatedResponse(items, total, page, limit);
@@ -2396,13 +2382,13 @@ export class ConstructionProjectsService {
     }
 
     // OOO-A: version auto-increment for folder submissions. Each new upload into a
-    // SUBMISSIONS/folder node gets version = (current max in folder) + 1, so the
-    // submissions table doubles as version history. Non-folder uploads stay at v1.
+    // SUBMISSIONS/folder node gets a version = (current max in folder) + 1, so the
+    // submission table doubles as version history. Non-folder uploads stay at v1.
     let version = 1;
     if (dto.folder_id) {
       const latest = await this.documentRepo.findOne(
         { folderId: dto.folder_id },
-        { orderBy: { version: 'desc' } },
+        { orderBy: { version: QueryOrder.DESC } },
       );
       version = (latest?.version ?? 0) + 1;
     }
@@ -2426,7 +2412,7 @@ export class ConstructionProjectsService {
     this.uploadProgress.emit(uploadId, userId, 'persisting', {
       fileName,
     });
-    await this.em.persistAndFlush(doc);
+    await this.documentRepo.getEntityManager().persist(doc).flush();
 
     // YYY-C: Auto-link checklist — fires on ANY upload whose documentType matches a
     // KB-E taxonomy typeCode. Removed NOT_SUBMITTED filter so re-uploads also update
@@ -3115,7 +3101,11 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     return this.revisionOrderRepo.find(
       { projectId },
-      { orderBy: { revisionDate: 'desc', revisionNumber: 'desc' } },
+      {
+        orderBy: [
+          { revisionDate: QueryOrder.DESC, revisionNumber: QueryOrder.DESC },
+        ],
+      },
     );
   }
 
@@ -3125,7 +3115,11 @@ export class ConstructionProjectsService {
   ): Promise<void> {
     const latest = await this.revisionOrderRepo.findOne(
       { projectId, approvalStatus: 'APPROVED' },
-      { orderBy: { revisionDate: 'desc', revisionNumber: 'desc' } },
+      {
+        orderBy: [
+          { revisionDate: QueryOrder.DESC, revisionNumber: QueryOrder.DESC },
+        ],
+      },
     );
     const conn = this.em.getConnection();
     await conn.execute(
