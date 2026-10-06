@@ -56,24 +56,20 @@ export type PublicationStatus =
   | 'REJECTED';
 
 /**
- * DATA ACCESS ARCHITECTURE (HYBRID MODEL — Phase IQ):
+ * DATA ACCESS ARCHITECTURE:
  *
- * Tier 1 — ORM methods, always reached through the injected repository for the entity
- *   being touched: repo.find / repo.findOne / repo.create / repo.nativeDelete, and
- *   repo.getEntityManager().persist(...).flush() to write.
- *   Used for simple CRUD: assignments, fiscal years, org info, quarterly reports.
+ * This service issues no SQL and injects no EntityManager. Every database access goes through
+ * the repository for the entity being touched, and each repository returns rows in the
+ * snake_case shape this API has always answered with.
  *
- * Tier 2 — Raw SQL via this.connection.execute(sql, [?...], 'all'):
- *   Used for complex analytics CTEs, multi-join reporting queries.
- *   All raw queries use '?' (Knex positional) placeholders.
- *   The execute() calls are intentional and accepted (Phase IQ — indefinitely deferred
- *   from ORM replacement).
+ * Reads and writes use the ORM — repo.find / repo.findOne / repo.count / repo.create, and
+ * repo.getEntityManager().persist(...).flush() to write. Aggregations that find() cannot
+ * express are built with the query builder inside the repository (the financial GROUP BY
+ * totals), and the four physical-indicator analytics remain SQL because they open with
+ * DISTINCT ON inside a CTE — but that SQL lives in OperationIndicatorRepository, not here.
  *
- * This service injects no EntityManager of its own. Every repository is bound to the one
- * request-scoped EntityManager, so the repositories are the single door to the database
- * and the Tier-2 connection is borrowed from one of them (see the `connection` getter).
- *
- * DO NOT convert Tier-2 raw SQL to ORM unless a functional defect demands it.
+ * Every value a caller supplies reaches the database as a bound parameter. No SET clause,
+ * column name or WHERE fragment is assembled from a request body.
  *
  * Legacy DatabaseService consumers (post-Phase IU):
  *   health.service.ts  — permanent (DB ping/metrics, not ORM-appropriate)
@@ -122,16 +118,6 @@ export class UniversityOperationsService {
     private readonly permissionOverrideRepo: UserPermissionOverrideRepository,
     private readonly permissionResolver: PermissionResolverService,
   ) {}
-
-  /**
-   * The Tier-2 raw SQL below needs a database connection, not an EntityManager. Every
-   * repository shares the same request-scoped EntityManager, so borrowing the connection
-   * from one of them is equivalent to injecting the EntityManager directly, without this
-   * service holding a second way into the database.
-   */
-  private get connection() {
-    return this.uoRepo.getEntityManager().getConnection();
-  }
 
   /**
    * Map user campus value to record campus value.
