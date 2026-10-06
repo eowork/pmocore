@@ -21,6 +21,7 @@ import {
   QueryOperationDto,
   CreateIndicatorDto,
   CreateIndicatorQuarterlyDto,
+  UpdateIndicatorQuarterlyDto,
   CreateFinancialDto,
   FundType,
   QueryQuarterlyReportsDto,
@@ -571,7 +572,7 @@ export class UniversityOperationsController {
   updateIndicatorQuarterlyData(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('indicatorId', ParseUUIDPipe) indicatorId: string,
-    @Body() dto: Partial<CreateIndicatorQuarterlyDto>,
+    @Body() dto: UpdateIndicatorQuarterlyDto,
     @CurrentUser() user: JwtPayload,
   ) {
     return this.service.updateIndicatorQuarterlyData(

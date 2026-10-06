@@ -182,6 +182,14 @@ const canPublishOrReject = computed(() => {
 // the backend's assertProjectPermission owner-bypass. No module-level fallback (delete
 // was never module-level-gated on the list page either; canDelete('coi') was fully
 // replaced there, kept consistent here).
+// The project list now shows the whole portfolio, so most users will open projects they have
+// no claim on. Say so once, plainly, instead of letting them hunt for action buttons that were
+// never going to render. Mirrors the backend rule exactly: assertProjectPermission() admits only
+// Admin, the owner, and an assigned user carrying the permission.
+const isReadOnlyViewer = computed(() =>
+  !isAdmin.value && !isOwnerOrAssigned.value
+)
+
 const canDeleteProject = computed(() => {
   if (!project.value) return false
   return isAdmin.value || isOwner.value || effectivePermissions.value.canDelete === true
@@ -903,6 +911,19 @@ onMounted(() => {
         >
           Reject
         </v-btn>
+        <v-chip
+          v-if="isReadOnlyViewer"
+          size="small"
+          color="grey"
+          variant="tonal"
+          prepend-icon="mdi-eye-outline"
+        >
+          View only
+          <v-tooltip activator="parent" location="bottom">
+            You are not the owner of this project and have not been assigned to it, so it is
+            read-only for you. Ask an administrator to assign you if you need to make changes.
+          </v-tooltip>
+        </v-chip>
         <v-btn v-if="canEditAnyTab" color="primary" prepend-icon="mdi-pencil" :disabled="loading" @click="editProject">
           Edit Project Details
         </v-btn>

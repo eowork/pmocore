@@ -1,7 +1,8 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { DocumentRepository } from '../../documents/repository/document.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'documents' })
+@Entity({ tableName: 'documents', repository: () => DocumentRepository })
 export class Document {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

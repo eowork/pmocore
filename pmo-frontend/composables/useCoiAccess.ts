@@ -220,9 +220,16 @@ export function useCoiAccess(project: Ref<UIProjectDetail | null>) {
   const canEditCurrentProject = computed(() => {
     if (!project.value) return false
     if (isAdmin.value || isOwner.value) return true
-    if (canApprove('coi')) return true
-    if (canAdd('coi') && isOwnerOrAssigned.value) return true
-    return isOwnerOrAssigned.value && (effectivePermissions.value.canEdit ?? false)
+    // Every remaining path requires owner-or-assigned, because the backend's
+    // assertProjectPermission() has exactly three ways through — Admin, the project owner, or a
+    // record_assignments row carrying the permission — and no module-level bypass at all. An
+    // org-wide Approver/Manager 'coi' grant used to short-circuit here, so a non-assigned
+    // Approver was shown an Edit button whose every request the server answered with 403. Now
+    // that the list shows the whole portfolio rather than only assigned work, that mismatch
+    // would surface on every project in the institution instead of on none.
+    if (!isOwnerOrAssigned.value) return false
+    if (canApprove('coi') || canAdd('coi')) return true
+    return effectivePermissions.value.canEdit ?? false
   })
 
   // KD-G: tab-level edit gate. Returns false for read-only tabs (e.g., analytics)

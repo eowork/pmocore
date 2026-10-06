@@ -20,7 +20,7 @@ import {
   ConstructionMovEntry,
   RecordAssignment,
   Project,
-  Document,
+  Document, UserModuleAssignment, UserPermissionOverride,
 } from '../database/entities';
 
 @Module({
@@ -41,6 +41,8 @@ import {
       RecordAssignment,
       Project,
       Document,
+      UserModuleAssignment,
+      UserPermissionOverride,
     ]),
     UploadsModule,
     ActivityLogModule,

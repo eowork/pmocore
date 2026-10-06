@@ -1,17 +1,92 @@
-import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
+import { ConstructionProject } from './construction-project.entity';
+import { ConstructionTimelineEntryRepository } from '../../construction-projects/repository/construction-timeline-entry.repository';
+
+/**
+ * Shapes of this table's jsonb columns.
+ *
+ * They live here, on the entity that persists them, and the create DTO's item classes
+ * implement them — so the validated request shape and the stored shape cannot drift apart
+ * without the compiler saying so. Every field is optional because these are hand-filled
+ * rows in a form the user can add and leave half-blank.
+ */
+export interface TimelineAccomplishment {
+  description?: string;
+  category?: string;
+  date?: string;
+  percentage?: number | null;
+  remarks?: string;
+}
+
+export interface TimelineSignatory {
+  userId?: string;
+  userName?: string;
+  position?: string;
+  role?: string;
+  date?: string;
+}
+
+/** MPR itemised work breakdown, one row per contract line item. */
+export interface TimelineWorkItem {
+  itemNumber?: string;
+  description?: string;
+  unit?: string;
+  quantity?: number | null;
+  unitCost?: number | null;
+  weightNumber?: number | null;
+  actualPercentToDate?: number | null;
+  costToDate?: number | null;
+}
+
+/** ZZZ-G: structured Project Concern, shared by WAR, MPR and timelogs. */
+export interface TimelineConcern {
+  title?: string;
+  description?: string;
+  category?: string;
+  severity?: string;
+  status?: string;
+  responsibleParty?: string;
+  resolutionTargetDate?: string;
+  actualResolutionDate?: string;
+  mitigationAction?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
 
 /**
  * Phase JW-G: Periodic project diary entries (daily/weekly/monthly/quarterly).
  * Independent of milestones — populated admin-side, consumed by the client
  * prototype's Timeline tab.
  */
-@Entity({ tableName: 'construction_timeline_entries' })
+// The repository is bound here so that @InjectRepository(ConstructionTimelineEntry) hands
+// back ConstructionTimelineEntryRepository, with its query methods, wherever the entity's
+// repository is requested.
+@Entity({
+  tableName: 'construction_timeline_entries',
+  repository: () => ConstructionTimelineEntryRepository,
+})
 export class ConstructionTimelineEntry {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
   @Property({ columnType: 'uuid' })
   projectId!: string;
+
+  // Read-only link back to the owning project, so queries can populate() the parent.
+  //
+  // persist: false — project_id stays owned by the projectId scalar above, which every
+  //   existing write path sets. Two properties mapping one column collide on INSERT.
+  // hidden: true — keeps the relation out of JSON, so endpoints returning this entity
+  //   directly serialise exactly as they did before.
+  // createForeignKeyConstraint: false — this database has no foreign keys; declaring a
+  //   relation must not make the schema differ want to add one.
+  @ManyToOne(() => ConstructionProject, {
+    fieldName: 'project_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  project!: ConstructionProject;
 
   @Property({ length: 20, default: 'WEEKLY' })
   entryType: string = 'WEEKLY';
@@ -70,22 +145,10 @@ export class ConstructionTimelineEntry {
   lookAheadActivities?: string;
 
   @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
-  accomplishments?: Array<{
-    description?: string;
-    category?: string;
-    date?: string;
-    percentage?: number;
-    remarks?: string;
-  }>;
+  accomplishments?: TimelineAccomplishment[];
 
   @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
-  signatories?: Array<{
-    userId?: string;
-    userName?: string;
-    position?: string;
-    role?: string;
-    date?: string;
-  }>;
+  signatories?: TimelineSignatory[];
 
   // GGG-F: MPR (Monthly Progress Report) fields
   @Property({ nullable: true, length: 50 })
@@ -95,7 +158,7 @@ export class ConstructionTimelineEntry {
   reportingPeriodMonth?: Date;
 
   @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
-  workItems?: Array<Record<string, any>>;
+  workItems?: TimelineWorkItem[];
 
   @Property({ nullable: true, columnType: 'numeric(5,2)' })
   accomplishmentSummaryPercent?: number;
@@ -118,19 +181,7 @@ export class ConstructionTimelineEntry {
 
   // ZZZ-G: structured Project Concerns list (shared by WAR/MPR/timelogs)
   @Property({ nullable: true, columnType: 'jsonb', default: '[]' })
-  concernsList?: Array<{
-    title?: string;
-    description?: string;
-    category?: string;
-    severity?: string;
-    status?: string;
-    responsibleParty?: string;
-    resolutionTargetDate?: string;
-    actualResolutionDate?: string;
-    mitigationAction?: string;
-    createdBy?: string;
-    createdAt?: string;
-  }>;
+  concernsList?: TimelineConcern[];
 
   @Property({ nullable: true, columnType: 'uuid' })
   createdBy?: string;

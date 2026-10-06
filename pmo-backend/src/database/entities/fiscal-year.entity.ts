@@ -1,6 +1,7 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { FiscalYearRepository } from '../../university-operations/repository/fiscal-year.repository';
 
-@Entity({ tableName: 'fiscal_years' })
+@Entity({ tableName: 'fiscal_years', repository: () => FiscalYearRepository })
 export class FiscalYear {
   @PrimaryKey({ type: 'integer', autoincrement: false })
   year!: number;

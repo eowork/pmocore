@@ -12,6 +12,8 @@ import {
   PillarIndicatorTaxonomy,
   OperationOrganizationalInfo,
   RecordAssignment,
+  UserModuleAssignment,
+  UserPermissionOverride,
 } from '../database/entities';
 
 @Module({
@@ -26,6 +28,8 @@ import {
       PillarIndicatorTaxonomy,
       OperationOrganizationalInfo,
       RecordAssignment,
+      UserModuleAssignment,
+      UserPermissionOverride,
     ]),
   ],
   controllers: [UniversityOperationsController],

@@ -1,38 +1,52 @@
 import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
-import { EntityManager } from '@mikro-orm/core';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { EntityRepository } from '@mikro-orm/postgresql';
 import { createPaginatedResponse, PaginatedResponse } from '../common/dto';
 import {
-  UniversityOperation,
-  OperationIndicator,
+  FiscalYear,
   OperationFinancial,
+  OperationIndicator,
+  OperationOrganizationalInfo,
+  PillarIndicatorTaxonomy,
   QuarterlyReport,
   QuarterlyReportSubmission,
-  FiscalYear,
-  PillarIndicatorTaxonomy,
-  OperationOrganizationalInfo,
   RecordAssignment,
+  UniversityOperation,
+  UserModuleAssignment,
+  UserPermissionOverride,
 } from '../database/entities';
 import {
-  CreateOperationDto,
-  UpdateOperationDto,
-  QueryOperationDto,
+  CreateFinancialDto,
   CreateIndicatorDto,
   CreateIndicatorQuarterlyDto,
-  CreateFinancialDto,
+  CreateOperationDto,
   FundType,
+  QueryOperationDto,
+  UpdateIndicatorQuarterlyDto,
+  UpdateOperationDto,
 } from './dto';
 import { JwtPayload } from '../common/interfaces';
+import { ModuleType } from '../common/enums';
 import { PermissionResolverService } from '../common/services';
-import { UniversityOperationRepository } from './university-operation.repository';
+import { UserModuleAssignmentRepository } from '../common/repository/user-module-assignment.repository';
+import { UserPermissionOverrideRepository } from '../common/repository/user-permission-override.repository';
+import type { FindAllOperationsOptions } from './repository/university-operation.repository';
+import { UniversityOperationRepository } from './repository/university-operation.repository';
+import { OperationIndicatorRepository } from './repository/operation-indicator.repository';
+import { OperationFinancialRepository } from './repository/operation-financial.repository';
+import { QuarterlyReportRepository } from './repository/quarterly-report.repository';
+import { QuarterlyReportSubmissionRepository } from './repository/quarterly-report-submission.repository';
+import { FiscalYearRepository } from './repository/fiscal-year.repository';
+import { PillarIndicatorTaxonomyRepository } from './repository/pillar-indicator-taxonomy.repository';
+import { OperationOrganizationInfoRepository } from './repository/operation-organization-info.repository';
+import { RecordAssignmentRepository } from '../construction-projects/repository/record-assignment.repository';
+import { QueryOrder } from '@mikro-orm/core';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -44,13 +58,20 @@ export type PublicationStatus =
 /**
  * DATA ACCESS ARCHITECTURE (HYBRID MODEL — Phase IQ):
  *
- * Tier 1 — ORM methods (em.find, em.persist, em.flush):
- *   Used for simple CRUD: assignments, fiscal years, org info.
+ * Tier 1 — ORM methods, always reached through the injected repository for the entity
+ *   being touched: repo.find / repo.findOne / repo.create / repo.nativeDelete, and
+ *   repo.getEntityManager().persist(...).flush() to write.
+ *   Used for simple CRUD: assignments, fiscal years, org info, quarterly reports.
  *
- * Tier 2 — Raw SQL via em.getConnection().execute(sql, [?...], 'all'):
+ * Tier 2 — Raw SQL via this.connection.execute(sql, [?...], 'all'):
  *   Used for complex analytics CTEs, multi-join reporting queries.
  *   All raw queries use '?' (Knex positional) placeholders.
- *   88 execute() calls are intentional and accepted (Phase IQ — indefinitely deferred from ORM replacement).
+ *   The execute() calls are intentional and accepted (Phase IQ — indefinitely deferred
+ *   from ORM replacement).
+ *
+ * This service injects no EntityManager of its own. Every repository is bound to the one
+ * request-scoped EntityManager, so the repositories are the single door to the database
+ * and the Tier-2 connection is borrowed from one of them (see the `connection` getter).
  *
  * DO NOT convert Tier-2 raw SQL to ORM unless a functional defect demands it.
  *
@@ -63,15 +84,6 @@ export type PublicationStatus =
 export class UniversityOperationsService {
   private readonly logger = new Logger(UniversityOperationsService.name);
 
-  // Allowlisted columns for filtering/sorting
-  private readonly ALLOWED_SORTS = [
-    'created_at',
-    'title',
-    'status',
-    'start_date',
-    'end_date',
-  ];
-
   // Phase HU: the 3 module keys sharing one approval-authority family — the parent
   // 'university_operations' key plus its 2 independent per-pillar sub-modules. Passed
   // together to canApproveModule() so an Approver/Manager grant scoped to just one
@@ -82,35 +94,43 @@ export class UniversityOperationsService {
     'university-operations-financial',
   ];
 
+  // The user_permission_overrides.module_key this service's write authority is granted under.
+  private readonly UO_MODULE_KEY = 'university_operations';
+
   constructor(
     @InjectRepository(UniversityOperation)
-    private readonly uoRepo: EntityRepository<UniversityOperation>,
-    @InjectRepository(UniversityOperation)
-    private readonly universityOperationRepo: UniversityOperationRepository,
+    private readonly uoRepo: UniversityOperationRepository,
     @InjectRepository(OperationIndicator)
-    private readonly indicatorRepo: EntityRepository<OperationIndicator>,
+    private readonly indicatorRepo: OperationIndicatorRepository,
     @InjectRepository(OperationFinancial)
-    private readonly financialRepo: EntityRepository<OperationFinancial>,
+    private readonly financialRepo: OperationFinancialRepository,
     @InjectRepository(QuarterlyReport)
-    private readonly qrRepo: EntityRepository<QuarterlyReport>,
+    private readonly qrRepo: QuarterlyReportRepository,
     @InjectRepository(QuarterlyReportSubmission)
-    private readonly qrsRepo: EntityRepository<QuarterlyReportSubmission>,
+    private readonly qrsRepo: QuarterlyReportSubmissionRepository,
     @InjectRepository(FiscalYear)
-    private readonly fyRepo: EntityRepository<FiscalYear>,
+    private readonly fyRepo: FiscalYearRepository,
     @InjectRepository(PillarIndicatorTaxonomy)
-    private readonly taxonomyRepo: EntityRepository<PillarIndicatorTaxonomy>,
+    private readonly taxonomyRepo: PillarIndicatorTaxonomyRepository,
     @InjectRepository(OperationOrganizationalInfo)
-    private readonly orgInfoRepo: EntityRepository<OperationOrganizationalInfo>,
-    private readonly em: EntityManager,
+    private readonly orgInfoRepo: OperationOrganizationInfoRepository,
+    @InjectRepository(RecordAssignment)
+    private readonly recordAssignmentRepo: RecordAssignmentRepository,
+    @InjectRepository(UserModuleAssignment)
+    private readonly moduleAssignmentRepo: UserModuleAssignmentRepository,
+    @InjectRepository(UserPermissionOverride)
+    private readonly permissionOverrideRepo: UserPermissionOverrideRepository,
     private readonly permissionResolver: PermissionResolverService,
   ) {}
 
   /**
-   * Delegate to centralized permission resolver
-   * @deprecated Use this.permissionResolver.isAdmin() directly
+   * The Tier-2 raw SQL below needs a database connection, not an EntityManager. Every
+   * repository shares the same request-scoped EntityManager, so borrowing the connection
+   * from one of them is equivalent to injecting the EntityManager directly, without this
+   * service holding a second way into the database.
    */
-  private isAdmin(user: JwtPayload): boolean {
-    return this.permissionResolver.isAdmin(user);
+  private get connection() {
+    return this.uoRepo.getEntityManager().getConnection();
   }
 
   /**
@@ -128,38 +148,27 @@ export class UniversityOperationsService {
   }
 
   /**
-   * Phase AT: Update record assignments in junction table
+   * Phase AT: Update record assignments in the junction table
    * Replaces all existing assignments for a record with new user IDs
    */
-  private async updateRecordAssignments(
+  private updateRecordAssignments(
     recordId: string,
     userIds: string[],
   ): Promise<void> {
-    await this.em.nativeDelete(RecordAssignment, {
-      module: 'OPERATIONS',
+    return this.recordAssignmentRepo.replaceAssignments(
+      ModuleType.OPERATIONS,
       recordId,
-    });
-    if (userIds.length > 0) {
-      const assignments = userIds.map((userId) =>
-        this.em.create(RecordAssignment, {
-          module: 'OPERATIONS',
-          recordId,
-          userId,
-        }),
-      );
-      await this.em.persist(assignments).flush()
-    }
+      userIds,
+    );
   }
 
   // ─── Phase IJ: Assignment CRUD ──────────────────────────────────────────────
 
-  async getOperationAssignments(
-    operationId: string,
-  ): Promise<RecordAssignment[]> {
-    return this.em.find(RecordAssignment, {
-      module: 'OPERATIONS',
-      recordId: operationId,
-    });
+  getOperationAssignments(operationId: string): Promise<RecordAssignment[]> {
+    return this.recordAssignmentRepo.findForRecord(
+      ModuleType.OPERATIONS,
+      operationId,
+    );
   }
 
   async addOperationAssignment(
@@ -167,50 +176,37 @@ export class UniversityOperationsService {
     userId: string,
     assignedBy: string,
   ): Promise<RecordAssignment> {
+    // Throws when the operation does not exist, so an assignment can never be orphaned.
     await this.findOne(operationId);
-    const existing = await this.em.findOne(RecordAssignment, {
-      module: 'OPERATIONS',
-      recordId: operationId,
-      userId,
-    });
-    if (existing) return existing;
-    const assignment = this.em.create(RecordAssignment, {
-      module: 'OPERATIONS',
-      recordId: operationId,
+    return this.recordAssignmentRepo.assignUser(
+      ModuleType.OPERATIONS,
+      operationId,
       userId,
       assignedBy,
-      assignedAt: new Date(),
-    });
-    await this.em.persist(assignment).flush();
-    return assignment;
+    );
   }
 
   async removeOperationAssignment(
     operationId: string,
     userId: string,
   ): Promise<void> {
-    const deleted = await this.em.nativeDelete(RecordAssignment, {
-      module: 'OPERATIONS',
-      recordId: operationId,
+    const deleted = await this.recordAssignmentRepo.removeAssignment(
+      ModuleType.OPERATIONS,
+      operationId,
       userId,
-    });
+    );
     if (deleted === 0) throw new NotFoundException('Assignment not found');
   }
 
   /**
    * Phase AT: Check if user is assigned to record via junction table
    */
-  private async isUserAssigned(
-    recordId: string,
-    userId: string,
-  ): Promise<boolean> {
-    const result = await this.em
-      .getConnection()
-      .execute(
-        `SELECT 1 FROM record_assignments WHERE module = 'OPERATIONS' AND record_id = ? AND user_id = ?`,
-        [recordId, userId],
-      );
-    return result.length > 0;
+  private isUserAssigned(recordId: string, userId: string): Promise<boolean> {
+    return this.recordAssignmentRepo.isUserAssigned(
+      ModuleType.OPERATIONS,
+      recordId,
+      userId,
+    );
   }
 
   /**
@@ -254,12 +250,10 @@ export class UniversityOperationsService {
     }
 
     // Resolve UO module level from the permission-override system (authoritative source).
-    const overrideRows = await this.em.getConnection().execute(
-      `SELECT granted_level FROM user_permission_overrides
-       WHERE user_id = ? AND module_key = 'university_operations' AND can_access = true`,
-      [userId],
+    const grantedLevel = await this.permissionOverrideRepo.findGrantedLevel(
+      userId,
+      this.UO_MODULE_KEY,
     );
-    const grantedLevel: string | null = overrideRows[0]?.granted_level ?? null;
 
     // Approver and Manager have module-wide write authority — no record-ownership check needed.
     if (grantedLevel === 'Approver' || grantedLevel === 'Manager') {
@@ -275,18 +269,13 @@ export class UniversityOperationsService {
     }
 
     // Contributor: must be the record creator or an assigned user.
-    const result = await this.em
-      .getConnection()
-      .execute(
-        `SELECT created_by FROM university_operations WHERE id = ? AND deleted_at IS NULL`,
-        [operationId],
-      );
+    const createdBy = await this.uoRepo.findCreatedBy(operationId);
 
-    if (result.length === 0) {
+    if (createdBy === null) {
       throw new NotFoundException('Operation not found');
     }
 
-    const isOwner = result[0].created_by === userId;
+    const isOwner = createdBy === userId;
     const isAssigned = await this.isUserAssigned(operationId, userId);
 
     if (!isOwner && !isAssigned) {
@@ -309,26 +298,16 @@ export class UniversityOperationsService {
   ): Promise<any> {
     // Admins always have access
     if (!this.permissionResolver.isAdmin(user)) {
-      const moduleCheck = await this.em
-        .getConnection()
-        .execute(
-          `SELECT 1 FROM user_module_assignments WHERE user_id = ? AND (module = 'OPERATIONS' OR module = 'ALL')`,
-          [user.sub],
-        );
-      if (moduleCheck.length === 0) {
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.OPERATIONS,
+      );
+      if (!hasAccess) {
         return null;
       }
     }
 
-    const result = await this.em.getConnection().execute(
-      `SELECT * FROM university_operations
-       WHERE operation_type = ?
-         AND fiscal_year = ?
-         AND deleted_at IS NULL
-       LIMIT 1`,
-      [pillarType, fiscalYear],
-    );
-    return result[0] || null;
+    return this.uoRepo.findForPillarYear(pillarType, fiscalYear);
   }
 
   /**
@@ -345,12 +324,10 @@ export class UniversityOperationsService {
       return;
     }
 
-    const overrideRows = await this.em.getConnection().execute(
-      `SELECT granted_level FROM user_permission_overrides
-       WHERE user_id = ? AND module_key = 'university_operations' AND can_access = true`,
-      [userId],
+    const grantedLevel = await this.permissionOverrideRepo.findGrantedLevel(
+      userId,
+      this.UO_MODULE_KEY,
     );
-    const grantedLevel: string | null = overrideRows[0]?.granted_level ?? null;
 
     if (!grantedLevel || grantedLevel === 'Viewer') {
       throw new ForbiddenException(
@@ -370,22 +347,11 @@ export class UniversityOperationsService {
     quarter: string,
     user?: JwtPayload,
   ): Promise<void> {
-    const result = await this.em.getConnection().execute(
-      `SELECT uo.fiscal_year, qr.publication_status AS quarterly_status,
-              qr.unlocked_by
-       FROM university_operations uo
-       LEFT JOIN quarterly_reports qr
-         ON qr.fiscal_year = uo.fiscal_year AND qr.quarter = ?
-            AND qr.deleted_at IS NULL
-       WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-      [quarter, operationId],
-    );
+    const row = await this.uoRepo.findEditState(operationId, quarter);
 
-    if (result.length === 0) {
+    if (!row) {
       throw new NotFoundException('Operation not found');
     }
-
-    const row = result[0];
 
     // SuperAdmin bypasses all locks
     if (user && user.is_superadmin) {
@@ -421,35 +387,15 @@ export class UniversityOperationsService {
     quarter?: string,
     user?: JwtPayload,
   ): Promise<void> {
-    let result;
+    // Phase ER-B/GOV-C: when a quarter is supplied the quarterly report governing it is
+    // resolved too, so a published quarter can block the edit and an approved unlock can
+    // release it. Without a quarter only the operation's own status is read.
+    const row = await this.uoRepo.findEditState(operationId, quarter);
 
-    if (quarter) {
-      // Phase ER-B: JOIN quarterly_reports to enforce edit lock on published quarters
-      // Phase GOV-C: Also fetch unlocked_by for strict admin unlock enforcement
-      result = await this.em.getConnection().execute(
-        `SELECT uo.publication_status, qr.publication_status AS quarterly_status,
-                qr.unlocked_by
-         FROM university_operations uo
-         LEFT JOIN quarterly_reports qr
-           ON qr.fiscal_year = uo.fiscal_year AND qr.quarter = ?
-              AND qr.deleted_at IS NULL
-         WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-        [quarter, operationId],
-      );
-    } else {
-      result = await this.em.getConnection().execute(
-        `SELECT uo.publication_status
-         FROM university_operations uo
-         WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-        [operationId],
-      );
-    }
-
-    if (result.length === 0) {
+    if (!row) {
       throw new NotFoundException('Operation not found');
     }
 
-    const row = result[0];
     if (row.publication_status === 'PUBLISHED') {
       throw new ForbiddenException(
         'Cannot modify indicators/financials on published operations. Withdraw to draft status first.',
@@ -526,127 +472,43 @@ export class UniversityOperationsService {
     query: QueryOperationDto,
     user?: JwtPayload,
   ): Promise<PaginatedResponse<any>> {
-    const { page = 1, limit = 20, sort = 'created_at', order = 'desc' } = query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 20 } = query;
 
-    // Validate sort column
-    const sortColumn = this.ALLOWED_SORTS.includes(sort) ? sort : 'created_at';
-    const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-    // Build WHERE clause (qualified with 'uo.' to avoid JOIN ambiguity)
-    const conditions: string[] = ['uo.deleted_at IS NULL'];
-    const params: any[] = [];
-
-    // Phase X: Visibility filter by role
-    // Admin: sees all records. Non-admin: PUBLISHED + own records in any status.
+    // Phase X + Y + AM + AT: visibility is decided here and handed to the repository as a
+    // scope. The repository applies it alongside every other filter, so no filter combination
+    // can widen what this user was allowed to see.
     const queryAny = query as any;
+    const isAdmin = user ? this.permissionResolver.isAdmin(user) : true;
+    let options: FindAllOperationsOptions;
+
     if (queryAny.publication_status) {
-      if (
-        queryAny.publication_status !== 'PUBLISHED' &&
-        user &&
-        !this.permissionResolver.isAdmin(user)
-      ) {
-        conditions.push(`(uo.publication_status = ? AND uo.created_by = ?)`);
-        params.push(queryAny.publication_status, user.sub);
-      } else {
-        conditions.push(`uo.publication_status = ?`);
-        params.push(queryAny.publication_status);
-      }
-    } else if (user && !this.permissionResolver.isAdmin(user)) {
-      // Phase Y + AM + AT: Campus-scoped visibility with junction table for assignments
+      options =
+        queryAny.publication_status !== 'PUBLISHED' && user && !isAdmin
+          ? {
+              scope: 'own-status',
+              userId: user.sub,
+              publicationStatus: queryAny.publication_status,
+            }
+          : { scope: 'all', publicationStatus: queryAny.publication_status };
+    } else if (user && !isAdmin) {
       const recordCampus = this.normalizeUserCampusToRecordCampus(user.campus);
-      if (recordCampus) {
-        // Phase IH: user.sub pushed twice — binds both created_by and ra.user_id positions
-        conditions.push(
-          `(uo.campus = ? OR uo.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id AND ra.user_id = ?))`,
-        );
-        params.push(recordCampus, user.sub, user.sub);
-      } else {
-        // Phase IH: user.sub pushed twice — binds both created_by and ra.user_id positions
-        conditions.push(
-          `(uo.publication_status = 'PUBLISHED' OR uo.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id AND ra.user_id = ?))`,
-        );
-        params.push(user.sub, user.sub);
-      }
+      options = recordCampus
+        ? { scope: 'campus', userId: user.sub, recordCampus }
+        : { scope: 'published', userId: user.sub };
+    } else {
+      options = { scope: 'all' };
     }
 
-    if (query.operation_type) {
-      conditions.push(`uo.operation_type = ?`);
-      params.push(query.operation_type);
-    }
-    if (query.status) {
-      conditions.push(`uo.status = ?`);
-      params.push(query.status);
-    }
-    if (query.campus) {
-      conditions.push(`uo.campus = ?`);
-      params.push(query.campus);
-    }
-    if (query.coordinator_id) {
-      conditions.push(`uo.coordinator_id = ?`);
-      params.push(query.coordinator_id);
-    }
-    // Phase BD: fiscal_year filter on main table
-    if (query.fiscal_year) {
-      conditions.push(`uo.fiscal_year = ?`);
-      params.push(query.fiscal_year);
-    }
-
-    const whereClause = conditions.join(' AND ');
-
-    // Get total count (uses alias for consistency with data query)
-    const countResult = await this.em
-      .getConnection()
-      .execute(
-        `SELECT COUNT(*) FROM university_operations uo LEFT JOIN users submitter ON uo.submitted_by = submitter.id WHERE ${whereClause}`,
-        params,
-      );
-    const total = parseInt(countResult[0].count, 10);
-
-    // Get paginated data
-    const dataResult = await this.em.getConnection().execute(
-      `SELECT uo.id, uo.operation_type, uo.title, uo.description, uo.code, uo.start_date, uo.end_date,
-              uo.status, uo.budget, uo.campus, uo.coordinator_id, uo.publication_status, uo.created_at, uo.updated_at,
-              uo.submitted_by, uo.submitted_at, uo.created_by,
-              uo.status_q1, uo.status_q2, uo.status_q3, uo.status_q4,
-              uo.fiscal_year,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              (SELECT COALESCE(json_agg(json_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id) as assigned_users
-       FROM university_operations uo
-       LEFT JOIN users submitter ON uo.submitted_by = submitter.id
-       WHERE ${whereClause}
-       ORDER BY ${sortColumn} ${sortOrder}
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
-    );
-
-    return createPaginatedResponse(dataResult, total, page, limit);
+    const { rows, total } = await this.uoRepo.findAllOperations(query, options);
+    return createPaginatedResponse(rows, total, page, limit);
   }
 
   async findOne(id: string, user?: JwtPayload): Promise<any> {
-    const result = await this.em.getConnection().execute(
-      `SELECT uo.*,
-              creator.first_name || ' ' || creator.last_name as created_by_name,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              reviewer.first_name || ' ' || reviewer.last_name as reviewed_by_name,
-              (SELECT COALESCE(json_agg(json_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id) as assigned_users
-       FROM university_operations uo
-       LEFT JOIN users creator ON uo.created_by = creator.id
-       LEFT JOIN users submitter ON uo.submitted_by = submitter.id
-       LEFT JOIN users reviewer ON uo.reviewed_by = reviewer.id
-       WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-      [id],
-    );
+    const operation = await this.uoRepo.findDetail(id);
 
-    if (result.length === 0) {
+    if (!operation) {
       throw new NotFoundException(`Operation with ID ${id} not found`);
     }
-
-    const operation = result[0];
 
     // Track T-SEC-IDOR: object-level read authorization (OWASP API1 BOLA). Enforced ONLY when a
     // user is supplied — internal write-path callers pass no user and run their own authz. An
@@ -657,28 +519,16 @@ export class UniversityOperationsService {
     }
 
     // Get organizational info
-    const orgInfo = await this.em
-      .getConnection()
-      .execute(
-        `SELECT * FROM operation_organizational_info WHERE operation_id = ? AND deleted_at IS NULL`,
-        [id],
-      );
+    const orgInfo = await this.connection.execute(
+      `SELECT * FROM operation_organizational_info WHERE operation_id = ? AND deleted_at IS NULL`,
+      [id],
+    );
 
     // Get indicators
-    const indicators = await this.em
-      .getConnection()
-      .execute(
-        `SELECT * FROM operation_indicators WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC`,
-        [id],
-      );
+    const indicators = await this.indicatorRepo.findForOperation(id);
 
     // Get financials
-    const financials = await this.em
-      .getConnection()
-      .execute(
-        `SELECT * FROM operation_financials WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC, quarter`,
-        [id],
-      );
+    const financials = await this.financialRepo.findForOperation(id);
 
     return {
       ...operation,
@@ -694,18 +544,8 @@ export class UniversityOperationsService {
     _user?: JwtPayload,
   ): Promise<any> {
     // Check for duplicate code
-    if (dto.code) {
-      const existing = await this.em
-        .getConnection()
-        .execute(
-          `SELECT id FROM university_operations WHERE code = ? AND deleted_at IS NULL`,
-          [dto.code],
-        );
-      if (existing.length > 0) {
-        throw new ConflictException(
-          `Operation code ${dto.code} already exists`,
-        );
-      }
+    if (dto.code && (await this.uoRepo.codeExists(dto.code))) {
+      throw new ConflictException(`Operation code ${dto.code} already exists`);
     }
 
     // Universal Draft Governance: ALL users create DRAFT
@@ -716,35 +556,16 @@ export class UniversityOperationsService {
 
     // Phase AN: Include assigned_to for inline assignment during creation
     // Phase BD: Include fiscal_year for year-based filtering2
-    const result = await this.em.getConnection().execute(
-      `INSERT INTO university_operations
-       (operation_type, title, description, code, start_date, end_date, status, budget, campus, coordinator_id, metadata, created_by,
-        publication_status, submitted_by, submitted_at, assigned_to, fiscal_year)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        dto.operation_type,
-        dto.title,
-        dto.description,
-        dto.code,
-        dto.start_date,
-        dto.end_date,
-        dto.status,
-        dto.budget,
-        dto.campus,
-        dto.coordinator_id,
-        dto.metadata ? JSON.stringify(dto.metadata) : null,
-        userId,
-        publicationStatus,
-        submittedBy,
-        submittedAt,
-        dto.assigned_to || null,
-        dto.fiscal_year || null,
-      ],
+    const created = await this.uoRepo.createOperation(
+      dto,
+      userId,
+      publicationStatus,
+      submittedBy,
+      submittedAt,
     );
 
     // Phase AT: Handle multi-select assignments via junction table
-    const recordId = result[0].id;
+    const recordId = created.id;
     if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
       await this.updateRecordAssignments(recordId, dto.assigned_user_ids);
     } else if (dto.assigned_to) {
@@ -755,7 +576,7 @@ export class UniversityOperationsService {
     this.logger.log(
       `OPERATION_CREATED: id=${recordId}, status=${publicationStatus}, by=${userId}`,
     );
-    return result[0];
+    return created;
   }
 
   async update(
@@ -780,18 +601,10 @@ export class UniversityOperationsService {
 
     // Check for duplicate code if updating
     const dtoAny = dto as any;
-    if (dtoAny.code) {
-      const existing = await this.em
-        .getConnection()
-        .execute(
-          `SELECT id FROM university_operations WHERE code = ? AND id != ? AND deleted_at IS NULL`,
-          [dtoAny.code, id],
-        );
-      if (existing.length > 0) {
-        throw new ConflictException(
-          `Operation code ${dtoAny.code} already exists`,
-        );
-      }
+    if (dtoAny.code && (await this.uoRepo.codeExists(dtoAny.code, id))) {
+      throw new ConflictException(
+        `Operation code ${dtoAny.code} already exists`,
+      );
     }
 
     // Phase E: State Machine Lockdown
@@ -822,7 +635,6 @@ export class UniversityOperationsService {
       );
     }
 
-    // Build dynamic SET clause
     const fields = Object.keys(dto).filter(
       (k) => dto[k] !== undefined && k !== 'assigned_user_ids',
     );
@@ -830,42 +642,15 @@ export class UniversityOperationsService {
       return this.findOne(id);
     }
 
-    let setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values: any[] = fields.map((f) =>
-      f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    // Apply status reset fields based on prior status
-    if (requiresStatusReset) {
-      let resetFields: string[];
-      if (priorStatus === 'PENDING_REVIEW') {
-        resetFields = [
-          `publication_status = 'DRAFT'`,
-          `submitted_by = NULL`,
-          `submitted_at = NULL`,
-        ];
-      } else {
-        resetFields = [
-          `publication_status = 'DRAFT'`,
-          `reviewed_by = NULL`,
-          `reviewed_at = NULL`,
-          `review_notes = NULL`,
-          `submitted_by = ?`,
-          `submitted_at = NOW()`,
-        ];
-        values.push(userId);
-      }
-      setClause = setClause
-        ? `${setClause}, ${resetFields.join(', ')}`
-        : resetFields.join(', ');
-    }
-
-    await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [...values, userId, id],
+    await this.uoRepo.applyUpdate(
+      id,
+      dto,
+      userId,
+      requiresStatusReset
+        ? priorStatus === 'PENDING_REVIEW'
+          ? 'from-pending'
+          : 'from-reviewed'
+        : 'none',
     );
 
     // Phase AT: Handle multi-select assignments via junction table
@@ -882,12 +667,7 @@ export class UniversityOperationsService {
   async remove(id: string, userId: string): Promise<void> {
     await this.findOne(id);
 
-    await this.em
-      .getConnection()
-      .execute(
-        `UPDATE university_operations SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
-        [userId, id],
-      );
+    await this.uoRepo.softDelete(id, userId);
 
     this.logger.log(`OPERATION_DELETED: id=${id}, by=${userId}`);
   }
@@ -915,25 +695,20 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET publication_status = 'PENDING_REVIEW',
-           submitted_by = ?,
-           submitted_at = NOW(),
-           review_notes = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [userId, id],
-    );
+    const updated = await this.uoRepo.markSubmittedForReview(id, userId);
 
     this.logger.log(`OPERATION_SUBMITTED_FOR_REVIEW: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
       throw new ForbiddenException(
         'Insufficient module level to publish records',
       );
@@ -960,20 +735,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET publication_status = 'PUBLISHED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, id],
-    );
+    const updated = await this.uoRepo.markPublished(id, adminId);
 
     this.logger.log(`OPERATION_PUBLISHED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   async reject(
@@ -983,7 +748,12 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
       throw new ForbiddenException(
         'Insufficient module level to reject records',
       );
@@ -1001,20 +771,10 @@ export class UniversityOperationsService {
       throw new BadRequestException('Rejection notes are required');
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET publication_status = 'REJECTED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = ?,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, notes.trim(), id],
-    );
+    const updated = await this.uoRepo.markRejected(id, adminId, notes.trim());
 
     this.logger.log(`OPERATION_REJECTED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1038,19 +798,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET publication_status = 'DRAFT',
-           submitted_by = NULL,
-           submitted_at = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.uoRepo.markWithdrawn(id);
 
     this.logger.log(`OPERATION_WITHDRAWN: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   // ─── Phase DY-C: Per-Quarter Submission Workflow ───────────────────────────────
@@ -1074,18 +825,16 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'PENDING_REVIEW', updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
+    const updated = await this.uoRepo.setQuarterStatus(
+      id,
+      quarter,
+      'PENDING_REVIEW',
     );
 
     this.logger.log(
       `QUARTER_SUBMITTED: id=${id}, quarter=${quarter}, by=${userId}`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1099,8 +848,15 @@ export class UniversityOperationsService {
   ): Promise<any> {
     this.validateQuarterParam(quarter);
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS)))
-      throw new ForbiddenException('Insufficient module level to approve quarters');
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    )
+      throw new ForbiddenException(
+        'Insufficient module level to approve quarters',
+      );
     const operation = await this.findOne(id);
 
     // Prevent self-approval
@@ -1116,18 +872,16 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'PUBLISHED', updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
+    const updated = await this.uoRepo.setQuarterStatus(
+      id,
+      quarter,
+      'PUBLISHED',
     );
 
     this.logger.log(
       `QUARTER_APPROVED: id=${id}, quarter=${quarter}, by=${adminId}`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1142,8 +896,15 @@ export class UniversityOperationsService {
   ): Promise<any> {
     this.validateQuarterParam(quarter);
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS)))
-      throw new ForbiddenException('Insufficient module level to reject quarters');
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    )
+      throw new ForbiddenException(
+        'Insufficient module level to reject quarters',
+      );
 
     const operation = await this.findOne(id);
     const statusCol = `status_${quarter.toLowerCase()}`;
@@ -1154,18 +915,17 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'REJECTED', review_notes = ?, updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id, notes || ''],
+    const updated = await this.uoRepo.setQuarterStatus(
+      id,
+      quarter,
+      'REJECTED',
+      notes || '',
     );
 
     this.logger.log(
       `QUARTER_REJECTED: id=${id}, quarter=${quarter}, by=${adminId}`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1186,18 +946,12 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'DRAFT', updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.uoRepo.setQuarterStatus(id, quarter, 'DRAFT');
 
     this.logger.log(
       `QUARTER_WITHDRAWN: id=${id}, quarter=${quarter}, by=${userId}`,
     );
-    return result[0];
+    return updated;
   }
 
   private validateQuarterParam(quarter: string): void {
@@ -1213,51 +967,27 @@ export class UniversityOperationsService {
    * Filtered by admin's module assignments
    */
   async findPendingReview(user: JwtPayload): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException('Only Admin can view pending reviews');
     }
 
     // Check module access (SuperAdmin or user with OPERATIONS/ALL assignment)
     if (!user.is_superadmin) {
-      const accessCheck = await this.em.getConnection().execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ?
-           AND (module = 'OPERATIONS' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.OPERATIONS,
       );
 
-      if (accessCheck.length === 0) {
+      if (!hasAccess) {
         return []; // No access to this module
       }
     }
 
-    const result = await this.em.getConnection().execute(
-      `SELECT uo.id, uo.code, uo.title, uo.campus, uo.publication_status,
-              uo.submitted_by, uo.submitted_at, uo.created_at,
-              u.first_name || ' ' || u.last_name as submitter_name
-       FROM university_operations uo
-       LEFT JOIN users u ON uo.submitted_by = u.id
-       WHERE uo.publication_status = 'PENDING_REVIEW'
-         AND uo.deleted_at IS NULL
-       ORDER BY uo.submitted_at ASC`,
-    );
-
-    return result;
+    return this.uoRepo.findPendingReview();
   }
 
-  async findMyDrafts(userId: string): Promise<any[]> {
-    const result = await this.em.getConnection().execute(
-      `SELECT id, code, title, campus, publication_status,
-              submitted_at, review_notes, created_at
-       FROM university_operations
-       WHERE created_by = ?
-         AND publication_status IN ('DRAFT', 'PENDING_REVIEW', 'REJECTED')
-         AND deleted_at IS NULL
-       ORDER BY created_at DESC`,
-      [userId],
-    );
-
-    return result;
+  findMyDrafts(userId: string): Promise<any[]> {
+    return this.uoRepo.findDraftsForUser(userId);
   }
 
   // --- Indicators ---
@@ -1271,7 +1001,7 @@ export class UniversityOperationsService {
 
     const taxa = await this.taxonomyRepo.find(
       { pillarType: operation.operation_type, isActive: true },
-      { orderBy: { indicatorOrder: 'ASC' } },
+      { orderBy: { indicatorOrder: QueryOrder.ASC } },
     );
 
     return taxa.map((t) => ({
@@ -1304,7 +1034,12 @@ export class UniversityOperationsService {
 
     const taxa = await this.taxonomyRepo.find(
       { pillarType, isActive: true },
-      { orderBy: { indicatorType: 'ASC', indicatorOrder: 'ASC' } },
+      {
+        orderBy: {
+          indicatorType: QueryOrder.ASC,
+          indicatorOrder: QueryOrder.ASC,
+        },
+      },
     );
 
     return taxa.map((t) => ({
@@ -1323,7 +1058,7 @@ export class UniversityOperationsService {
   /**
    * Phase CX-B: Fetch all indicators by pillar type and fiscal year (cross-operation)
    * Aggregates indicator data across all operations of the same pillar type
-   * Phase DK-B: Uses LEFT JOIN to include orphaned indicators (pillar_indicator_id = NULL)
+   * Phase DK-B: orphaned indicators (pillar_indicator_id = NULL) are included
    */
   async findIndicatorsByPillarAndYear(
     pillarType: string,
@@ -1335,48 +1070,13 @@ export class UniversityOperationsService {
       `[findIndicatorsByPillarAndYear] pillar_type=${pillarType} (${typeof pillarType}), fiscal_year=${fiscalYear} (${typeof fiscalYear}), quarter=${quarter}`,
     );
 
-    const validPillarTypes = [
-      'HIGHER_EDUCATION',
-      'ADVANCED_EDUCATION',
-      'RESEARCH',
-      'TECHNICAL_ADVISORY',
-    ];
-    if (!validPillarTypes.includes(pillarType)) {
-      this.logger.debug(
-        `[findIndicatorsByPillarAndYear] Invalid pillar_type: ${pillarType}`,
-      );
-      return [];
-    }
-
-    // Phase DY-C: Filter by reported_quarter when provided
-    // Phase IG: pillarType bound twice (uo.operation_type + pit.pillar_type) — duplicated for Knex positional binding
-    const params: any[] = [pillarType, pillarType, fiscalYear];
-    let quarterFilter = '';
-    if (quarter && ['Q1', 'Q2', 'Q3', 'Q4'].includes(quarter)) {
-      quarterFilter = ` AND (oi.reported_quarter = ? OR oi.reported_quarter IS NULL)`;
-      params.push(quarter);
-    }
-
-    // Phase DK-B: Use LEFT JOIN to include orphaned indicators
-    const result = await this.em.getConnection().execute(
-      `SELECT
-        oi.*,
-        pit.indicator_name,
-        pit.indicator_code,
-        pit.uacs_code,
-        pit.unit_type,
-        pit.indicator_type,
-        pit.description
-       FROM operation_indicators oi
-       LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-       JOIN university_operations uo ON oi.operation_id = uo.id
-       WHERE uo.operation_type = ?
-         AND (pit.pillar_type = ? OR pit.pillar_type IS NULL)
-         AND oi.fiscal_year = ?
-         AND oi.deleted_at IS NULL
-         AND uo.deleted_at IS NULL${quarterFilter}
-       ORDER BY COALESCE(pit.indicator_order, 999) ASC, oi.particular ASC`,
-      params,
+    // Phase DK-B: an orphaned indicator has no taxonomy at all, so the repository's optional
+    // taxonomy relation keeps it in the result — what the LEFT JOIN was for. An unknown pillar
+    // type returns an empty list there, matching the guard this method used to apply itself.
+    const result = await this.indicatorRepo.findByPillarAndYear(
+      pillarType,
+      fiscalYear,
+      quarter,
     );
 
     // Phase DK-B: Log orphan count for admin awareness
@@ -1404,28 +1104,10 @@ export class UniversityOperationsService {
   ): Promise<any[]> {
     await this.findOne(operationId);
 
-    let query = `
-      SELECT
-        oi.*,
-        pit.indicator_name as taxonomy_name,
-        pit.indicator_code as taxonomy_code,
-        pit.uacs_code as taxonomy_uacs,
-        pit.unit_type,
-        pit.description as taxonomy_description
-      FROM operation_indicators oi
-      LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-      WHERE oi.operation_id = ? AND oi.deleted_at IS NULL
-    `;
-    const params: any[] = [operationId];
-
-    if (fiscalYear) {
-      query += ` AND oi.fiscal_year = ?`;
-      params.push(fiscalYear);
-    }
-
-    query += ` ORDER BY COALESCE(pit.indicator_order, 999) ASC, oi.fiscal_year DESC, oi.created_at DESC`;
-
-    const result = await this.em.getConnection().execute(query, params);
+    const result = await this.indicatorRepo.findForOperationWithTaxonomy(
+      operationId,
+      fiscalYear,
+    );
     return result.map((row) => this.computeIndicatorMetrics(row));
   }
 
@@ -1601,6 +1283,30 @@ export class UniversityOperationsService {
         ? toNumber(record.override_variance)
         : null;
 
+    // An override rate is entered precisely because the auto-calculation is wrong for this
+    // record, so the variance derived from the same quarterly totals is wrong too. When no
+    // explicit variance override was given, restate the variance the override rate implies
+    // (actual - target, where actual = target x rate) instead of publishing a figure the
+    // encoder has already declared incorrect. An explicit override_variance still wins.
+    let overrideRateVariance: number | null = null;
+    // A zero target makes the rate meaningless, so there is nothing to derive from it and
+    // the quarterly figures remain the better answer.
+    if (
+      overrideVarianceAnnual === null &&
+      overrideRate !== null &&
+      effectiveTarget !== null &&
+      effectiveTarget !== 0
+    ) {
+      const rawRateVariance = effectiveTarget * (overrideRate / 100 - 1);
+      overrideRateVariance = Math.max(
+        MIN_VARIANCE,
+        Math.min(rawRateVariance, MAX_VARIANCE),
+      );
+    }
+
+    const effectiveVariance =
+      overrideVarianceAnnual ?? overrideRateVariance ?? variance;
+
     return {
       ...record,
       // Phase HD: total_target/total_accomplishment return effective values (override ?? raw) — Directive 383
@@ -1624,9 +1330,17 @@ export class UniversityOperationsService {
       override_total_target: formatDecimal(overrideTotalTarget, 4),
       override_total_actual: formatDecimal(overrideTotalActual, 4),
       // Phase GY/GZ: Annual override fields only (Directive 359)
-      variance: formatDecimal(overrideVarianceAnnual ?? variance, 4),
+      variance: formatDecimal(effectiveVariance, 4),
       override_variance: formatDecimal(overrideVarianceAnnual, 2),
       computed_variance: formatDecimal(variance, 4),
+      // Lets the UI say why a variance differs from the quarterly sums, instead of leaving
+      // the reader to guess whether an override is in play.
+      variance_source:
+        overrideVarianceAnnual !== null
+          ? 'override_variance'
+          : overrideRateVariance !== null
+            ? 'override_rate'
+            : 'computed',
       // Phase FY-2: computed_rate = auto-calculated, accomplishment_rate = override if set
       computed_rate: formatDecimal(accomplishmentRate, 2),
       accomplishment_rate: formatDecimal(overrideRate ?? accomplishmentRate, 2),
@@ -1655,20 +1369,16 @@ export class UniversityOperationsService {
 
     // Verify pillar_indicator_id exists and matches operation's pillar type
     const operation = await this.findOne(operationId);
-    const taxonomyCheck = await this.em.getConnection().execute(
-      `SELECT id, pillar_type, indicator_name
-       FROM pillar_indicator_taxonomy
-       WHERE id = ? AND is_active = true`,
-      [dto.pillar_indicator_id],
+    const taxonomy = await this.taxonomyRepo.findActiveById(
+      dto.pillar_indicator_id,
     );
 
-    if (taxonomyCheck.length === 0) {
+    if (!taxonomy) {
       throw new BadRequestException(
         'Invalid pillar_indicator_id: Indicator not found in taxonomy',
       );
     }
 
-    const taxonomy = taxonomyCheck[0];
     if (taxonomy.pillar_type !== operation.operation_type) {
       throw new BadRequestException(
         `Indicator taxonomy mismatch: Indicator belongs to ${taxonomy.pillar_type}, but operation is ${operation.operation_type}`,
@@ -1676,25 +1386,16 @@ export class UniversityOperationsService {
     }
 
     // Check if quarterly data already exists for this indicator + fiscal year + quarter
-    // Phase DY-C: Include reported_quarter in duplicate check when provided
-    const existingCheckParams: any[] = [
+    // Phase DY-C: a missing reported_quarter is its own slot, distinct from any quarter's,
+    // so it is matched as NULL rather than left out of the lookup.
+    const duplicate = await this.indicatorRepo.quarterlyDataExists(
       dto.pillar_indicator_id,
       operationId,
       dto.fiscal_year,
-    ];
-    let existingCheckQuery = `SELECT id FROM operation_indicators
-       WHERE pillar_indicator_id = ? AND operation_id = ? AND fiscal_year = ? AND deleted_at IS NULL`;
-    if (dto.reported_quarter) {
-      existingCheckQuery += ` AND reported_quarter = ?`;
-      existingCheckParams.push(dto.reported_quarter);
-    } else {
-      existingCheckQuery += ` AND reported_quarter IS NULL`;
-    }
-    const existingCheck = await this.em
-      .getConnection()
-      .execute(existingCheckQuery, existingCheckParams);
+      dto.reported_quarter,
+    );
 
-    if (existingCheck.length > 0) {
+    if (duplicate) {
       throw new ConflictException(
         `Quarterly data already exists for indicator "${taxonomy.indicator_name}" in fiscal year ${dto.fiscal_year}. Use PATCH to update.`,
       );
@@ -1706,80 +1407,18 @@ export class UniversityOperationsService {
     // Phase HA: Include override_total_target, override_total_actual (Directive 370)
     // Phase HE: Include catch_up_plan, facilitating_factors, ways_forward (Directive 386)
     // Phase TTT: Include numerator/denominator fraction fields for PERCENTAGE indicators
-    const result = await this.em.getConnection().execute(
-      `INSERT INTO operation_indicators
-       (operation_id, pillar_indicator_id, particular, fiscal_year, reported_quarter,
-        target_q1, target_q2, target_q3, target_q4,
-        accomplishment_q1, accomplishment_q2, accomplishment_q3, accomplishment_q4,
-        score_q1, score_q2, score_q3, score_q4,
-        remarks, override_rate, override_variance,
-        override_total_target, override_total_actual,
-        catch_up_plan, facilitating_factors, ways_forward, mov,
-        numerator_q1, denominator_q1, numerator_q2, denominator_q2,
-        numerator_q3, denominator_q3, numerator_q4, denominator_q4,
-        target_numerator_q1, target_denominator_q1, target_numerator_q2, target_denominator_q2,
-        target_numerator_q3, target_denominator_q3, target_numerator_q4, target_denominator_q4,
-        remarks_q1, remarks_q2, remarks_q3, remarks_q4,
-        override_total_target_fraction, override_total_actual_fraction,
-        created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        operationId,
-        dto.pillar_indicator_id,
-        taxonomy.indicator_name,
-        dto.fiscal_year,
-        dto.reported_quarter || null,
-        dto.target_q1,
-        dto.target_q2,
-        dto.target_q3,
-        dto.target_q4,
-        dto.accomplishment_q1,
-        dto.accomplishment_q2,
-        dto.accomplishment_q3,
-        dto.accomplishment_q4,
-        dto.score_q1,
-        dto.score_q2,
-        dto.score_q3,
-        dto.score_q4,
-        dto.remarks,
-        dto.override_rate ?? null,
-        dto.override_variance ?? null,
-        dto.override_total_target ?? null,
-        dto.override_total_actual ?? null,
-        dto.catch_up_plan ?? null,
-        dto.facilitating_factors ?? null,
-        dto.ways_forward ?? null,
-        dto.mov ?? null,
-        dto.numerator_q1 ?? null,
-        dto.denominator_q1 ?? null,
-        dto.numerator_q2 ?? null,
-        dto.denominator_q2 ?? null,
-        dto.numerator_q3 ?? null,
-        dto.denominator_q3 ?? null,
-        dto.numerator_q4 ?? null,
-        dto.denominator_q4 ?? null,
-        dto.target_numerator_q1 ?? null,
-        dto.target_denominator_q1 ?? null,
-        dto.target_numerator_q2 ?? null,
-        dto.target_denominator_q2 ?? null,
-        dto.target_numerator_q3 ?? null,
-        dto.target_denominator_q3 ?? null,
-        dto.target_numerator_q4 ?? null,
-        dto.target_denominator_q4 ?? null,
-        dto.remarks_q1 ?? null,
-        dto.remarks_q2 ?? null,
-        dto.remarks_q3 ?? null,
-        dto.remarks_q4 ?? null,
-        dto.override_total_target_fraction ?? null,
-        dto.override_total_actual_fraction ?? null,
-        userId,
-      ],
+    // Phase DY-C/FY-2/GY/GZ/HA/HE/TTT: every quarterly, override, fraction and narrative
+    // column comes straight off the DTO — the repository matches each key to a column on the
+    // entity, so a new column needs no change here.
+    const created = await this.indicatorRepo.createQuarterlyData(
+      operationId,
+      dto,
+      taxonomy.indicator_name,
+      userId,
     );
 
     this.logger.log(
-      `INDICATOR_QUARTERLY_CREATED: id=${result[0].id}, taxonomy=${dto.pillar_indicator_id}, operation=${operationId}, by=${userId}`,
+      `INDICATOR_QUARTERLY_CREATED: id=${created.id}, taxonomy=${dto.pillar_indicator_id}, operation=${operationId}, by=${userId}`,
     );
 
     // Phase GOV-C: Auto-revert quarterly report to DRAFT when indicator data changes
@@ -1789,7 +1428,7 @@ export class UniversityOperationsService {
       userId,
     );
 
-    return this.computeIndicatorMetrics(result[0]);
+    return this.computeIndicatorMetrics(created);
   }
 
   /**
@@ -1800,7 +1439,7 @@ export class UniversityOperationsService {
   async updateIndicatorQuarterlyData(
     operationId: string,
     indicatorId: string,
-    dto: Partial<CreateIndicatorQuarterlyDto>,
+    dto: UpdateIndicatorQuarterlyDto,
     userId: string,
     user: JwtPayload,
   ): Promise<any> {
@@ -1817,26 +1456,21 @@ export class UniversityOperationsService {
       user,
     );
 
-    // Phase DK-A: Use LEFT JOIN to include orphaned indicators (pillar_indicator_id = NULL)
-    const check = await this.em.getConnection().execute(
-      `SELECT oi.id, oi.fiscal_year, oi.pillar_indicator_id, oi.operation_id, oi.particular,
-              pit.pillar_type, pit.indicator_name, uo.operation_type
-       FROM operation_indicators oi
-       LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-       JOIN university_operations uo ON oi.operation_id = uo.id
-       WHERE oi.id = ? AND oi.operation_id = ? AND oi.deleted_at IS NULL`,
-      [indicatorId, operationId],
+    // Phase DK-A: orphaned indicators (pillar_indicator_id NULL) are included — the
+    // taxonomy relation is optional, so pillar_type simply comes back null for them.
+    const indicator = await this.indicatorRepo.findContext(
+      indicatorId,
+      operationId,
     );
 
     // Phase DL-A: Diagnostic logging for lookup result
     this.logger.log(
-      `[PATCH /indicators/quarterly] LOOKUP RESULT: found=${check.length > 0}, rowCount=${check.length}`,
+      `[PATCH /indicators/quarterly] LOOKUP RESULT: found=${!!indicator}`,
     );
 
-    if (check.length > 0) {
-      const found = check[0];
+    if (indicator) {
       this.logger.log(
-        `[PATCH /indicators/quarterly] FOUND INDICATOR: id=${found.id}, operation_id=${found.operation_id}, fiscal_year=${found.fiscal_year}, pillar_indicator_id=${found.pillar_indicator_id || 'NULL (orphan)'}`,
+        `[PATCH /indicators/quarterly] FOUND INDICATOR: id=${indicator.id}, operation_id=${indicator.operation_id}, fiscal_year=${indicator.fiscal_year}, pillar_indicator_id=${indicator.pillar_indicator_id || 'NULL (orphan)'}`,
       );
     } else {
       // Phase DL-A: Enhanced 404 diagnostic logging
@@ -1845,13 +1479,8 @@ export class UniversityOperationsService {
       );
 
       // Log all indicators for this operation
-      const allIndicators = await this.em.getConnection().execute(
-        `SELECT id, pillar_indicator_id, fiscal_year, operation_id, particular 
-         FROM operation_indicators 
-         WHERE operation_id = ? AND deleted_at IS NULL 
-         LIMIT 10`,
-        [operationId],
-      );
+      const allIndicators =
+        await this.indicatorRepo.findSampleForOperation(operationId);
       this.logger.error(
         `[PATCH /indicators/quarterly] Available indicators in operation ${operationId}: ${JSON.stringify(
           allIndicators.map((r) => ({
@@ -1863,15 +1492,10 @@ export class UniversityOperationsService {
       );
 
       // Check if indicator exists in OTHER operations
-      const otherOps = await this.em.getConnection().execute(
-        `SELECT id, operation_id, fiscal_year, particular 
-         FROM operation_indicators 
-         WHERE id = ? AND deleted_at IS NULL`,
-        [indicatorId],
-      );
-      if (otherOps.length > 0) {
+      const elsewhere = await this.indicatorRepo.findPlain(indicatorId);
+      if (elsewhere && !elsewhere.deleted_at) {
         this.logger.error(
-          `[PATCH /indicators/quarterly] MISMATCH CONFIRMED: Indicator ${indicatorId} belongs to operation ${otherOps[0].operation_id} (FY ${otherOps[0].fiscal_year}), but PATCH was sent to operation ${operationId}`,
+          `[PATCH /indicators/quarterly] MISMATCH CONFIRMED: Indicator ${indicatorId} belongs to operation ${elsewhere.operation_id} (FY ${elsewhere.fiscal_year}), but PATCH was sent to operation ${operationId}`,
         );
       } else {
         this.logger.error(
@@ -1880,13 +1504,11 @@ export class UniversityOperationsService {
       }
     }
 
-    if (check.length === 0) {
+    if (!indicator) {
       throw new NotFoundException(
         `Indicator ${indicatorId} not found in operation ${operationId}`,
       );
     }
-
-    const indicator = check[0];
 
     // Phase DK-A: Handle orphaned indicators (pillar_indicator_id = NULL)
     if (!indicator.pillar_indicator_id) {
@@ -1913,20 +1535,17 @@ export class UniversityOperationsService {
     // Prevent pillar_indicator_id changes only for linked indicators
     if (dto.pillar_indicator_id && indicator.pillar_indicator_id) {
       if (dto.pillar_indicator_id !== indicator.pillar_indicator_id) {
-        const taxonomyCheck = await this.em
-          .getConnection()
-          .execute(
-            `SELECT pillar_type FROM pillar_indicator_taxonomy WHERE id = ? AND is_active = true`,
-            [dto.pillar_indicator_id],
-          );
-        if (taxonomyCheck.length === 0) {
+        const target = await this.taxonomyRepo.findActiveById(
+          dto.pillar_indicator_id,
+        );
+        if (!target) {
           throw new BadRequestException(
             'Invalid pillar_indicator_id: not found in taxonomy',
           );
         }
-        if (taxonomyCheck[0].pillar_type !== indicator.pillar_type) {
+        if (target.pillar_type !== indicator.pillar_type) {
           throw new BadRequestException(
-            `Cannot change indicator to different pillar type (current: ${indicator.pillar_type}, new: ${taxonomyCheck[0].pillar_type})`,
+            `Cannot change indicator to different pillar type (current: ${indicator.pillar_type}, new: ${target.pillar_type})`,
           );
         }
       }
@@ -1943,27 +1562,16 @@ export class UniversityOperationsService {
     );
     if (fields.length === 0) {
       // No changes, return current state with metrics
-      // Phase DK-A: Use LEFT JOIN for orphan compatibility
-      const current = await this.em.getConnection().execute(
-        `SELECT oi.*, pit.indicator_name, pit.indicator_code, pit.uacs_code, pit.unit_type
-         FROM operation_indicators oi
-         LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-         WHERE oi.id = ?`,
-        [indicatorId],
-      );
-      return this.computeIndicatorMetrics(current[0]);
+      const current = await this.indicatorRepo.findEnriched(indicatorId);
+      return this.computeIndicatorMetrics(current);
     }
 
-    const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) => dto[f]);
-
-    await this.em.getConnection().execute(
-      `UPDATE operation_indicators
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ?
-       RETURNING *`,
-      [...values, userId, indicatorId],
-    );
+    // pillar_indicator_id and reported_quarter are excluded above; every other key is matched
+    // to a column on the entity, so a key that is not one is ignored rather than written.
+    await this.indicatorRepo.applyUpdate(indicatorId, dto, userId, [
+      'pillar_indicator_id',
+      'reported_quarter',
+    ]);
 
     this.logger.log(
       `INDICATOR_QUARTERLY_UPDATED: id=${indicatorId}, operation=${operationId}, fiscal_year=${indicator.fiscal_year}, orphan=${!indicator.pillar_indicator_id}, by=${userId}`,
@@ -1976,16 +1584,9 @@ export class UniversityOperationsService {
       userId,
     );
 
-    // Phase DK-A: Use LEFT JOIN for orphan compatibility
-    const enriched = await this.em.getConnection().execute(
-      `SELECT oi.*, pit.indicator_name, pit.indicator_code, pit.uacs_code, pit.unit_type
-       FROM operation_indicators oi
-       LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-       WHERE oi.id = ?`,
-      [indicatorId],
-    );
+    const enriched = await this.indicatorRepo.findEnriched(indicatorId);
 
-    return this.computeIndicatorMetrics(enriched[0]);
+    return this.computeIndicatorMetrics(enriched);
   }
 
   async createIndicator(
@@ -2001,39 +1602,16 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const result = await this.em.getConnection().execute(
-      `INSERT INTO operation_indicators
-       (operation_id, particular, description, indicator_code, uacs_code, fiscal_year,
-        target_q1, target_q2, target_q3, target_q4,
-        accomplishment_q1, accomplishment_q2, accomplishment_q3, accomplishment_q4,
-        remarks, metadata, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        operationId,
-        dto.particular,
-        dto.description,
-        dto.indicator_code,
-        dto.uacs_code,
-        dto.fiscal_year,
-        dto.target_q1,
-        dto.target_q2,
-        dto.target_q3,
-        dto.target_q4,
-        dto.accomplishment_q1,
-        dto.accomplishment_q2,
-        dto.accomplishment_q3,
-        dto.accomplishment_q4,
-        dto.remarks,
-        dto.metadata ? JSON.stringify(dto.metadata) : null,
-        userId,
-      ],
+    const created = await this.indicatorRepo.createIndicator(
+      operationId,
+      dto,
+      userId,
     );
 
     this.logger.log(
-      `INDICATOR_CREATED: id=${result[0].id}, operation=${operationId}, by=${userId}`,
+      `INDICATOR_CREATED: id=${created.id}, operation=${operationId}, by=${userId}`,
     );
-    return result[0];
+    return created;
   }
 
   async updateIndicator(
@@ -2050,41 +1628,25 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const check = await this.em
-      .getConnection()
-      .execute(
-        `SELECT id FROM operation_indicators WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-        [indicatorId, operationId],
-      );
-    if (check.length === 0) {
+    const exists = await this.indicatorRepo.existsInOperation(
+      indicatorId,
+      operationId,
+    );
+    if (!exists) {
       throw new NotFoundException(`Indicator ${indicatorId} not found`);
     }
 
     const fields = Object.keys(dto).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) {
-      const current = await this.em
-        .getConnection()
-        .execute(`SELECT * FROM operation_indicators WHERE id = ?`, [
-          indicatorId,
-        ]);
-      return current[0];
+      return this.indicatorRepo.findPlain(indicatorId);
     }
 
-    const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) =>
-      f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    const result = await this.em.getConnection().execute(
-      `UPDATE operation_indicators
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ?
-       RETURNING *`,
-      [...values, userId, indicatorId],
-    );
+    // Every key is matched to a column on the entity, so one that is not a column is ignored
+    // instead of being interpolated into a SET clause.
+    await this.indicatorRepo.applyUpdate(indicatorId, dto, userId);
 
     this.logger.log(`INDICATOR_UPDATED: id=${indicatorId}, by=${userId}`);
-    return result[0];
+    return this.indicatorRepo.findPlain(indicatorId);
   }
 
   async removeIndicator(
@@ -2100,14 +1662,13 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE operation_indicators SET deleted_at = NOW(), deleted_by = ?
-       WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [userId, indicatorId, operationId],
-      'run',
+    const deleted = await this.indicatorRepo.softDelete(
+      indicatorId,
+      operationId,
+      userId,
     );
 
-    if (result.affectedRows === 0) {
+    if (deleted === 0) {
       throw new NotFoundException(`Indicator ${indicatorId} not found`);
     }
 
@@ -2125,31 +1686,14 @@ export class UniversityOperationsService {
   ): Promise<any[]> {
     await this.findOne(operationId);
 
-    let query = `SELECT * FROM operation_financials WHERE operation_id = ? AND deleted_at IS NULL`;
-    const params: any[] = [operationId];
-
-    if (fiscalYear) {
-      query += ` AND fiscal_year = ?`;
-      params.push(fiscalYear);
-    }
-    if (quarter) {
-      query += ` AND quarter = ?`;
-      params.push(quarter);
-    }
-    // Phase BC: fund_type filter for BAR1 subcategory tabs
-    if (fundType) {
-      query += ` AND fund_type = ?`;
-      params.push(fundType);
-    }
-    // Phase ET-B: expense_class filter for PS/MOOE/CO grouping
-    if (expenseClass) {
-      query += ` AND expense_class = ?`;
-      params.push(expenseClass);
-    }
-
-    query += ` ORDER BY fiscal_year DESC, quarter, operations_programs`;
-
-    const result = await this.em.getConnection().execute(query, params);
+    // Phase BC/ET-B: fiscal year, quarter, fund_type and expense_class are the BAR1 tab
+    // filters; one that is not supplied is simply not applied.
+    const result = await this.financialRepo.findFiltered(operationId, {
+      fiscalYear,
+      quarter,
+      fundType,
+      expenseClass,
+    });
     // Phase CP: Apply computed metrics to each financial record
     return result.map((row) => this.computeFinancialMetrics(row));
   }
@@ -2167,41 +1711,21 @@ export class UniversityOperationsService {
 
     // Phase BC: Include fund_type and project_code in INSERT
     // Phase ET-B: Include expense_class for BAR No. 2 categorization
-    const result = await this.em.getConnection().execute(
-      `INSERT INTO operation_financials
-       (operation_id, fiscal_year, quarter, operations_programs, department, budget_source,
-        fund_type, project_code, expense_class,
-        allotment, target, obligation, disbursement, performance_indicator, remarks, metadata, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        operationId,
-        dto.fiscal_year,
-        dto.quarter,
-        dto.operations_programs,
-        dto.department,
-        dto.budget_source,
-        dto.fund_type || null,
-        dto.project_code || null,
-        dto.expense_class || null,
-        dto.allotment,
-        dto.target,
-        dto.obligation,
-        dto.disbursement,
-        dto.performance_indicator,
-        dto.remarks,
-        dto.metadata ? JSON.stringify(dto.metadata) : null,
-        userId,
-      ],
+    // Phase BC/ET-B: fund_type, project_code and expense_class are included; every column
+    // comes straight off the DTO, matched to a column on the entity.
+    const created = await this.financialRepo.createFinancial(
+      operationId,
+      dto,
+      userId,
     );
 
     this.logger.log(
-      `FINANCIAL_CREATED: id=${result[0].id}, operation=${operationId}, by=${userId}`,
+      `FINANCIAL_CREATED: id=${created.id}, operation=${operationId}, by=${userId}`,
     );
     // Phase FA-C: Auto-revert quarterly report Published → Draft on financial create
     await this.autoRevertQuarterlyReport(dto.fiscal_year, dto.quarter, userId);
     // Phase CP: Return record with computed metrics
-    return this.computeFinancialMetrics(result[0]);
+    return this.computeFinancialMetrics(created);
   }
 
   async updateFinancial(
@@ -2215,43 +1739,29 @@ export class UniversityOperationsService {
     await this.validateFinancialAccess(userId, user);
 
     // Phase FA-B: Fetch existing record to get its quarter for governance validation
-    const existing = await this.em
-      .getConnection()
-      .execute(
-        `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-        [financialId, operationId],
-      );
-    if (existing.length === 0) {
+    const existing = await this.financialRepo.findKey(financialId, operationId);
+    if (!existing) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
-    const recordQuarter: string = existing[0].quarter;
-    const recordFiscalYear: number = existing[0].fiscal_year;
+    const recordQuarter = existing.quarter;
+    const recordFiscalYear = existing.fiscal_year;
 
     // Phase FH-2: Financial uses quarterly report lock only, not operation publication
     await this.validateFinancialEditable(operationId, recordQuarter, user);
 
     const fields = Object.keys(dto).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) {
-      const current = await this.em
-        .getConnection()
-        .execute(`SELECT * FROM operation_financials WHERE id = ?`, [
-          financialId,
-        ]);
+      const current = await this.financialRepo.findPlain(financialId);
       // Phase CP: Return record with computed metrics
-      return this.computeFinancialMetrics(current[0]);
+      return this.computeFinancialMetrics(current);
     }
 
-    const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) =>
-      f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    const result = await this.em.getConnection().execute(
-      `UPDATE operation_financials
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ?
-       RETURNING *`,
-      [...values, userId, financialId],
+    // Every key is matched to a column on the entity, so one that is not a column is ignored
+    // instead of being interpolated into a SET clause.
+    const updated = await this.financialRepo.applyUpdate(
+      financialId,
+      dto,
+      userId,
     );
 
     this.logger.log(`FINANCIAL_UPDATED: id=${financialId}, by=${userId}`);
@@ -2264,7 +1774,7 @@ export class UniversityOperationsService {
       userId,
     );
     // Phase CP: Return record with computed metrics
-    return this.computeFinancialMetrics(result[0]);
+    return this.computeFinancialMetrics(updated);
   }
 
   async removeFinancial(
@@ -2277,29 +1787,23 @@ export class UniversityOperationsService {
     await this.validateFinancialAccess(userId, user);
 
     // Phase FA-B: Fetch existing record to get its quarter for governance validation
-    const existing = await this.em
-      .getConnection()
-      .execute(
-        `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-        [financialId, operationId],
-      );
-    if (existing.length === 0) {
+    const existing = await this.financialRepo.findKey(financialId, operationId);
+    if (!existing) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
-    const recordQuarter: string = existing[0].quarter;
-    const recordFiscalYear: number = existing[0].fiscal_year;
+    const recordQuarter = existing.quarter;
+    const recordFiscalYear = existing.fiscal_year;
 
     // Phase FH-2: Financial uses quarterly report lock only, not operation publication
     await this.validateFinancialEditable(operationId, recordQuarter, user);
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE operation_financials SET deleted_at = NOW(), deleted_by = ?
-       WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [userId, financialId, operationId],
-      'run',
+    const deleted = await this.financialRepo.softDelete(
+      financialId,
+      operationId,
+      userId,
     );
 
-    if (result.affectedRows === 0) {
+    if (deleted === 0) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
 
@@ -2336,14 +1840,14 @@ export class UniversityOperationsService {
       deletedAt: null,
     });
     if (!existing) {
-      const info = this.em.create(OperationOrganizationalInfo, {
+      const info = this.orgInfoRepo.create({
         operationId,
         department: dto.department || '',
         agencyEntity: dto.agency_entity || '',
         operatingUnit: dto.operating_unit || '',
         organizationCode: dto.organization_code || '',
       });
-      await this.em.persistAndFlush(info);
+      await this.orgInfoRepo.getEntityManager().persist(info).flush();
       this.logger.log(
         `ORG_INFO_CREATED: operation=${operationId}, by=${userId}`,
       );
@@ -2352,7 +1856,7 @@ export class UniversityOperationsService {
       existing.agencyEntity = dto.agency_entity || '';
       existing.operatingUnit = dto.operating_unit || '';
       existing.organizationCode = dto.organization_code || '';
-      await this.em.flush();
+      await this.orgInfoRepo.getEntityManager().flush();
       this.logger.log(
         `ORG_INFO_UPDATED: operation=${operationId}, by=${userId}`,
       );
@@ -2403,38 +1907,20 @@ export class UniversityOperationsService {
     orphanIndicators: number;
     orphansByPillar: { pillar_type: string; count: number }[];
   }> {
-    const [totalRes, linkedRes, orphansByPillarRes] = await Promise.all([
-      this.em
-        .getConnection()
-        .execute(
-          `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL`,
-        ),
-      this.em
-        .getConnection()
-        .execute(
-          `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL AND pillar_indicator_id IS NOT NULL`,
-        ),
-      this.em.getConnection().execute(`
-        SELECT o.operation_type AS pillar_type, COUNT(i.id) AS count
-        FROM operation_indicators i
-        JOIN university_operations o ON i.operation_id = o.id
-        WHERE i.deleted_at IS NULL AND i.pillar_indicator_id IS NULL
-        GROUP BY o.operation_type
-        ORDER BY o.operation_type
-      `),
-    ]);
-
-    const total = parseInt(totalRes[0].count, 10);
-    const linked = parseInt(linkedRes[0].count, 10);
+    // Both queries are issued before either is awaited, so they still run concurrently.
+    // Promise.all is avoided deliberately: its two overloads are a tuple form and an Iterable
+    // form, and an array holding two differently-typed promises can resolve to the Iterable
+    // one, which collapses the results into a union and breaks the destructuring.
+    const countsQuery = this.indicatorRepo.countTotalAndLinked();
+    const orphansQuery = this.indicatorRepo.countOrphansByPillar();
+    const { total, linked } = await countsQuery;
+    const orphansByPillar = await orphansQuery;
 
     return {
       totalIndicators: total,
       linkedIndicators: linked,
       orphanIndicators: total - linked,
-      orphansByPillar: orphansByPillarRes.map((r) => ({
-        pillar_type: r.pillar_type,
-        count: parseInt(r.count, 10),
-      })),
+      orphansByPillar,
     };
   }
 
@@ -2443,33 +1929,7 @@ export class UniversityOperationsService {
    * Returns full orphan records with quarterly data status
    */
   async getOrphanedIndicatorsList(): Promise<any[]> {
-    const result = await this.em.getConnection().execute(
-      `SELECT
-        oi.id,
-        oi.operation_id,
-        oi.particular,
-        oi.fiscal_year,
-        oi.created_at,
-        oi.updated_at,
-        oi.remarks,
-        oi.target_q1, oi.target_q2, oi.target_q3, oi.target_q4,
-        oi.accomplishment_q1, oi.accomplishment_q2, oi.accomplishment_q3, oi.accomplishment_q4,
-        uo.title AS operation_title,
-        uo.operation_type,
-        CASE
-          WHEN oi.target_q1 IS NOT NULL OR oi.target_q2 IS NOT NULL OR
-               oi.target_q3 IS NOT NULL OR oi.target_q4 IS NOT NULL OR
-               oi.accomplishment_q1 IS NOT NULL OR oi.accomplishment_q2 IS NOT NULL OR
-               oi.accomplishment_q3 IS NOT NULL OR oi.accomplishment_q4 IS NOT NULL
-          THEN TRUE
-          ELSE FALSE
-        END AS has_quarterly_data
-       FROM operation_indicators oi
-       JOIN university_operations uo ON oi.operation_id = uo.id
-       WHERE oi.pillar_indicator_id IS NULL
-         AND oi.deleted_at IS NULL
-       ORDER BY oi.fiscal_year DESC, uo.operation_type, oi.particular`,
-    );
+    const result = await this.indicatorRepo.findOrphans();
 
     this.logger.log(
       `[getOrphanedIndicatorsList] Found ${result.length} orphaned indicators`,
@@ -2527,7 +1987,7 @@ export class UniversityOperationsService {
     };
 
     // Get taxonomy counts per pillar
-    const taxonomyRes = await this.em.getConnection().execute(`
+    const taxonomyRes = await this.connection.execute(`
       SELECT
         pillar_type,
         COUNT(*) AS total,
@@ -2543,7 +2003,7 @@ export class UniversityOperationsService {
     // Stage 1 (canonical_ops): DISTINCT ON picks ONE canonical operation per indicator (multi-operation dedup).
     // Stage 2 (merged): MAX-aggregates ALL rows of that operation across reported_quarter values (multi-row dedup).
     // Outer SELECT is unchanged — deduped alias exposes same column interface as before.
-    const dataRes = await this.em.getConnection().execute(
+    const dataRes = await this.connection.execute(
       `
       WITH canonical_ops AS (
         SELECT DISTINCT ON (oi.pillar_indicator_id)
@@ -2807,9 +2267,10 @@ export class UniversityOperationsService {
       GROUP BY deduped.pillar_type
     `;
 
-    const result = await this.em
-      .getConnection()
-      .execute(query, [...params, fiscalYear]);
+    const result = await this.connection.execute(query, [
+      ...params,
+      fiscalYear,
+    ]);
 
     // Phase AAAG-A: build one per-quarter rate array per pillar (formula unchanged,
     // now scoped within a single pillar).
@@ -2864,7 +2325,7 @@ export class UniversityOperationsService {
     // GN-3 outer formula (unit-type-aware mean-of-rates) unchanged.
     // Phase II: ANY(?) incompatible with MikroORM execute array binding — use IN with scalar params.
     const yqs = years.map(() => '?').join(', ');
-    const yearlyRes = await this.em.getConnection().execute(
+    const yearlyRes = await this.connection.execute(
       `
       WITH canonical_ops AS (
         SELECT DISTINCT ON (oi.fiscal_year, oi.pillar_indicator_id)
@@ -2924,7 +2385,7 @@ export class UniversityOperationsService {
     );
 
     // Phase GO-3: Pillar breakdown — same two-stage CTE, adds pillar_type to grouping
-    const pillarRes = await this.em.getConnection().execute(
+    const pillarRes = await this.connection.execute(
       `
       WITH canonical_ops AS (
         SELECT DISTINCT ON (oi.fiscal_year, oi.pillar_indicator_id)
@@ -3079,26 +2540,7 @@ export class UniversityOperationsService {
   async getFinancialCampusBreakdown(
     fiscalYear: number,
   ): Promise<{ breakdown: any[]; fiscal_year: number }> {
-    const result = await this.em.getConnection().execute(
-      `
-      SELECT
-        uo.operation_type AS pillar_type,
-        COALESCE(of2.department, 'Unspecified') AS campus,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS utilization_rate
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ? AND of2.deleted_at IS NULL AND uo.deleted_at IS NULL
-      GROUP BY uo.operation_type, of2.department
-      ORDER BY uo.operation_type, of2.department
-    `,
-      [fiscalYear],
-    );
+    const result = await this.financialRepo.getCampusBreakdown(fiscalYear);
 
     const breakdown = result.map((row) => ({
       pillar_type: row.pillar_type,
@@ -3120,22 +2562,8 @@ export class UniversityOperationsService {
   async getFinancialPillarExpenseBreakdown(
     fiscalYear: number,
   ): Promise<{ rows: any[]; fiscal_year: number }> {
-    const result = await this.em.getConnection().execute(
-      `
-      SELECT
-        uo.operation_type AS pillar_type,
-        of2.expense_class,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ? AND of2.deleted_at IS NULL AND uo.deleted_at IS NULL
-      GROUP BY uo.operation_type, of2.expense_class
-      ORDER BY uo.operation_type, of2.expense_class
-    `,
-      [fiscalYear],
-    );
+    const result =
+      await this.financialRepo.getPillarExpenseBreakdown(fiscalYear);
 
     const rows = result.map((row) => ({
       pillar_type: row.pillar_type,
@@ -3155,7 +2583,7 @@ export class UniversityOperationsService {
   async getActiveFiscalYears(): Promise<{ year: number; label: string }[]> {
     const rows = await this.fyRepo.find(
       { isActive: true },
-      { orderBy: { year: 'DESC' }, fields: ['year', 'label'] },
+      { orderBy: { year: QueryOrder.DESC }, fields: ['year', 'label'] },
     );
     return rows.map((r) => ({
       year: r.year,
@@ -3176,7 +2604,7 @@ export class UniversityOperationsService {
       label: label || `FY ${year}`,
       isActive: true,
     });
-    await this.em.persistAndFlush(fy);
+    await this.fyRepo.getEntityManager().persist(fy).flush();
     return {
       year: fy.year,
       label: fy.label ?? `FY ${year}`,
@@ -3193,7 +2621,7 @@ export class UniversityOperationsService {
       throw new NotFoundException(`Fiscal year ${year} not found`);
     }
     fy.isActive = isActive;
-    await this.em.flush();
+    await this.fyRepo.getEntityManager().flush();
     return {
       year: fy.year,
       label: fy.label ?? `FY ${year}`,
@@ -3228,14 +2656,14 @@ export class UniversityOperationsService {
     }
 
     const title = `${this.QUARTER_TITLES[quarter]} FY ${fiscalYear}`;
-    const qr = this.em.create(QuarterlyReport, {
+    const qr = this.qrRepo.create({
       fiscalYear,
       quarter,
       title,
       publicationStatus: 'DRAFT',
       createdBy: userId,
     });
-    await this.em.persistAndFlush(qr);
+    await this.qrRepo.getEntityManager().persist(qr).flush();
 
     this.logger.log(
       `QUARTERLY_REPORT_CREATED: FY=${fiscalYear}, Q=${quarter}, by=${userId}`,
@@ -3266,85 +2694,36 @@ export class UniversityOperationsService {
     fiscalYear?: number,
     quarter?: string,
   ): Promise<any[]> {
-    let query = `SELECT qr.*, u.first_name || ' ' || u.last_name as submitter_name
-                 FROM quarterly_reports qr
-                 LEFT JOIN users u ON qr.submitted_by = u.id
-                 WHERE qr.deleted_at IS NULL`;
-    const params: any[] = [];
-
-    if (fiscalYear) {
-      query += ` AND qr.fiscal_year = ?`;
-      params.push(fiscalYear);
-    }
-    if (quarter) {
-      query += ` AND qr.quarter = ?`;
-      params.push(quarter);
-    }
-
-    query += ' ORDER BY qr.fiscal_year DESC, qr.quarter ASC';
-    const result = await this.em.getConnection().execute(query, params);
-    return result;
+    return this.qrRepo.findReports(fiscalYear, quarter);
   }
 
   async findOneQuarterlyReport(id: string): Promise<any> {
-    const result = await this.em.getConnection().execute(
-      `SELECT qr.*, u.first_name || ' ' || u.last_name as submitter_name
-       FROM quarterly_reports qr
-       LEFT JOIN users u ON qr.submitted_by = u.id
-       WHERE qr.id = ? AND qr.deleted_at IS NULL`,
-      [id],
-    );
-    if (result.length === 0) {
+    const report = await this.qrRepo.findDetail(id);
+    if (!report) {
       throw new NotFoundException(`Quarterly report ${id} not found`);
     }
-    return result[0];
+    return report;
   }
 
   async findQuarterlyReportsPendingReview(user: JwtPayload): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException('Only Admin can view pending reviews');
     }
 
     // Module access check (same pattern as findPendingReview)
     if (!user.is_superadmin) {
-      const accessCheck = await this.em.getConnection().execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ?
-           AND (module = 'OPERATIONS' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.OPERATIONS,
       );
-      if (accessCheck.length === 0) {
+      if (!hasAccess) {
         return [];
       }
     }
 
-    // Phase EZ-B: Enrich with has_physical/has_financial flags for dynamic submission labels
-    const result = await this.em.getConnection().execute(
-      `SELECT qr.id, qr.fiscal_year, qr.quarter, qr.title, qr.publication_status,
-              qr.submitted_by, qr.submitted_at, qr.created_at,
-              u.first_name || ' ' || u.last_name as submitter_name,
-              EXISTS(
-                SELECT 1 FROM operation_indicators oi
-                JOIN university_operations uo ON uo.id = oi.operation_id
-                WHERE uo.fiscal_year = qr.fiscal_year
-                  AND oi.deleted_at IS NULL
-                  AND (oi.target_q1 IS NOT NULL OR oi.accomplishment_q1 IS NOT NULL
-                       OR oi.target_q2 IS NOT NULL OR oi.accomplishment_q2 IS NOT NULL
-                       OR oi.target_q3 IS NOT NULL OR oi.accomplishment_q3 IS NOT NULL
-                       OR oi.target_q4 IS NOT NULL OR oi.accomplishment_q4 IS NOT NULL)
-              ) as has_physical,
-              EXISTS(
-                SELECT 1 FROM operation_financials of2
-                WHERE of2.fiscal_year = qr.fiscal_year
-                  AND of2.deleted_at IS NULL
-              ) as has_financial
-       FROM quarterly_reports qr
-       LEFT JOIN users u ON qr.submitted_by = u.id
-       WHERE qr.publication_status = 'PENDING_REVIEW'
-         AND qr.deleted_at IS NULL
-       ORDER BY qr.submitted_at ASC`,
-    );
-    return result;
+    // Phase EZ-B: has_physical / has_financial say whether the quarter's fiscal year holds
+    // any indicator or financial data, which the UI uses to label the submission.
+    return this.qrRepo.findPendingReview();
   }
 
   async submitQuarterlyReport(
@@ -3367,7 +2746,12 @@ export class UniversityOperationsService {
     // matches physical/index.vue's canSubmitAllPillars and the COI equivalent.
     // Deliberately NO creator/owner exception: owning a report isn't itself approval
     // authority (established rule — Contributor may input data but not submit it).
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
       throw new ForbiddenException(
         'Insufficient module level to submit this report',
       );
@@ -3380,21 +2764,10 @@ export class UniversityOperationsService {
       userId,
     );
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'PENDING_REVIEW',
-           submitted_by = ?,
-           submitted_at = NOW(),
-           review_notes = NULL,
-           submission_count = COALESCE(submission_count, 0) + 1,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [userId, id],
-    );
+    const updated = await this.qrRepo.markSubmitted(id, userId);
 
     this.logger.log(`QUARTERLY_REPORT_SUBMITTED: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   async approveQuarterlyReport(
@@ -3403,7 +2776,12 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
       throw new ForbiddenException(
         'Insufficient module level to approve quarterly reports',
       );
@@ -3430,20 +2808,10 @@ export class UniversityOperationsService {
     // Phase GOV-D: Snapshot approval event
     await this.snapshotSubmissionHistory(report, 'APPROVED', adminId);
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'PUBLISHED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, id],
-    );
+    const updated = await this.qrRepo.markApproved(id, adminId);
 
     this.logger.log(`QUARTERLY_REPORT_APPROVED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   async rejectQuarterlyReport(
@@ -3453,7 +2821,12 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
       throw new ForbiddenException(
         'Insufficient module level to reject quarterly reports',
       );
@@ -3479,20 +2852,10 @@ export class UniversityOperationsService {
       notes.trim(),
     );
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'REJECTED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = ?,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, notes.trim(), id],
-    );
+    const updated = await this.qrRepo.markRejected(id, adminId, notes.trim());
 
     this.logger.log(`QUARTERLY_REPORT_REJECTED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   async withdrawQuarterlyReport(
@@ -3512,26 +2875,20 @@ export class UniversityOperationsService {
     // this module), or the original submitter — mirrors the COI equivalent.
     if (
       report.submitted_by !== userId &&
-      !(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
     ) {
       throw new ForbiddenException(
         'Only the original submitter or an Approver/Manager can withdraw this report',
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'DRAFT',
-           submitted_by = NULL,
-           submitted_at = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.qrRepo.markWithdrawn(id);
 
     this.logger.log(`QUARTERLY_REPORT_WITHDRAWN: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -3549,7 +2906,7 @@ export class UniversityOperationsService {
     reason?: string,
   ): Promise<void> {
     try {
-      const submission = this.em.create(QuarterlyReportSubmission, {
+      await this.qrsRepo.recordEvent({
         quarterlyReportId: report.id,
         fiscalYear: report.fiscal_year,
         quarter: report.quarter,
@@ -3563,7 +2920,6 @@ export class UniversityOperationsService {
         actionedBy: actorId,
         reason: reason ?? undefined,
       });
-      await this.em.persistAndFlush(submission);
     } catch (err) {
       // Non-blocking: history insert failure must not break the primary operation
       this.logger.warn(
@@ -3588,17 +2944,9 @@ export class UniversityOperationsService {
       return;
     }
 
-    const report = await this.em.getConnection().execute(
-      `SELECT id, fiscal_year, quarter, publication_status, submission_count,
-              submitted_by, submitted_at, reviewed_by, reviewed_at, review_notes
-       FROM quarterly_reports
-       WHERE fiscal_year = ? AND quarter = ? AND deleted_at IS NULL`,
-      [fiscalYear, quarter],
-    );
+    const qr = await this.qrRepo.findForPeriod(fiscalYear, quarter);
 
-    if (report.length === 0) return;
-
-    const qr = report[0];
+    if (!qr) return;
     if (qr.publication_status === 'DRAFT') return;
 
     // Phase GOV-D: Snapshot review metadata before destroying it
@@ -3609,18 +2957,7 @@ export class UniversityOperationsService {
       'indicator_update',
     );
 
-    await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'DRAFT',
-           reviewed_by = NULL,
-           reviewed_at = NULL,
-           review_notes = NULL,
-           submitted_by = NULL,
-           submitted_at = NULL,
-           updated_at = NOW()
-       WHERE id = ?`,
-      [qr.id],
-    );
+    await this.qrRepo.revertToDraft(qr.id);
 
     this.logger.log(
       `QUARTERLY_REPORT_AUTO_REVERTED: report_id=${qr.id}, was=${qr.publication_status}, by=${userId}, trigger=indicator_update`,
@@ -3638,8 +2975,15 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
-      throw new ForbiddenException('Insufficient module level to unlock quarterly reports');
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
+      throw new ForbiddenException(
+        'Insufficient module level to unlock quarterly reports',
+      );
     }
 
     const report = await this.findOneQuarterlyReport(id);
@@ -3653,29 +2997,12 @@ export class UniversityOperationsService {
     // Phase GOV-D: Snapshot review metadata before destroying it
     await this.snapshotSubmissionHistory(report, 'UNLOCKED', adminId, reason);
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'DRAFT',
-           reviewed_by = NULL,
-           reviewed_at = NULL,
-           review_notes = NULL,
-           submitted_by = NULL,
-           submitted_at = NULL,
-           unlocked_by = ?,
-           unlocked_at = NOW(),
-           unlock_requested_by = NULL,
-           unlock_requested_at = NULL,
-           unlock_request_reason = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, id],
-    );
+    const updated = await this.qrRepo.markUnlocked(id, adminId);
 
     this.logger.log(
       `QUARTERLY_REPORT_UNLOCKED: id=${id}, by=${adminId}, reason="${reason || 'no reason'}"`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -3707,21 +3034,12 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET unlock_requested_by = ?,
-           unlock_requested_at = NOW(),
-           unlock_request_reason = ?,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [userId, reason.trim(), id],
-    );
+    const updated = await this.qrRepo.requestUnlock(id, userId, reason.trim());
 
     this.logger.log(
       `QUARTERLY_REPORT_UNLOCK_REQUESTED: id=${id}, by=${userId}, reason="${reason.trim()}"`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -3734,8 +3052,15 @@ export class UniversityOperationsService {
     user: JwtPayload,
   ): Promise<any> {
     // Phase BBCH (Track 1): Admin OR an Approver/Manager 'university_operations' module-level grant.
-    if (!(await this.permissionResolver.canApproveModule(user, this.UO_LEVEL_KEYS))) {
-      throw new ForbiddenException('Insufficient module level to deny unlock requests');
+    if (
+      !(await this.permissionResolver.canApproveModule(
+        user,
+        this.UO_LEVEL_KEYS,
+      ))
+    ) {
+      throw new ForbiddenException(
+        'Insufficient module level to deny unlock requests',
+      );
     }
 
     const report = await this.findOneQuarterlyReport(id);
@@ -3746,94 +3071,54 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.em.getConnection().execute(
-      `UPDATE quarterly_reports
-       SET unlock_requested_by = NULL,
-           unlock_requested_at = NULL,
-           unlock_request_reason = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.qrRepo.clearUnlockRequest(id);
 
     this.logger.log(`QUARTERLY_REPORT_UNLOCK_DENIED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   /**
    * Phase GOV-F: Find quarterly reports with pending unlock requests (Admin review queue).
    */
   async findQuarterlyReportsPendingUnlock(user: JwtPayload): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException(
         'Only Admin can view pending unlock requests',
       );
     }
 
     if (!user.is_superadmin) {
-      const accessCheck = await this.em.getConnection().execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ?
-           AND (module = 'OPERATIONS' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.OPERATIONS,
       );
-      if (accessCheck.length === 0) {
+      if (!hasAccess) {
         return [];
       }
     }
 
-    const result = await this.em.getConnection().execute(
-      `SELECT qr.id, qr.fiscal_year, qr.quarter, qr.title, qr.publication_status,
-              qr.unlock_requested_by, qr.unlock_requested_at, qr.unlock_request_reason,
-              qr.created_at,
-              u.first_name || ' ' || u.last_name as requester_name
-       FROM quarterly_reports qr
-       LEFT JOIN users u ON qr.unlock_requested_by = u.id
-       WHERE qr.unlock_requested_by IS NOT NULL
-         AND qr.deleted_at IS NULL
-       ORDER BY qr.unlock_requested_at ASC`,
-    );
-    return result;
+    return this.qrRepo.findPendingUnlock();
   }
 
   /**
    * Phase GOV-C: Find reviewed quarterly reports (PUBLISHED/REJECTED) for admin archive view.
    */
   async findQuarterlyReportsReviewed(user: JwtPayload): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException('Only Admin can view review history');
     }
 
     if (!user.is_superadmin) {
-      const accessCheck = await this.em.getConnection().execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ?
-           AND (module = 'OPERATIONS' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.OPERATIONS,
       );
-      if (accessCheck.length === 0) {
+      if (!hasAccess) {
         return [];
       }
     }
 
-    const result = await this.em.getConnection().execute(
-      `SELECT qr.id, qr.fiscal_year, qr.quarter, qr.title, qr.publication_status,
-              qr.submitted_by, qr.submitted_at,
-              qr.reviewed_by, qr.reviewed_at, qr.review_notes,
-              qr.unlocked_by, qr.unlocked_at,
-              reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
-              submitter.first_name || ' ' || submitter.last_name AS submitter_name,
-              unlocker.first_name || ' ' || unlocker.last_name AS unlocked_by_name
-       FROM quarterly_reports qr
-       LEFT JOIN users reviewer ON qr.reviewed_by = reviewer.id
-       LEFT JOIN users submitter ON qr.submitted_by = submitter.id
-       LEFT JOIN users unlocker ON qr.unlocked_by = unlocker.id
-       WHERE qr.publication_status IN ('PUBLISHED', 'REJECTED')
-         AND qr.deleted_at IS NULL
-       ORDER BY qr.reviewed_at DESC NULLS LAST`,
-    );
-    return result;
+    return this.qrRepo.findReviewed();
   }
 
   /**
@@ -3845,53 +3130,21 @@ export class UniversityOperationsService {
     fiscalYear?: number,
     quarter?: string,
   ): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException('Only Admin can view submission history');
     }
 
     if (!user.is_superadmin) {
-      const accessCheck = await this.em.getConnection().execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ?
-           AND (module = 'OPERATIONS' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.OPERATIONS,
       );
-      if (accessCheck.length === 0) {
+      if (!hasAccess) {
         return [];
       }
     }
 
-    let query = `
-      SELECT qrs.id, qrs.quarterly_report_id, qrs.fiscal_year, qrs.quarter,
-             qrs.version, qrs.event_type,
-             qrs.submitted_by, qrs.submitted_at,
-             qrs.reviewed_by, qrs.reviewed_at, qrs.review_notes,
-             qrs.actioned_by, qrs.actioned_at, qrs.reason,
-             qr.title, qr.publication_status AS current_status,
-             submitter.first_name || ' ' || submitter.last_name AS submitter_name,
-             reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
-             actor.first_name || ' ' || actor.last_name AS actioned_by_name
-      FROM quarterly_report_submissions qrs
-      JOIN quarterly_reports qr ON qrs.quarterly_report_id = qr.id
-      LEFT JOIN users submitter ON qrs.submitted_by = submitter.id
-      LEFT JOIN users reviewer ON qrs.reviewed_by = reviewer.id
-      LEFT JOIN users actor ON qrs.actioned_by = actor.id
-      WHERE qr.deleted_at IS NULL`;
-
-    const params: any[] = [];
-    if (fiscalYear) {
-      params.push(fiscalYear);
-      query += ` AND qrs.fiscal_year = ?`;
-    }
-    if (quarter) {
-      params.push(quarter);
-      query += ` AND qrs.quarter = ?`;
-    }
-
-    query += ` ORDER BY qrs.actioned_at DESC`;
-
-    const result = await this.em.getConnection().execute(query, params);
-    return result;
+    return this.qrsRepo.findHistory(fiscalYear, quarter);
   }
 
   /**
@@ -3902,32 +3155,13 @@ export class UniversityOperationsService {
     id: string,
     user: JwtPayload,
   ): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException(
         'Only Admin can view quarterly report history',
       );
     }
 
-    return this.em.getConnection().execute(
-      `SELECT qrs.id, qrs.quarterly_report_id, qrs.fiscal_year, qrs.quarter,
-              qrs.version, qrs.event_type,
-              qrs.submitted_by, qrs.submitted_at,
-              qrs.reviewed_by, qrs.reviewed_at, qrs.review_notes,
-              qrs.actioned_by, qrs.actioned_at, qrs.reason,
-              qr.title, qr.publication_status AS current_status,
-              submitter.first_name || ' ' || submitter.last_name AS submitter_name,
-              reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
-              actor.first_name || ' ' || actor.last_name AS actioned_by_name
-       FROM quarterly_report_submissions qrs
-       JOIN quarterly_reports qr ON qrs.quarterly_report_id = qr.id
-       LEFT JOIN users submitter ON qrs.submitted_by = submitter.id
-       LEFT JOIN users reviewer ON qrs.reviewed_by = reviewer.id
-       LEFT JOIN users actor ON qrs.actioned_by = actor.id
-       WHERE qrs.quarterly_report_id = ?
-         AND qr.deleted_at IS NULL
-       ORDER BY qrs.actioned_at DESC`,
-      [id],
-    );
+    return this.qrsRepo.findHistoryForReport(id);
   }
 
   // ─── Phase EZ-C: Financial Analytics ──────────────────────────────────────────
@@ -3936,29 +3170,7 @@ export class UniversityOperationsService {
    * Phase EZ-C: Financial pillar summary — per-pillar aggregation of financial metrics
    */
   async getFinancialPillarSummary(fiscalYear: number): Promise<any> {
-    const result = await this.em.getConnection().execute(
-      `
-      SELECT
-        uo.operation_type AS pillar_type,
-        COUNT(of2.id) AS record_count,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS avg_utilization_rate,
-        COALESCE(SUM(of2.allotment) - SUM(of2.obligation), 0) AS total_balance
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ?
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL
-      GROUP BY uo.operation_type
-      ORDER BY uo.operation_type
-    `,
-      [fiscalYear],
-    );
+    const result = await this.financialRepo.getPillarSummary(fiscalYear);
 
     return { pillars: result, fiscal_year: fiscalYear };
   }
@@ -3970,31 +3182,10 @@ export class UniversityOperationsService {
     fiscalYear: number,
     pillarType?: string,
   ): Promise<any> {
-    let query = `
-      SELECT
-        of2.quarter,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS utilization_rate
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ?
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL`;
-
-    const params: any[] = [fiscalYear];
-    if (pillarType && pillarType !== 'ALL') {
-      params.push(pillarType);
-      query += ` AND uo.operation_type = ?`;
-    }
-
-    query += ` GROUP BY of2.quarter ORDER BY of2.quarter`;
-
-    const result = await this.em.getConnection().execute(query, params);
+    const result = await this.financialRepo.getQuarterlyTrend(
+      fiscalYear,
+      pillarType,
+    );
     return { quarters: result, fiscal_year: fiscalYear };
   }
 
@@ -4004,27 +3195,7 @@ export class UniversityOperationsService {
   async getFinancialYearlyComparison(years: number[]): Promise<any> {
     if (!years.length) return { years: [], pillars: [] };
 
-    const result = await this.em.getConnection().execute(
-      `
-      SELECT
-        uo.fiscal_year,
-        uo.operation_type AS pillar_type,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS utilization_rate,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year IN (${years.map(() => '?').join(', ')})
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL
-      GROUP BY uo.fiscal_year, uo.operation_type
-      ORDER BY uo.fiscal_year, uo.operation_type
-    `,
-      [...years],
-    );
+    const result = await this.financialRepo.getYearlyComparison(years);
 
     // Phase GT-1 + GU-1: Return only fiscal years present in data — prevents empty-year bars (Directive 320, 326)
     const rawYears: number[] = result
@@ -4040,24 +3211,7 @@ export class UniversityOperationsService {
    * Phase EZ-C: Financial expense class breakdown — PS/MOOE/CO distribution
    */
   async getFinancialExpenseBreakdown(fiscalYear: number): Promise<any> {
-    const result = await this.em.getConnection().execute(
-      `
-      SELECT
-        COALESCE(of2.expense_class, 'Unclassified') AS expense_class,
-        COUNT(of2.id) AS record_count,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ?
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL
-      GROUP BY of2.expense_class
-      ORDER BY of2.expense_class
-    `,
-      [fiscalYear],
-    );
+    const result = await this.financialRepo.getExpenseBreakdown(fiscalYear);
 
     // Calculate percentage of total
     const totalObligation = result.reduce(

@@ -91,7 +91,7 @@ async function bootstrap() {
   // Swagger/OpenAPI — available in development only.
   // Production Docker sets NODE_ENV=production (forced in docker-compose.yml),
   // so /api/docs returns 404 in deployed environments.
-  if (configService.get('NODE_ENV') !== 'production') {
+  if (configService.get('NODE_ENV' as any) !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('PMO Dashboard API')
       .setDescription(

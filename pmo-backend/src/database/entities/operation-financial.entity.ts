@@ -1,13 +1,40 @@
-import { Entity, Filter, Index, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  Entity,
+  Enum,
+  Filter,
+  Index,
+  ManyToOne,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/core';
+import { OperationFinancialRepository } from '../../university-operations/repository/operation-financial.repository';
+import { UniversityOperation } from './university-operation.entity';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'operation_financials' })
+@Entity({
+  tableName: 'operation_financials',
+  repository: () => OperationFinancialRepository,
+})
 export class OperationFinancial {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
   @Property({ columnType: 'uuid' })
   operationId!: string;
+
+  // Read-only view over the uuid column above, so the owning operation's pillar and fiscal
+  // year can be joined by the analytics queries instead of being hand-joined.
+  // persist: false — the scalar column stays the writer, the relation never writes.
+  // hidden: true — excluded from serialisation, so no response gains a nested object.
+  // createForeignKeyConstraint: false — production has no foreign keys on this table and this
+  // mapping must not start emitting DDL that would add one.
+  @ManyToOne(() => UniversityOperation, {
+    fieldName: 'operation_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  operation!: UniversityOperation;
 
   @Property({ type: 'integer' })
   fiscalYear!: number;
@@ -32,7 +59,13 @@ export class OperationFinancial {
   @Property({ nullable: true, length: 50 })
   projectCode?: string;
 
-  @Property({ nullable: true, length: 4 })
+  // varchar(4) guarded by the chk_expense_class CHECK constraint — see the note on
+  // ConstructionDocumentChecklist.submissionStatus for why this must be declared as an enum.
+  @Enum({
+    items: ['PS', 'MOOE', 'CO'],
+    columnType: 'varchar(4)',
+    nullable: true,
+  })
   expenseClass?: string;
 
   @Property({ nullable: true, columnType: 'numeric(15,2)' })
