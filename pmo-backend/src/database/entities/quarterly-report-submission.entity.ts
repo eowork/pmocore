@@ -1,6 +1,12 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  QuarterlyReportSubmissionRepository
+} from '../../university-operations/repository/quarterly-report-submission.repository';
 
-@Entity({ tableName: 'quarterly_report_submissions' })
+@Entity({
+  tableName: 'quarterly_report_submissions',
+  repository: () => QuarterlyReportSubmissionRepository,
+})
 export class QuarterlyReportSubmission {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

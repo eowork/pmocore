@@ -1,7 +1,11 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { OperationIndicatorRepository } from '../../university-operations/repository/operation-indicator.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'operation_indicators' })
+@Entity({
+  tableName: 'operation_indicators',
+  repository: () => OperationIndicatorRepository,
+})
 export class OperationIndicator {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
