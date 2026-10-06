@@ -1,7 +1,11 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { QuarterlyReportRepository } from '../../university-operations/repository/quarterly-report.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'quarterly_reports' })
+@Entity({
+  tableName: 'quarterly_reports',
+  repository: () => QuarterlyReportRepository,
+})
 export class QuarterlyReport {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

@@ -1,7 +1,13 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  PillarIndicatorTaxonomyRepository
+} from '../../university-operations/repository/pillar-indicator-taxonomy.repository';
 
 // READ-ONLY entity — seeded by migration 016. Never write/persist against this entity.
-@Entity({ tableName: 'pillar_indicator_taxonomy' })
+@Entity({
+  tableName: 'pillar_indicator_taxonomy',
+  repository: () => PillarIndicatorTaxonomyRepository,
+})
 export class PillarIndicatorTaxonomy {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
