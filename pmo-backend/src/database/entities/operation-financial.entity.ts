@@ -6,9 +6,13 @@ import {
   PrimaryKey,
   Property,
 } from '@mikro-orm/core';
+import { OperationFinancialRepository } from '../../university-operations/repository/operation-financial.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'operation_financials' })
+@Entity({
+  tableName: 'operation_financials',
+  repository: () => OperationFinancialRepository,
+})
 export class OperationFinancial {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
