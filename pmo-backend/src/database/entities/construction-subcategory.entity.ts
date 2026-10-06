@@ -1,7 +1,13 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  ConstructionSubcategoriesRepository
+} from '../../construction-subcategories/repository/construction-subcategories.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'construction_subcategories' })
+@Entity({
+  tableName: 'construction_subcategories',
+  repository: () => ConstructionSubcategoriesRepository,
+})
 export class ConstructionSubcategory {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
