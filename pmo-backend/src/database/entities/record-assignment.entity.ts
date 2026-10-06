@@ -1,6 +1,10 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { RecordAssignmentRepository } from '../../construction-projects/repository/record-assignment.repository';
 
-@Entity({ tableName: 'record_assignments' })
+@Entity({
+  tableName: 'record_assignments',
+  repository: () => RecordAssignmentRepository,
+})
 export class RecordAssignment {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
