@@ -33,7 +33,7 @@ import {
 } from './dto';
 import { JwtPayload } from '../common/interfaces';
 import { PermissionResolverService } from '../common/services';
-import { UniversityOperationRepository } from './university-operation.repository';
+import { UniversityOperationRepository } from './repository/university-operation.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
