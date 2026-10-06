@@ -1124,12 +1124,20 @@ export class UniversityOperationsService {
       return parseFloat(v.toFixed(decimals));
     };
 
-    // Phase FY-1: DBM BAR1 standard — COUNT/WEIGHTED_COUNT use SUM (Directive 211/212).
-    // Phase AAAC-A: PERCENTAGE indicators with complete per-quarter numerator/denominator
-    // data aggregate as ΣN/ΣD × 100 (denominator-weighted) rather than summing already-
-    // computed percentages (which produced meaningless values like 91.3+66.7+84.5=242.52).
-    // When any filled quarter lacks a valid fraction pair, fall back to the legacy SUM so
-    // existing direct-% records (no N/D columns) are unaffected.
+    // Phase FY-1: DBM BAR1 standard — COUNT/WEIGHTED_COUNT are cumulative, so the year's
+    // figure is the four quarters added together (Directive 211/212).
+    //
+    // A PERCENTAGE is not cumulative and must never be added up. It aggregates one of two
+    // ways, in this order:
+    //   1. ΣN/ΣD × 100 when every filled quarter carries a numerator and denominator. This is
+    //      the correct, denominator-weighted answer — 8/34 and 9/11 is 17/45, not the mean of
+    //      23.5% and 81.8%.
+    //   2. the mean of the quarters that carry a value, when any of them has no fraction.
+    //      Summing them produced figures like 397.2% for an indicator that cannot exceed 100%.
+    //
+    // The divisor counts every quarter that carries a value, zero included — a quarter
+    // reported as 0% is data, not a blank. getPillarSummary divides the same way, so a
+    // record's own total and the pillar roll-up agree.
     const isPercentage = record.unit_type === 'PERCENTAGE';
 
     // Computes the total for one side (target or actual). Returns the numeric total
@@ -1140,11 +1148,12 @@ export class UniversityOperationsService {
       denominators: (number | null)[],
     ): { total: number | null; fraction: string | null } => {
       const filled = values.filter((v): v is number => v !== null);
-      const legacySum =
-        filled.length > 0 ? filled.reduce((a, b) => a + b, 0) : null;
 
       if (!isPercentage) {
-        return { total: legacySum, fraction: null };
+        return {
+          total: filled.length > 0 ? filled.reduce((a, b) => a + b, 0) : null,
+          fraction: null,
+        };
       }
 
       // Fraction-aggregate path: every quarter that has a value must also have a
@@ -1172,7 +1181,11 @@ export class UniversityOperationsService {
         };
       }
 
-      return { total: legacySum, fraction: null };
+      // Mean of the reported quarters. A quarter recorded as 0 counts: it is reported data,
+      // not a blank, so 0% and 80% average to 40%. getPillarSummary divides the same way.
+      if (filled.length === 0) return { total: null, fraction: null };
+      const mean = filled.reduce((a, b) => a + b, 0) / filled.length;
+      return { total: parseFloat(mean.toFixed(4)), fraction: null };
     };
 
     const targetSide = computeSideTotal(
