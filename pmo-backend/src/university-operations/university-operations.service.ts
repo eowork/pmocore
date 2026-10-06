@@ -1,43 +1,43 @@
 import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@mikro-orm/nestjs';
 import { createPaginatedResponse, PaginatedResponse } from '../common/dto';
 import {
-  UniversityOperation,
-  OperationIndicator,
+  FiscalYear,
   OperationFinancial,
+  OperationIndicator,
+  OperationOrganizationalInfo,
+  PillarIndicatorTaxonomy,
   QuarterlyReport,
   QuarterlyReportSubmission,
-  FiscalYear,
-  PillarIndicatorTaxonomy,
-  OperationOrganizationalInfo,
   RecordAssignment,
+  UniversityOperation,
   UserModuleAssignment,
   UserPermissionOverride,
 } from '../database/entities';
 import {
-  CreateOperationDto,
-  UpdateOperationDto,
-  QueryOperationDto,
+  CreateFinancialDto,
   CreateIndicatorDto,
   CreateIndicatorQuarterlyDto,
-  UpdateIndicatorQuarterlyDto,
-  CreateFinancialDto,
+  CreateOperationDto,
   FundType,
+  QueryOperationDto,
+  UpdateIndicatorQuarterlyDto,
+  UpdateOperationDto,
 } from './dto';
 import { JwtPayload } from '../common/interfaces';
 import { ModuleType } from '../common/enums';
 import { PermissionResolverService } from '../common/services';
 import { UserModuleAssignmentRepository } from '../common/repository/user-module-assignment.repository';
 import { UserPermissionOverrideRepository } from '../common/repository/user-permission-override.repository';
-import { UniversityOperationRepository } from './repository/university-operation.repository';
 import type { FindAllOperationsOptions } from './repository/university-operation.repository';
+import { UniversityOperationRepository } from './repository/university-operation.repository';
 import { OperationIndicatorRepository } from './repository/operation-indicator.repository';
 import { OperationFinancialRepository } from './repository/operation-financial.repository';
 import { QuarterlyReportRepository } from './repository/quarterly-report.repository';
@@ -46,6 +46,7 @@ import { FiscalYearRepository } from './repository/fiscal-year.repository';
 import { PillarIndicatorTaxonomyRepository } from './repository/pillar-indicator-taxonomy.repository';
 import { OperationOrganizationInfoRepository } from './repository/operation-organization-info.repository';
 import { RecordAssignmentRepository } from '../construction-projects/repository/record-assignment.repository';
+import { QueryOrder } from '@mikro-orm/core';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -524,16 +525,10 @@ export class UniversityOperationsService {
     );
 
     // Get indicators
-    const indicators = await this.connection.execute(
-      `SELECT * FROM operation_indicators WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC`,
-      [id],
-    );
+    const indicators = await this.indicatorRepo.findForOperation(id);
 
     // Get financials
-    const financials = await this.connection.execute(
-      `SELECT * FROM operation_financials WHERE operation_id = ? AND deleted_at IS NULL ORDER BY fiscal_year DESC, quarter`,
-      [id],
-    );
+    const financials = await this.financialRepo.findForOperation(id);
 
     return {
       ...operation,
@@ -1006,7 +1001,7 @@ export class UniversityOperationsService {
 
     const taxa = await this.taxonomyRepo.find(
       { pillarType: operation.operation_type, isActive: true },
-      { orderBy: { indicatorOrder: 'ASC' } },
+      { orderBy: { indicatorOrder: QueryOrder.ASC } },
     );
 
     return taxa.map((t) => ({
@@ -1039,7 +1034,7 @@ export class UniversityOperationsService {
 
     const taxa = await this.taxonomyRepo.find(
       { pillarType, isActive: true },
-      { orderBy: { indicatorType: 'ASC', indicatorOrder: 'ASC' } },
+      { orderBy: { indicatorType: QueryOrder.ASC, indicatorOrder: QueryOrder.ASC } },
     );
 
     return taxa.map((t) => ({
@@ -1058,7 +1053,7 @@ export class UniversityOperationsService {
   /**
    * Phase CX-B: Fetch all indicators by pillar type and fiscal year (cross-operation)
    * Aggregates indicator data across all operations of the same pillar type
-   * Phase DK-B: Uses LEFT JOIN to include orphaned indicators (pillar_indicator_id = NULL)
+   * Phase DK-B: orphaned indicators (pillar_indicator_id = NULL) are included
    */
   async findIndicatorsByPillarAndYear(
     pillarType: string,
@@ -1070,48 +1065,13 @@ export class UniversityOperationsService {
       `[findIndicatorsByPillarAndYear] pillar_type=${pillarType} (${typeof pillarType}), fiscal_year=${fiscalYear} (${typeof fiscalYear}), quarter=${quarter}`,
     );
 
-    const validPillarTypes = [
-      'HIGHER_EDUCATION',
-      'ADVANCED_EDUCATION',
-      'RESEARCH',
-      'TECHNICAL_ADVISORY',
-    ];
-    if (!validPillarTypes.includes(pillarType)) {
-      this.logger.debug(
-        `[findIndicatorsByPillarAndYear] Invalid pillar_type: ${pillarType}`,
-      );
-      return [];
-    }
-
-    // Phase DY-C: Filter by reported_quarter when provided
-    // Phase IG: pillarType bound twice (uo.operation_type + pit.pillar_type) — duplicated for Knex positional binding
-    const params: any[] = [pillarType, pillarType, fiscalYear];
-    let quarterFilter = '';
-    if (quarter && ['Q1', 'Q2', 'Q3', 'Q4'].includes(quarter)) {
-      quarterFilter = ` AND (oi.reported_quarter = ? OR oi.reported_quarter IS NULL)`;
-      params.push(quarter);
-    }
-
-    // Phase DK-B: Use LEFT JOIN to include orphaned indicators
-    const result = await this.connection.execute(
-      `SELECT
-        oi.*,
-        pit.indicator_name,
-        pit.indicator_code,
-        pit.uacs_code,
-        pit.unit_type,
-        pit.indicator_type,
-        pit.description
-       FROM operation_indicators oi
-       LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-       JOIN university_operations uo ON oi.operation_id = uo.id
-       WHERE uo.operation_type = ?
-         AND (pit.pillar_type = ? OR pit.pillar_type IS NULL)
-         AND oi.fiscal_year = ?
-         AND oi.deleted_at IS NULL
-         AND uo.deleted_at IS NULL${quarterFilter}
-       ORDER BY COALESCE(pit.indicator_order, 999) ASC, oi.particular ASC`,
-      params,
+    // Phase DK-B: an orphaned indicator has no taxonomy at all, so the repository's optional
+    // taxonomy relation keeps it in the result — what the LEFT JOIN was for. An unknown pillar
+    // type returns an empty list there, matching the guard this method used to apply itself.
+    const result = await this.indicatorRepo.findByPillarAndYear(
+      pillarType,
+      fiscalYear,
+      quarter,
     );
 
     // Phase DK-B: Log orphan count for admin awareness
@@ -1139,28 +1099,10 @@ export class UniversityOperationsService {
   ): Promise<any[]> {
     await this.findOne(operationId);
 
-    let query = `
-      SELECT
-        oi.*,
-        pit.indicator_name as taxonomy_name,
-        pit.indicator_code as taxonomy_code,
-        pit.uacs_code as taxonomy_uacs,
-        pit.unit_type,
-        pit.description as taxonomy_description
-      FROM operation_indicators oi
-      LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-      WHERE oi.operation_id = ? AND oi.deleted_at IS NULL
-    `;
-    const params: any[] = [operationId];
-
-    if (fiscalYear) {
-      query += ` AND oi.fiscal_year = ?`;
-      params.push(fiscalYear);
-    }
-
-    query += ` ORDER BY COALESCE(pit.indicator_order, 999) ASC, oi.fiscal_year DESC, oi.created_at DESC`;
-
-    const result = await this.connection.execute(query, params);
+    const result = await this.indicatorRepo.findForOperationWithTaxonomy(
+      operationId,
+      fiscalYear,
+    );
     return result.map((row) => this.computeIndicatorMetrics(row));
   }
 
@@ -1422,20 +1364,16 @@ export class UniversityOperationsService {
 
     // Verify pillar_indicator_id exists and matches operation's pillar type
     const operation = await this.findOne(operationId);
-    const taxonomyCheck = await this.connection.execute(
-      `SELECT id, pillar_type, indicator_name
-       FROM pillar_indicator_taxonomy
-       WHERE id = ? AND is_active = true`,
-      [dto.pillar_indicator_id],
+    const taxonomy = await this.taxonomyRepo.findActiveById(
+      dto.pillar_indicator_id,
     );
 
-    if (taxonomyCheck.length === 0) {
+    if (!taxonomy) {
       throw new BadRequestException(
         'Invalid pillar_indicator_id: Indicator not found in taxonomy',
       );
     }
 
-    const taxonomy = taxonomyCheck[0];
     if (taxonomy.pillar_type !== operation.operation_type) {
       throw new BadRequestException(
         `Indicator taxonomy mismatch: Indicator belongs to ${taxonomy.pillar_type}, but operation is ${operation.operation_type}`,
@@ -1443,26 +1381,16 @@ export class UniversityOperationsService {
     }
 
     // Check if quarterly data already exists for this indicator + fiscal year + quarter
-    // Phase DY-C: Include reported_quarter in duplicate check when provided
-    const existingCheckParams: any[] = [
+    // Phase DY-C: a missing reported_quarter is its own slot, distinct from any quarter's,
+    // so it is matched as NULL rather than left out of the lookup.
+    const duplicate = await this.indicatorRepo.quarterlyDataExists(
       dto.pillar_indicator_id,
       operationId,
       dto.fiscal_year,
-    ];
-    let existingCheckQuery = `SELECT id FROM operation_indicators
-       WHERE pillar_indicator_id = ? AND operation_id = ? AND fiscal_year = ? AND deleted_at IS NULL`;
-    if (dto.reported_quarter) {
-      existingCheckQuery += ` AND reported_quarter = ?`;
-      existingCheckParams.push(dto.reported_quarter);
-    } else {
-      existingCheckQuery += ` AND reported_quarter IS NULL`;
-    }
-    const existingCheck = await this.connection.execute(
-      existingCheckQuery,
-      existingCheckParams,
+      dto.reported_quarter,
     );
 
-    if (existingCheck.length > 0) {
+    if (duplicate) {
       throw new ConflictException(
         `Quarterly data already exists for indicator "${taxonomy.indicator_name}" in fiscal year ${dto.fiscal_year}. Use PATCH to update.`,
       );
@@ -1474,80 +1402,18 @@ export class UniversityOperationsService {
     // Phase HA: Include override_total_target, override_total_actual (Directive 370)
     // Phase HE: Include catch_up_plan, facilitating_factors, ways_forward (Directive 386)
     // Phase TTT: Include numerator/denominator fraction fields for PERCENTAGE indicators
-    const result = await this.connection.execute(
-      `INSERT INTO operation_indicators
-       (operation_id, pillar_indicator_id, particular, fiscal_year, reported_quarter,
-        target_q1, target_q2, target_q3, target_q4,
-        accomplishment_q1, accomplishment_q2, accomplishment_q3, accomplishment_q4,
-        score_q1, score_q2, score_q3, score_q4,
-        remarks, override_rate, override_variance,
-        override_total_target, override_total_actual,
-        catch_up_plan, facilitating_factors, ways_forward, mov,
-        numerator_q1, denominator_q1, numerator_q2, denominator_q2,
-        numerator_q3, denominator_q3, numerator_q4, denominator_q4,
-        target_numerator_q1, target_denominator_q1, target_numerator_q2, target_denominator_q2,
-        target_numerator_q3, target_denominator_q3, target_numerator_q4, target_denominator_q4,
-        remarks_q1, remarks_q2, remarks_q3, remarks_q4,
-        override_total_target_fraction, override_total_actual_fraction,
-        created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        operationId,
-        dto.pillar_indicator_id,
-        taxonomy.indicator_name,
-        dto.fiscal_year,
-        dto.reported_quarter || null,
-        dto.target_q1,
-        dto.target_q2,
-        dto.target_q3,
-        dto.target_q4,
-        dto.accomplishment_q1,
-        dto.accomplishment_q2,
-        dto.accomplishment_q3,
-        dto.accomplishment_q4,
-        dto.score_q1,
-        dto.score_q2,
-        dto.score_q3,
-        dto.score_q4,
-        dto.remarks,
-        dto.override_rate ?? null,
-        dto.override_variance ?? null,
-        dto.override_total_target ?? null,
-        dto.override_total_actual ?? null,
-        dto.catch_up_plan ?? null,
-        dto.facilitating_factors ?? null,
-        dto.ways_forward ?? null,
-        dto.mov ?? null,
-        dto.numerator_q1 ?? null,
-        dto.denominator_q1 ?? null,
-        dto.numerator_q2 ?? null,
-        dto.denominator_q2 ?? null,
-        dto.numerator_q3 ?? null,
-        dto.denominator_q3 ?? null,
-        dto.numerator_q4 ?? null,
-        dto.denominator_q4 ?? null,
-        dto.target_numerator_q1 ?? null,
-        dto.target_denominator_q1 ?? null,
-        dto.target_numerator_q2 ?? null,
-        dto.target_denominator_q2 ?? null,
-        dto.target_numerator_q3 ?? null,
-        dto.target_denominator_q3 ?? null,
-        dto.target_numerator_q4 ?? null,
-        dto.target_denominator_q4 ?? null,
-        dto.remarks_q1 ?? null,
-        dto.remarks_q2 ?? null,
-        dto.remarks_q3 ?? null,
-        dto.remarks_q4 ?? null,
-        dto.override_total_target_fraction ?? null,
-        dto.override_total_actual_fraction ?? null,
-        userId,
-      ],
+    // Phase DY-C/FY-2/GY/GZ/HA/HE/TTT: every quarterly, override, fraction and narrative
+    // column comes straight off the DTO — the repository matches each key to a column on the
+    // entity, so a new column needs no change here.
+    const created = await this.indicatorRepo.createQuarterlyData(
+      operationId,
+      dto,
+      taxonomy.indicator_name,
+      userId,
     );
 
     this.logger.log(
-      `INDICATOR_QUARTERLY_CREATED: id=${result[0].id}, taxonomy=${dto.pillar_indicator_id}, operation=${operationId}, by=${userId}`,
+      `INDICATOR_QUARTERLY_CREATED: id=${created.id}, taxonomy=${dto.pillar_indicator_id}, operation=${operationId}, by=${userId}`,
     );
 
     // Phase GOV-C: Auto-revert quarterly report to DRAFT when indicator data changes
@@ -1557,7 +1423,7 @@ export class UniversityOperationsService {
       userId,
     );
 
-    return this.computeIndicatorMetrics(result[0]);
+    return this.computeIndicatorMetrics(created);
   }
 
   /**
@@ -1585,26 +1451,21 @@ export class UniversityOperationsService {
       user,
     );
 
-    // Phase DK-A: Use LEFT JOIN to include orphaned indicators (pillar_indicator_id = NULL)
-    const check = await this.connection.execute(
-      `SELECT oi.id, oi.fiscal_year, oi.pillar_indicator_id, oi.operation_id, oi.particular,
-              pit.pillar_type, pit.indicator_name, uo.operation_type
-       FROM operation_indicators oi
-       LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-       JOIN university_operations uo ON oi.operation_id = uo.id
-       WHERE oi.id = ? AND oi.operation_id = ? AND oi.deleted_at IS NULL`,
-      [indicatorId, operationId],
+    // Phase DK-A: orphaned indicators (pillar_indicator_id NULL) are included — the
+    // taxonomy relation is optional, so pillar_type simply comes back null for them.
+    const indicator = await this.indicatorRepo.findContext(
+      indicatorId,
+      operationId,
     );
 
     // Phase DL-A: Diagnostic logging for lookup result
     this.logger.log(
-      `[PATCH /indicators/quarterly] LOOKUP RESULT: found=${check.length > 0}, rowCount=${check.length}`,
+      `[PATCH /indicators/quarterly] LOOKUP RESULT: found=${!!indicator}`,
     );
 
-    if (check.length > 0) {
-      const found = check[0];
+    if (indicator) {
       this.logger.log(
-        `[PATCH /indicators/quarterly] FOUND INDICATOR: id=${found.id}, operation_id=${found.operation_id}, fiscal_year=${found.fiscal_year}, pillar_indicator_id=${found.pillar_indicator_id || 'NULL (orphan)'}`,
+        `[PATCH /indicators/quarterly] FOUND INDICATOR: id=${indicator.id}, operation_id=${indicator.operation_id}, fiscal_year=${indicator.fiscal_year}, pillar_indicator_id=${indicator.pillar_indicator_id || 'NULL (orphan)'}`,
       );
     } else {
       // Phase DL-A: Enhanced 404 diagnostic logging
@@ -1613,13 +1474,8 @@ export class UniversityOperationsService {
       );
 
       // Log all indicators for this operation
-      const allIndicators = await this.connection.execute(
-        `SELECT id, pillar_indicator_id, fiscal_year, operation_id, particular 
-         FROM operation_indicators 
-         WHERE operation_id = ? AND deleted_at IS NULL 
-         LIMIT 10`,
-        [operationId],
-      );
+      const allIndicators =
+        await this.indicatorRepo.findSampleForOperation(operationId);
       this.logger.error(
         `[PATCH /indicators/quarterly] Available indicators in operation ${operationId}: ${JSON.stringify(
           allIndicators.map((r) => ({
@@ -1631,15 +1487,10 @@ export class UniversityOperationsService {
       );
 
       // Check if indicator exists in OTHER operations
-      const otherOps = await this.connection.execute(
-        `SELECT id, operation_id, fiscal_year, particular 
-         FROM operation_indicators 
-         WHERE id = ? AND deleted_at IS NULL`,
-        [indicatorId],
-      );
-      if (otherOps.length > 0) {
+      const elsewhere = await this.indicatorRepo.findPlain(indicatorId);
+      if (elsewhere && !elsewhere.deleted_at) {
         this.logger.error(
-          `[PATCH /indicators/quarterly] MISMATCH CONFIRMED: Indicator ${indicatorId} belongs to operation ${otherOps[0].operation_id} (FY ${otherOps[0].fiscal_year}), but PATCH was sent to operation ${operationId}`,
+          `[PATCH /indicators/quarterly] MISMATCH CONFIRMED: Indicator ${indicatorId} belongs to operation ${elsewhere.operation_id} (FY ${elsewhere.fiscal_year}), but PATCH was sent to operation ${operationId}`,
         );
       } else {
         this.logger.error(
@@ -1648,13 +1499,11 @@ export class UniversityOperationsService {
       }
     }
 
-    if (check.length === 0) {
+    if (!indicator) {
       throw new NotFoundException(
         `Indicator ${indicatorId} not found in operation ${operationId}`,
       );
     }
-
-    const indicator = check[0];
 
     // Phase DK-A: Handle orphaned indicators (pillar_indicator_id = NULL)
     if (!indicator.pillar_indicator_id) {
@@ -1681,18 +1530,17 @@ export class UniversityOperationsService {
     // Prevent pillar_indicator_id changes only for linked indicators
     if (dto.pillar_indicator_id && indicator.pillar_indicator_id) {
       if (dto.pillar_indicator_id !== indicator.pillar_indicator_id) {
-        const taxonomyCheck = await this.connection.execute(
-          `SELECT pillar_type FROM pillar_indicator_taxonomy WHERE id = ? AND is_active = true`,
-          [dto.pillar_indicator_id],
+        const target = await this.taxonomyRepo.findActiveById(
+          dto.pillar_indicator_id,
         );
-        if (taxonomyCheck.length === 0) {
+        if (!target) {
           throw new BadRequestException(
             'Invalid pillar_indicator_id: not found in taxonomy',
           );
         }
-        if (taxonomyCheck[0].pillar_type !== indicator.pillar_type) {
+        if (target.pillar_type !== indicator.pillar_type) {
           throw new BadRequestException(
-            `Cannot change indicator to different pillar type (current: ${indicator.pillar_type}, new: ${taxonomyCheck[0].pillar_type})`,
+            `Cannot change indicator to different pillar type (current: ${indicator.pillar_type}, new: ${target.pillar_type})`,
           );
         }
       }
@@ -1709,27 +1557,16 @@ export class UniversityOperationsService {
     );
     if (fields.length === 0) {
       // No changes, return current state with metrics
-      // Phase DK-A: Use LEFT JOIN for orphan compatibility
-      const current = await this.connection.execute(
-        `SELECT oi.*, pit.indicator_name, pit.indicator_code, pit.uacs_code, pit.unit_type
-         FROM operation_indicators oi
-         LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-         WHERE oi.id = ?`,
-        [indicatorId],
-      );
-      return this.computeIndicatorMetrics(current[0]);
+      const current = await this.indicatorRepo.findEnriched(indicatorId);
+      return this.computeIndicatorMetrics(current);
     }
 
-    const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) => dto[f]);
-
-    await this.connection.execute(
-      `UPDATE operation_indicators
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ?
-       RETURNING *`,
-      [...values, userId, indicatorId],
-    );
+    // pillar_indicator_id and reported_quarter are excluded above; every other key is matched
+    // to a column on the entity, so a key that is not one is ignored rather than written.
+    await this.indicatorRepo.applyUpdate(indicatorId, dto, userId, [
+      'pillar_indicator_id',
+      'reported_quarter',
+    ]);
 
     this.logger.log(
       `INDICATOR_QUARTERLY_UPDATED: id=${indicatorId}, operation=${operationId}, fiscal_year=${indicator.fiscal_year}, orphan=${!indicator.pillar_indicator_id}, by=${userId}`,
@@ -1742,16 +1579,9 @@ export class UniversityOperationsService {
       userId,
     );
 
-    // Phase DK-A: Use LEFT JOIN for orphan compatibility
-    const enriched = await this.connection.execute(
-      `SELECT oi.*, pit.indicator_name, pit.indicator_code, pit.uacs_code, pit.unit_type
-       FROM operation_indicators oi
-       LEFT JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-       WHERE oi.id = ?`,
-      [indicatorId],
-    );
+    const enriched = await this.indicatorRepo.findEnriched(indicatorId);
 
-    return this.computeIndicatorMetrics(enriched[0]);
+    return this.computeIndicatorMetrics(enriched);
   }
 
   async createIndicator(
@@ -1767,39 +1597,16 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const result = await this.connection.execute(
-      `INSERT INTO operation_indicators
-       (operation_id, particular, description, indicator_code, uacs_code, fiscal_year,
-        target_q1, target_q2, target_q3, target_q4,
-        accomplishment_q1, accomplishment_q2, accomplishment_q3, accomplishment_q4,
-        remarks, metadata, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        operationId,
-        dto.particular,
-        dto.description,
-        dto.indicator_code,
-        dto.uacs_code,
-        dto.fiscal_year,
-        dto.target_q1,
-        dto.target_q2,
-        dto.target_q3,
-        dto.target_q4,
-        dto.accomplishment_q1,
-        dto.accomplishment_q2,
-        dto.accomplishment_q3,
-        dto.accomplishment_q4,
-        dto.remarks,
-        dto.metadata ? JSON.stringify(dto.metadata) : null,
-        userId,
-      ],
+    const created = await this.indicatorRepo.createIndicator(
+      operationId,
+      dto,
+      userId,
     );
 
     this.logger.log(
-      `INDICATOR_CREATED: id=${result[0].id}, operation=${operationId}, by=${userId}`,
+      `INDICATOR_CREATED: id=${created.id}, operation=${operationId}, by=${userId}`,
     );
-    return result[0];
+    return created;
   }
 
   async updateIndicator(
@@ -1816,38 +1623,25 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const check = await this.connection.execute(
-      `SELECT id FROM operation_indicators WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [indicatorId, operationId],
+    const exists = await this.indicatorRepo.existsInOperation(
+      indicatorId,
+      operationId,
     );
-    if (check.length === 0) {
+    if (!exists) {
       throw new NotFoundException(`Indicator ${indicatorId} not found`);
     }
 
     const fields = Object.keys(dto).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) {
-      const current = await this.connection.execute(
-        `SELECT * FROM operation_indicators WHERE id = ?`,
-        [indicatorId],
-      );
-      return current[0];
+      return this.indicatorRepo.findPlain(indicatorId);
     }
 
-    const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) =>
-      f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    const result = await this.connection.execute(
-      `UPDATE operation_indicators
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ?
-       RETURNING *`,
-      [...values, userId, indicatorId],
-    );
+    // Every key is matched to a column on the entity, so one that is not a column is ignored
+    // instead of being interpolated into a SET clause.
+    await this.indicatorRepo.applyUpdate(indicatorId, dto, userId);
 
     this.logger.log(`INDICATOR_UPDATED: id=${indicatorId}, by=${userId}`);
-    return result[0];
+    return this.indicatorRepo.findPlain(indicatorId);
   }
 
   async removeIndicator(
@@ -1863,14 +1657,13 @@ export class UniversityOperationsService {
     // Quarter-specific publication lock is intentionally bypassed — guarded by uo.publication_status instead.
     await this.validateOperationEditable(operationId, undefined, user);
 
-    const result = await this.connection.execute(
-      `UPDATE operation_indicators SET deleted_at = NOW(), deleted_by = ?
-       WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [userId, indicatorId, operationId],
-      'run',
+    const deleted = await this.indicatorRepo.softDelete(
+      indicatorId,
+      operationId,
+      userId,
     );
 
-    if (result.affectedRows === 0) {
+    if (deleted === 0) {
       throw new NotFoundException(`Indicator ${indicatorId} not found`);
     }
 
@@ -1888,31 +1681,14 @@ export class UniversityOperationsService {
   ): Promise<any[]> {
     await this.findOne(operationId);
 
-    let query = `SELECT * FROM operation_financials WHERE operation_id = ? AND deleted_at IS NULL`;
-    const params: any[] = [operationId];
-
-    if (fiscalYear) {
-      query += ` AND fiscal_year = ?`;
-      params.push(fiscalYear);
-    }
-    if (quarter) {
-      query += ` AND quarter = ?`;
-      params.push(quarter);
-    }
-    // Phase BC: fund_type filter for BAR1 subcategory tabs
-    if (fundType) {
-      query += ` AND fund_type = ?`;
-      params.push(fundType);
-    }
-    // Phase ET-B: expense_class filter for PS/MOOE/CO grouping
-    if (expenseClass) {
-      query += ` AND expense_class = ?`;
-      params.push(expenseClass);
-    }
-
-    query += ` ORDER BY fiscal_year DESC, quarter, operations_programs`;
-
-    const result = await this.connection.execute(query, params);
+    // Phase BC/ET-B: fiscal year, quarter, fund_type and expense_class are the BAR1 tab
+    // filters; one that is not supplied is simply not applied.
+    const result = await this.financialRepo.findFiltered(operationId, {
+      fiscalYear,
+      quarter,
+      fundType,
+      expenseClass,
+    });
     // Phase CP: Apply computed metrics to each financial record
     return result.map((row) => this.computeFinancialMetrics(row));
   }
@@ -1930,41 +1706,21 @@ export class UniversityOperationsService {
 
     // Phase BC: Include fund_type and project_code in INSERT
     // Phase ET-B: Include expense_class for BAR No. 2 categorization
-    const result = await this.connection.execute(
-      `INSERT INTO operation_financials
-       (operation_id, fiscal_year, quarter, operations_programs, department, budget_source,
-        fund_type, project_code, expense_class,
-        allotment, target, obligation, disbursement, performance_indicator, remarks, metadata, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        operationId,
-        dto.fiscal_year,
-        dto.quarter,
-        dto.operations_programs,
-        dto.department,
-        dto.budget_source,
-        dto.fund_type || null,
-        dto.project_code || null,
-        dto.expense_class || null,
-        dto.allotment,
-        dto.target,
-        dto.obligation,
-        dto.disbursement,
-        dto.performance_indicator,
-        dto.remarks,
-        dto.metadata ? JSON.stringify(dto.metadata) : null,
-        userId,
-      ],
+    // Phase BC/ET-B: fund_type, project_code and expense_class are included; every column
+    // comes straight off the DTO, matched to a column on the entity.
+    const created = await this.financialRepo.createFinancial(
+      operationId,
+      dto,
+      userId,
     );
 
     this.logger.log(
-      `FINANCIAL_CREATED: id=${result[0].id}, operation=${operationId}, by=${userId}`,
+      `FINANCIAL_CREATED: id=${created.id}, operation=${operationId}, by=${userId}`,
     );
     // Phase FA-C: Auto-revert quarterly report Published → Draft on financial create
     await this.autoRevertQuarterlyReport(dto.fiscal_year, dto.quarter, userId);
     // Phase CP: Return record with computed metrics
-    return this.computeFinancialMetrics(result[0]);
+    return this.computeFinancialMetrics(created);
   }
 
   async updateFinancial(
@@ -1978,40 +1734,29 @@ export class UniversityOperationsService {
     await this.validateFinancialAccess(userId, user);
 
     // Phase FA-B: Fetch existing record to get its quarter for governance validation
-    const existing = await this.connection.execute(
-      `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [financialId, operationId],
-    );
-    if (existing.length === 0) {
+    const existing = await this.financialRepo.findKey(financialId, operationId);
+    if (!existing) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
-    const recordQuarter: string = existing[0].quarter;
-    const recordFiscalYear: number = existing[0].fiscal_year;
+    const recordQuarter = existing.quarter;
+    const recordFiscalYear = existing.fiscal_year;
 
     // Phase FH-2: Financial uses quarterly report lock only, not operation publication
     await this.validateFinancialEditable(operationId, recordQuarter, user);
 
     const fields = Object.keys(dto).filter((k) => dto[k] !== undefined);
     if (fields.length === 0) {
-      const current = await this.connection.execute(
-        `SELECT * FROM operation_financials WHERE id = ?`,
-        [financialId],
-      );
+      const current = await this.financialRepo.findPlain(financialId);
       // Phase CP: Return record with computed metrics
-      return this.computeFinancialMetrics(current[0]);
+      return this.computeFinancialMetrics(current);
     }
 
-    const setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) =>
-      f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    const result = await this.connection.execute(
-      `UPDATE operation_financials
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ?
-       RETURNING *`,
-      [...values, userId, financialId],
+    // Every key is matched to a column on the entity, so one that is not a column is ignored
+    // instead of being interpolated into a SET clause.
+    const updated = await this.financialRepo.applyUpdate(
+      financialId,
+      dto,
+      userId,
     );
 
     this.logger.log(`FINANCIAL_UPDATED: id=${financialId}, by=${userId}`);
@@ -2024,7 +1769,7 @@ export class UniversityOperationsService {
       userId,
     );
     // Phase CP: Return record with computed metrics
-    return this.computeFinancialMetrics(result[0]);
+    return this.computeFinancialMetrics(updated);
   }
 
   async removeFinancial(
@@ -2037,27 +1782,23 @@ export class UniversityOperationsService {
     await this.validateFinancialAccess(userId, user);
 
     // Phase FA-B: Fetch existing record to get its quarter for governance validation
-    const existing = await this.connection.execute(
-      `SELECT id, fiscal_year, quarter FROM operation_financials WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [financialId, operationId],
-    );
-    if (existing.length === 0) {
+    const existing = await this.financialRepo.findKey(financialId, operationId);
+    if (!existing) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
-    const recordQuarter: string = existing[0].quarter;
-    const recordFiscalYear: number = existing[0].fiscal_year;
+    const recordQuarter = existing.quarter;
+    const recordFiscalYear = existing.fiscal_year;
 
     // Phase FH-2: Financial uses quarterly report lock only, not operation publication
     await this.validateFinancialEditable(operationId, recordQuarter, user);
 
-    const result = await this.connection.execute(
-      `UPDATE operation_financials SET deleted_at = NOW(), deleted_by = ?
-       WHERE id = ? AND operation_id = ? AND deleted_at IS NULL`,
-      [userId, financialId, operationId],
-      'run',
+    const deleted = await this.financialRepo.softDelete(
+      financialId,
+      operationId,
+      userId,
     );
 
-    if (result.affectedRows === 0) {
+    if (deleted === 0) {
       throw new NotFoundException(`Financial record ${financialId} not found`);
     }
 
@@ -2161,34 +1902,20 @@ export class UniversityOperationsService {
     orphanIndicators: number;
     orphansByPillar: { pillar_type: string; count: number }[];
   }> {
-    const [totalRes, linkedRes, orphansByPillarRes] = await Promise.all([
-      this.connection.execute(
-        `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL`,
-      ),
-      this.connection.execute(
-        `SELECT COUNT(*) FROM operation_indicators WHERE deleted_at IS NULL AND pillar_indicator_id IS NOT NULL`,
-      ),
-      this.connection.execute(`
-        SELECT o.operation_type AS pillar_type, COUNT(i.id) AS count
-        FROM operation_indicators i
-        JOIN university_operations o ON i.operation_id = o.id
-        WHERE i.deleted_at IS NULL AND i.pillar_indicator_id IS NULL
-        GROUP BY o.operation_type
-        ORDER BY o.operation_type
-      `),
-    ]);
-
-    const total = parseInt(totalRes[0].count, 10);
-    const linked = parseInt(linkedRes[0].count, 10);
+    // Both queries are issued before either is awaited, so they still run concurrently.
+    // Promise.all is avoided deliberately: its two overloads are a tuple form and an Iterable
+    // form, and an array holding two differently-typed promises can resolve to the Iterable
+    // one, which collapses the results into a union and breaks the destructuring.
+    const countsQuery = this.indicatorRepo.countTotalAndLinked();
+    const orphansQuery = this.indicatorRepo.countOrphansByPillar();
+    const { total, linked } = await countsQuery;
+    const orphansByPillar = await orphansQuery;
 
     return {
       totalIndicators: total,
       linkedIndicators: linked,
       orphanIndicators: total - linked,
-      orphansByPillar: orphansByPillarRes.map((r) => ({
-        pillar_type: r.pillar_type,
-        count: parseInt(r.count, 10),
-      })),
+      orphansByPillar,
     };
   }
 
@@ -2197,33 +1924,7 @@ export class UniversityOperationsService {
    * Returns full orphan records with quarterly data status
    */
   async getOrphanedIndicatorsList(): Promise<any[]> {
-    const result = await this.connection.execute(
-      `SELECT
-        oi.id,
-        oi.operation_id,
-        oi.particular,
-        oi.fiscal_year,
-        oi.created_at,
-        oi.updated_at,
-        oi.remarks,
-        oi.target_q1, oi.target_q2, oi.target_q3, oi.target_q4,
-        oi.accomplishment_q1, oi.accomplishment_q2, oi.accomplishment_q3, oi.accomplishment_q4,
-        uo.title AS operation_title,
-        uo.operation_type,
-        CASE
-          WHEN oi.target_q1 IS NOT NULL OR oi.target_q2 IS NOT NULL OR
-               oi.target_q3 IS NOT NULL OR oi.target_q4 IS NOT NULL OR
-               oi.accomplishment_q1 IS NOT NULL OR oi.accomplishment_q2 IS NOT NULL OR
-               oi.accomplishment_q3 IS NOT NULL OR oi.accomplishment_q4 IS NOT NULL
-          THEN TRUE
-          ELSE FALSE
-        END AS has_quarterly_data
-       FROM operation_indicators oi
-       JOIN university_operations uo ON oi.operation_id = uo.id
-       WHERE oi.pillar_indicator_id IS NULL
-         AND oi.deleted_at IS NULL
-       ORDER BY oi.fiscal_year DESC, uo.operation_type, oi.particular`,
-    );
+    const result = await this.indicatorRepo.findOrphans();
 
     this.logger.log(
       `[getOrphanedIndicatorsList] Found ${result.length} orphaned indicators`,
@@ -2834,26 +2535,7 @@ export class UniversityOperationsService {
   async getFinancialCampusBreakdown(
     fiscalYear: number,
   ): Promise<{ breakdown: any[]; fiscal_year: number }> {
-    const result = await this.connection.execute(
-      `
-      SELECT
-        uo.operation_type AS pillar_type,
-        COALESCE(of2.department, 'Unspecified') AS campus,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS utilization_rate
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ? AND of2.deleted_at IS NULL AND uo.deleted_at IS NULL
-      GROUP BY uo.operation_type, of2.department
-      ORDER BY uo.operation_type, of2.department
-    `,
-      [fiscalYear],
-    );
+    const result = await this.financialRepo.getCampusBreakdown(fiscalYear);
 
     const breakdown = result.map((row) => ({
       pillar_type: row.pillar_type,
@@ -2875,22 +2557,8 @@ export class UniversityOperationsService {
   async getFinancialPillarExpenseBreakdown(
     fiscalYear: number,
   ): Promise<{ rows: any[]; fiscal_year: number }> {
-    const result = await this.connection.execute(
-      `
-      SELECT
-        uo.operation_type AS pillar_type,
-        of2.expense_class,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ? AND of2.deleted_at IS NULL AND uo.deleted_at IS NULL
-      GROUP BY uo.operation_type, of2.expense_class
-      ORDER BY uo.operation_type, of2.expense_class
-    `,
-      [fiscalYear],
-    );
+    const result =
+      await this.financialRepo.getPillarExpenseBreakdown(fiscalYear);
 
     const rows = result.map((row) => ({
       pillar_type: row.pillar_type,
@@ -3715,29 +3383,7 @@ export class UniversityOperationsService {
    * Phase EZ-C: Financial pillar summary — per-pillar aggregation of financial metrics
    */
   async getFinancialPillarSummary(fiscalYear: number): Promise<any> {
-    const result = await this.connection.execute(
-      `
-      SELECT
-        uo.operation_type AS pillar_type,
-        COUNT(of2.id) AS record_count,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS avg_utilization_rate,
-        COALESCE(SUM(of2.allotment) - SUM(of2.obligation), 0) AS total_balance
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ?
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL
-      GROUP BY uo.operation_type
-      ORDER BY uo.operation_type
-    `,
-      [fiscalYear],
-    );
+    const result = await this.financialRepo.getPillarSummary(fiscalYear);
 
     return { pillars: result, fiscal_year: fiscalYear };
   }
@@ -3749,31 +3395,10 @@ export class UniversityOperationsService {
     fiscalYear: number,
     pillarType?: string,
   ): Promise<any> {
-    let query = `
-      SELECT
-        of2.quarter,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS utilization_rate
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ?
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL`;
-
-    const params: any[] = [fiscalYear];
-    if (pillarType && pillarType !== 'ALL') {
-      params.push(pillarType);
-      query += ` AND uo.operation_type = ?`;
-    }
-
-    query += ` GROUP BY of2.quarter ORDER BY of2.quarter`;
-
-    const result = await this.connection.execute(query, params);
+    const result = await this.financialRepo.getQuarterlyTrend(
+      fiscalYear,
+      pillarType,
+    );
     return { quarters: result, fiscal_year: fiscalYear };
   }
 
@@ -3783,27 +3408,7 @@ export class UniversityOperationsService {
   async getFinancialYearlyComparison(years: number[]): Promise<any> {
     if (!years.length) return { years: [], pillars: [] };
 
-    const result = await this.connection.execute(
-      `
-      SELECT
-        uo.fiscal_year,
-        uo.operation_type AS pillar_type,
-        CASE WHEN SUM(of2.allotment) > 0
-          THEN ROUND((SUM(of2.obligation)::numeric / SUM(of2.allotment)) * 100, 2)
-          ELSE 0
-        END AS utilization_rate,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year IN (${years.map(() => '?').join(', ')})
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL
-      GROUP BY uo.fiscal_year, uo.operation_type
-      ORDER BY uo.fiscal_year, uo.operation_type
-    `,
-      [...years],
-    );
+    const result = await this.financialRepo.getYearlyComparison(years);
 
     // Phase GT-1 + GU-1: Return only fiscal years present in data — prevents empty-year bars (Directive 320, 326)
     const rawYears: number[] = result
@@ -3819,24 +3424,7 @@ export class UniversityOperationsService {
    * Phase EZ-C: Financial expense class breakdown — PS/MOOE/CO distribution
    */
   async getFinancialExpenseBreakdown(fiscalYear: number): Promise<any> {
-    const result = await this.connection.execute(
-      `
-      SELECT
-        COALESCE(of2.expense_class, 'Unclassified') AS expense_class,
-        COUNT(of2.id) AS record_count,
-        COALESCE(SUM(of2.allotment), 0) AS total_appropriation,
-        COALESCE(SUM(of2.obligation), 0) AS total_obligations,
-        COALESCE(SUM(of2.disbursement), 0) AS total_disbursement
-      FROM operation_financials of2
-      JOIN university_operations uo ON uo.id = of2.operation_id
-      WHERE uo.fiscal_year = ?
-        AND of2.deleted_at IS NULL
-        AND uo.deleted_at IS NULL
-      GROUP BY of2.expense_class
-      ORDER BY of2.expense_class
-    `,
-      [fiscalYear],
-    );
+    const result = await this.financialRepo.getExpenseBreakdown(fiscalYear);
 
     // Calculate percentage of total
     const totalObligation = result.reduce(
