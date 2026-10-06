@@ -6,20 +6,25 @@ export class User {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
 
-  @Property({ length: 255, unique: true })
+  // NOT declared unique, because the database has no unique index on this column and the
+  // data would not survive one — there are duplicate usernames, emails and google_ids live
+  // today. Declaring uniqueness here only made every schema diff emit an ADD CONSTRAINT that
+  // would abort on those duplicates. Deduplicating the accounts is a separate decision; when
+  // it is made, add the constraint in its own migration and restore these markers.
+  @Property({ length: 100 })
   username!: string;
 
-  @Property({ nullable: true, length: 255, unique: true })
-  email?: string;
+  @Property({ length: 255 })
+  email!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  passwordHash?: string;
+  @Property({ length: 255 })
+  passwordHash!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  firstName?: string;
+  @Property({ length: 100 })
+  firstName!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
-  lastName?: string;
+  @Property({ length: 100 })
+  lastName!: string;
 
   @Property({ nullable: true, columnType: 'text' })
   middleName?: string;
@@ -27,7 +32,7 @@ export class User {
   @Property({ nullable: true, length: 255 })
   displayName?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   avatarUrl?: string;
 
   @Property({ nullable: true, columnType: 'text' })
@@ -39,10 +44,10 @@ export class User {
   @Property({ type: 'boolean', default: true })
   isActive: boolean = true;
 
-  @Property({ nullable: true, type: 'integer' })
+  @Property({ nullable: true, type: 'integer', default: 100 })
   rankLevel?: number;
 
-  @Property({ nullable: true, length: 255, unique: true })
+  @Property({ nullable: true, length: 255 })
   googleId?: string;
 
   @Property({ nullable: true, type: 'integer', default: 0 })

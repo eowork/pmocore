@@ -150,15 +150,27 @@ escalation_records      {escalatedTo, date, issue, resolution}[]
 
 ## Authorization Model
 
-Authorization is a **4-layer hierarchy**. Each layer answers a distinct question; they are
-evaluated in order and are NOT interchangeable. Conflating them is the root cause of the
-historical "Approver/Manager 403 on their own module" bug (resolved PHASE BBBG, Track 1).
+Authorization is a **4-layer hierarchy** (plus a planned Layer 1.5 refinement, not yet
+built). Each layer answers a distinct question; they are evaluated in order and are NOT
+interchangeable. Conflating them is the root cause of the historical "Approver/Manager
+403 on their own module" bug (resolved PHASE BBBG, Track 1).
 
 ```
 ┌── Layer 1: System Role ──────────── WHO are you? (identity tier)
 │     SuperAdmin · Admin · Staff · Viewer · Auditor · Contractor
 │     → Coarse identity. SuperAdmin/Admin bypass module checks (isAdmin()).
 │     → Stored on user + roles; enforced by @Roles(...) + RolesGuard.
+│
+├── Layer 1.5: Role Permission ────── WHAT specific action can your ROLE perform? (planned)
+│     Named capability, e.g. coi.export_report, users.impersonate — action-granular,
+│     below Role and above the module CRUD tiers.
+│     → permissions + role_permissions. Role-scoped, NOT user-scoped: a different axis
+│         from Layer 3's per-user override, not a replacement for it.
+│     → NOT YET ENFORCED. No PermissionsGuard/@RequirePermission exists. `permissions[]`
+│         is already computed into the JWT/profile payload but nothing server-side reads
+│         it; the frontend's `authStore.hasPermission()` is defined but never called.
+│         Build the guard only for actions too fine-grained/rare for a CRUD tier to model
+│         (e.g. export, bulk-delete, impersonate) — don't gate ordinary module CRUD with it.
 │
 ├── Layer 2: Rank ─────────────────── HOW MUCH approval authority? (org hierarchy)
 │     Numeric rank_level (lower = higher authority).
@@ -187,6 +199,34 @@ Approver    → Full module CRUD + approval authority; record scope bypassed
 Manager     → Full module CRUD + module administration; record scope bypassed
 ```
 
+### Role Permissions (Layer 1.5 — planned, not yet enforced)
+Adds a named-action axis on top of Role without touching Layer 3. Keeps three tables on
+three strictly separate jobs — mixing any two back together reproduces the original
+RBAC/ABAC confusion this section was written to resolve:
+
+| Table | Question | Granularity | Varies by |
+|---|---|---|---|
+| `roles` / `user_roles` | WHO are you | coarse identity tier | the user's role(s) |
+| `permissions` / `role_permissions` | WHAT action can this **role** perform | named capability (`module.action`) | the **role** |
+| `user_permission_overrides` | WHICH module, at what tier, for **this user** | `module_key` + `canAccess` + `grantedLevel` | the **individual user** |
+
+Guard chain once built: `JwtAuthGuard → RolesGuard → ModuleAccessGuard → PermissionsGuard`.
+`PermissionsGuard` resolves the user's `roleId`s → `role_permissions` → `permissions.name`
+and checks the requested permission string is in that set — it is a ROLE lookup, never a
+per-user one. Apply `@RequirePermission('coi.export_report')` only to individual handler
+methods that need finer control than Viewer/Contributor/Approver/Manager already gives;
+leave ordinary module CRUD gated by `grantedLevel` alone.
+
+Naming convention: `permissions.name` = `<module_key>.<action>`, using the same
+`VALID_MODULE_KEYS` vocabulary as `user_permission_overrides.module_key` so the two tables
+share one module vocabulary instead of drifting into two (see `user_module_assignments`
+below for what happens when they drift).
+
+**Do not** add a per-user permission-exception table (a `UserPermission` bypassing
+`role_permissions`) — that collapses Layer 1.5 back into Layer 3's job. A user needing a
+permission their role doesn't grant is a role problem (split the role / add a role), not a
+reason to duplicate the per-user-exception mechanism `user_permission_overrides` already owns.
+
 ### Critical Enforcement Rule (PHASE BBBG, Track 1)
 Record-ownership validators (`validateOperationOwnership`, `validateFinancialAccess` in
 `university-operations.service.ts`) MUST read `granted_level` from
@@ -202,6 +242,7 @@ though `ModuleAccessGuard` already admitted them.
 
 ### Enforcement Surfaces
 - Server-side identity: `@Roles('Admin', 'Staff')` + `RolesGuard`
+- Server-side named action (PLANNED, not built): `PermissionsGuard` + `@RequirePermission(...)` (reads `role_permissions`/`permissions`, role-scoped — see Layer 1.5 above)
 - Server-side module level: `ModuleAccessGuard` (reads `user_permission_overrides`)
 - Frontend: `usePermissions()` composable + `canUpload`/`canDelete` props (presentation only — backend is authoritative)
 - Public routes: `@Public()` decorator (no JWT guard)

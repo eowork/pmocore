@@ -630,7 +630,7 @@ export class UsersService {
         assignedBy: adminId,
         createdBy: adminId,
       });
-      await this.em.persistAndFlush(ur);
+      await this.em.persist(ur).flush();
       this.logger.log(
         `USER_ROLE_ASSIGNED: user=${userId}, role=${dto.role_id}, superadmin=${dto.is_superadmin}, by=${adminId}`,
       );

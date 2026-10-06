@@ -11,8 +11,42 @@ import { UsersService } from '../users/users.service';
 import { SetPermissionOverrideDto } from '../users/dto';
 import { CreateAccessRequestDto, DecideAccessRequestDto } from './dto';
 import { JwtPayload } from '../common/interfaces';
+import { ModuleType } from '../common/enums';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
+
+// Best-effort mapping from the fine-grained access-request module key to the
+// coarser ModuleType bucket used by user_module_assignments (the legacy Admin
+// "responsibility scope" table — superseded by user_permission_overrides for actual
+// authorization, but still populated/displayed via users/access-[id].vue's Module
+// Scope tab). contractors/funding_sources/users have no ModuleType equivalent and
+// are intentionally left unmapped.
+const MODULE_TYPE_BY_ACCESS_MODULE: Partial<Record<string, ModuleType>> = {
+  coi: ModuleType.CONSTRUCTION,
+  repairs: ModuleType.REPAIR,
+  university_operations: ModuleType.OPERATIONS,
+  'university-operations-physical': ModuleType.OPERATIONS,
+  'university-operations-financial': ModuleType.OPERATIONS,
+};
+
+// Onboarding convenience (PoLP): approving only the PARENT 'university_operations' key
+// leaves both pillar sub-pages unreachable — physical/index.vue and its financial
+// counterpart gate their own canEditData()/canApprove() on these SUB-module keys
+// specifically (never the parent), and a user with zero pillar assignments is
+// redirected away entirely by hasAnyPillarAccess(). Without this, approving the
+// self-service onboarding request (which only ever targets the parent key — see
+// ACCESS_REQUEST_MODULE_OPTIONS) would still leave the user unable to see anything,
+// forcing the admin through 2 more manual grants + 4 pillar checkboxes every time.
+const UNIVERSITY_OPERATIONS_SUBMODULES = [
+  'university-operations-physical',
+  'university-operations-financial',
+];
+const ALL_PILLAR_TYPES = [
+  'HIGHER_EDUCATION',
+  'ADVANCED_EDUCATION',
+  'RESEARCH',
+  'TECHNICAL_ADVISORY',
+];
 
 /**
  * PHASE BBBA (BBBA-3c) — self-service access requests.
@@ -202,6 +236,63 @@ export class AccessRequestsService {
         grantDto,
         admin.sub,
       );
+
+      // PoLP onboarding auto-provision — see UNIVERSITY_OPERATIONS_SUBMODULES comment.
+      // Only touches a sub-module that has NO active override yet, so it can never
+      // downgrade a level an admin already granted manually (e.g. financial already
+      // upgraded to Contributor stays untouched). Both start at Viewer, never higher —
+      // an admin still upgrades them explicitly via users/access-[id].vue.
+      if (req.requestedModule === 'university_operations') {
+        const existingOverrides = await this.usersService.getPermissionOverrides(
+          req.userId,
+        );
+        for (const subModuleKey of UNIVERSITY_OPERATIONS_SUBMODULES) {
+          const existing = existingOverrides.find(
+            (o) => o.module_key === subModuleKey,
+          );
+          if (existing?.can_access) continue;
+          await this.usersService.setPermissionOverride(
+            req.userId,
+            {
+              module_key: subModuleKey,
+              can_access: true,
+              granted_level: 'Viewer',
+            } as SetPermissionOverrideDto,
+            admin.sub,
+          );
+        }
+        for (const pillarType of ALL_PILLAR_TYPES) {
+          await this.usersService.assignPillar(
+            req.userId,
+            pillarType,
+            admin.sub,
+          );
+        }
+      }
+
+      // Best-effort sync of the legacy user_module_assignments table — see
+      // MODULE_TYPE_BY_ACCESS_MODULE comment. Not the source of authorization truth
+      // (that's the override above), so a mapping miss or an already-existing
+      // assignment (ConflictException, e.g. user already holds broader 'ALL') must
+      // never fail the approval itself.
+      const mappedModuleType =
+        MODULE_TYPE_BY_ACCESS_MODULE[req.requestedModule];
+      if (mappedModuleType) {
+        try {
+          await this.usersService.assignModule(
+            req.userId,
+            mappedModuleType,
+            admin.sub,
+          );
+        } catch (err) {
+          if (!(err instanceof ConflictException)) {
+            this.logger.warn(
+              `ACCESS_REQUEST_MODULE_ASSIGN_SYNC_FAILED: user=${req.userId}, module=${mappedModuleType}, id=${id} — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
       req.status = 'APPROVED';
       req.grantedLevel = level;
     } else {
@@ -254,6 +345,86 @@ export class AccessRequestsService {
       this.logger.warn(
         `ACCESS_REQUEST_REVOKE: override already absent for user=${req.userId} module=${req.requestedModule} — ${(err as Error).message}`,
       );
+    }
+
+    // Mirror of decide()'s PoLP auto-provision: pull back a sub-module ONLY if it's
+    // still at the auto-granted 'Viewer' baseline — an admin who deliberately upgraded
+    // it afterward (Contributor+) made that call independently of this request, and
+    // revoking the parent must not silently undo it. Pillars only come off if
+    // 'university-operations-physical' itself is actually being removed here; if it
+    // was preserved (upgraded), the pillars it depends on must stay too, or that
+    // preserved access gets redirected away by hasAnyPillarAccess() for nothing.
+    if (req.requestedModule === 'university_operations') {
+      const existingOverrides = await this.usersService.getPermissionOverrides(
+        req.userId,
+      );
+      let physicalStillActive = false;
+      for (const subModuleKey of UNIVERSITY_OPERATIONS_SUBMODULES) {
+        const existing = existingOverrides.find(
+          (o) => o.module_key === subModuleKey,
+        );
+        if (!existing?.can_access) continue;
+        if (existing.granted_level !== 'Viewer') {
+          if (subModuleKey === 'university-operations-physical') {
+            physicalStillActive = true;
+          }
+          continue;
+        }
+        try {
+          await this.usersService.removePermissionOverride(
+            req.userId,
+            subModuleKey,
+            admin.sub,
+          );
+        } catch (err) {
+          if (!(err instanceof NotFoundException)) {
+            this.logger.warn(
+              `ACCESS_REQUEST_SUBMODULE_REVOKE_FAILED: user=${req.userId}, module=${subModuleKey}, id=${id} — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+      if (!physicalStillActive) {
+        for (const pillarType of ALL_PILLAR_TYPES) {
+          await this.usersService.revokePillar(
+            req.userId,
+            pillarType,
+            admin.sub,
+          );
+        }
+      }
+    }
+
+    // Mirror of decide()'s best-effort user_module_assignments sync: only drop the
+    // coarse ModuleType bucket if no OTHER live override for this user still maps to
+    // it (e.g. a separate 'university-operations-financial' grant must keep the
+    // OPERATIONS bucket even though this 'university_operations' one was revoked).
+    const mappedModuleType = MODULE_TYPE_BY_ACCESS_MODULE[req.requestedModule];
+    if (mappedModuleType) {
+      const remaining = await this.usersService.getPermissionOverrides(
+        req.userId,
+      );
+      const stillHasBucket = remaining.some(
+        (o) =>
+          o.can_access &&
+          o.module_key !== req.requestedModule &&
+          MODULE_TYPE_BY_ACCESS_MODULE[o.module_key] === mappedModuleType,
+      );
+      if (!stillHasBucket) {
+        try {
+          await this.usersService.removeModuleAssignment(
+            req.userId,
+            mappedModuleType,
+            admin.sub,
+          );
+        } catch (err) {
+          if (!(err instanceof NotFoundException)) {
+            this.logger.warn(
+              `ACCESS_REQUEST_MODULE_ASSIGN_REVOKE_SYNC_FAILED: user=${req.userId}, module=${mappedModuleType}, id=${id} — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
     }
 
     req.status = 'REVOKED';

@@ -42,7 +42,7 @@ const PILLARS = [
   { id: 'HIGHER_EDUCATION', name: 'Higher Education', fullName: 'Higher Education Program', icon: 'mdi-school', color: '#1976D2' },
   { id: 'ADVANCED_EDUCATION', name: 'Advanced Ed', fullName: 'Advanced Education Program', icon: 'mdi-book-education', color: '#7B1FA2' },
   { id: 'RESEARCH', name: 'Research', fullName: 'Research Program', icon: 'mdi-flask', color: '#00897B' },
-  { id: 'TECHNICAL_ADVISORY', name: 'Extension', fullName: 'Technical Advisory Extension', icon: 'mdi-handshake', color: '#F57C00' },
+  { id: 'TECHNICAL_ADVISORY', name: 'Extension', fullName: 'Technical Advisory Extension Program', icon: 'mdi-handshake', color: '#F57C00' },
 ] as const
 
 // State
@@ -570,7 +570,7 @@ onMounted(async () => {
             <v-card variant="tonal" class="h-100">
               <v-card-title class="text-subtitle-1 d-flex align-center">
                 <v-icon start size="small" color="primary">mdi-chart-bar-stacked</v-icon>
-                Target vs Actual by Pillar - FY {{ selectedFiscalYear }}
+                Target vs Actual by Program - FY {{ selectedFiscalYear }}
               </v-card-title>
               <v-card-text>
                 <ClientOnly>
@@ -592,12 +592,12 @@ onMounted(async () => {
         </v-row>
 
         <v-row>
-          <!-- Pillar Accomplishment Rates -->
+          <!-- Program Accomplishment Rates -->
           <v-col cols="12" md="4">
             <v-card variant="tonal" class="h-100">
               <v-card-title class="text-subtitle-1 d-flex align-center">
                 <v-icon start size="small" color="primary">mdi-chart-donut</v-icon>
-                Pillar Accomplishment Rates
+                Program Accomplishment Rates
               </v-card-title>
               <v-card-text>
                 <ClientOnly>
@@ -672,7 +672,7 @@ onMounted(async () => {
                   <v-avatar :color="pillar.color" size="32" class="mr-2">
                     <v-icon size="18" color="white">{{ pillar.icon }}</v-icon>
                   </v-avatar>
-                  <span class="text-subtitle-2 font-weight-medium">{{ pillar.name }}</span>
+                  <span class="text-subtitle-2 font-weight-medium">{{ pillar.fullName }}</span>
                 </div>
                 <div
                   v-if="pillarSummary?.pillars?.find((p: any) => p.pillar_type === pillar.id)"

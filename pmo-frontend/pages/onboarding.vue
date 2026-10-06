@@ -3,7 +3,7 @@
 // the authenticated user's profile is incomplete. Collects identity confirmation + professional
 // info, lets them request module access (business-friendly), then shows an approval timeline.
 import { CAMPUS_OPTIONS } from '~/utils/campus'
-import { ACCESS_REQUEST_MODULE_OPTIONS, ACCESS_LEVEL_OPTIONS, labelForAccessModule, type AccessRequest } from '~/utils/accessControl'
+import { ACCESS_REQUEST_MODULE_OPTIONS, SELF_SERVICE_LEVEL_OPTIONS, labelForAccessModule, type AccessRequest } from '~/utils/accessControl'
 
 definePageMeta({ middleware: ['auth'] })
 
@@ -23,9 +23,10 @@ const form = ref({
   justification: '',
 })
 
-// PHASE BBBF (Track 3 / Task A): multi-module selection + a single requested ROLE per module
-// (Viewer/Contributor/Approver/Manager). The administrator determines final permissions on approval.
-const roleOptions = ACCESS_LEVEL_OPTIONS
+// PHASE BBBF (Track 3 / Task A): multi-module selection + a single requested ROLE per module.
+// Self-service requests are capped at Viewer/Contributor — Approver/Manager is granted
+// manually by a SuperAdmin per-user (users/access-[id].vue), never requested directly.
+const roleOptions = SELF_SERVICE_LEVEL_OPTIONS
 const moduleOptions = ACCESS_REQUEST_MODULE_OPTIONS
 const moduleSelections = ref<Record<string, { checked: boolean; role: string }>>(
   Object.fromEntries(moduleOptions.map(m => [m.value, { checked: false, role: 'Viewer' }])),

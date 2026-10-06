@@ -9,8 +9,8 @@ export class Permission {
   @Property({ length: 100, unique: true })
   name!: string;
 
-  @Property({ length: 255 })
-  displayName!: string;
+  @Property({ nullable: true, length: 255 })
+  displayName?: string;
 
   @Property({ nullable: true, columnType: 'text' })
   description?: string;
@@ -18,17 +18,20 @@ export class Permission {
   @Property({ nullable: true, length: 100 })
   module?: string;
 
-  @Property({ nullable: true, length: 100 })
-  resource?: string;
+  @Property({ length: 100 })
+  resource!: string;
 
-  @Property({ nullable: true, length: 100 })
-  action?: string;
+  @Property({ length: 100 })
+  action!: string;
 
   @Property({ type: 'boolean', default: false })
   isSystem: boolean = false;
 
   @Property({ nullable: true, columnType: 'uuid' })
   createdBy?: string;
+
+  @Property({ nullable: true, columnType: 'jsonb' })
+  metadata?: Record<string, any>;
 
   @Property({ nullable: true, columnType: 'uuid' })
   deletedBy?: string;

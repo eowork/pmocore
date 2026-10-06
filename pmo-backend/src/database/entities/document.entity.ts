@@ -1,7 +1,8 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { DocumentRepository } from '../../documents/repository/document.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'documents' })
+@Entity({ tableName: 'documents', repository: () => DocumentRepository })
 export class Document {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
@@ -30,8 +31,8 @@ export class Document {
   @Property({ nullable: true, columnType: 'text' })
   description?: string;
 
-  @Property({ type: 'integer', default: 1 })
-  version: number = 1;
+  @Property({ nullable: true, type: 'integer', default: 1 })
+  version?: number;
 
   @Property({ nullable: true, length: 50 })
   category?: string;
@@ -45,8 +46,8 @@ export class Document {
   @Property({ nullable: true, columnType: 'timestamptz' })
   processedAt?: Date;
 
-  @Property({ length: 50, default: 'ready' })
-  status: string = 'ready';
+  @Property({ nullable: true, length: 50, default: 'ready' })
+  status?: string;
 
   @Property({ length: 20, default: 'ACTIVE' })
   lifecycleStatus: string = 'ACTIVE';

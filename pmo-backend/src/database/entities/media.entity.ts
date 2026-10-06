@@ -1,4 +1,4 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { Entity, Enum, Filter, PrimaryKey, Property } from '@mikro-orm/core';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
 @Entity({ tableName: 'media' })
@@ -12,7 +12,13 @@ export class Media {
   @Property({ columnType: 'uuid' })
   mediableId!: string;
 
-  @Property()
+  // Native postgres enum. Declared with @Enum + nativeEnumName so mikro-orm models it the
+  // same way it introspects it; as a plain @Property the differ saw "enum in DB, varchar in
+  // entity" and generated a retype on every diff that never actually converged.
+  @Enum({
+    items: ['IMAGE', 'VIDEO', 'DOCUMENT', 'OTHER'],
+    nativeEnumName: 'media_type_enum',
+  })
   mediaType!: string;
 
   @Property({ length: 255 })
@@ -36,8 +42,8 @@ export class Media {
   @Property({ nullable: true, length: 255 })
   altText?: string;
 
-  @Property({ type: 'boolean', default: false })
-  isFeatured: boolean = false;
+  @Property({ nullable: true, type: 'boolean', default: false })
+  isFeatured?: boolean = false;
 
   @Property({ nullable: true, length: 255 })
   thumbnailUrl?: string;
@@ -51,8 +57,8 @@ export class Media {
   @Property({ nullable: true, columnType: 'date' })
   captureDate?: Date;
 
-  @Property({ type: 'integer', default: 0 })
-  displayOrder: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  displayOrder?: number = 0;
 
   @Property({ nullable: true, columnType: 'jsonb' })
   location?: Record<string, any>;

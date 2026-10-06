@@ -1,6 +1,10 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
+import { UserPermissionOverrideRepository } from '../../common/repository/user-permission-override.repository';
 
-@Entity({ tableName: 'user_permission_overrides' })
+@Entity({
+  tableName: 'user_permission_overrides',
+  repository: () => UserPermissionOverrideRepository,
+})
 export class UserPermissionOverride {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

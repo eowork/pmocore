@@ -22,7 +22,7 @@ const route = useRoute()
 const api = useApi()
 const toast = useToast()
 const authStore = useAuthStore()
-const { isAdmin, isStaff, canAdd, isSuperAdmin } = usePermissions()
+const { isAdmin, isStaff, canAdd, canApprove, isSuperAdmin } = usePermissions()
 
 // Phase DW-C: Centralized fiscal year store
 import { useFiscalYearStore } from '~/stores/fiscalYear'
@@ -94,6 +94,27 @@ const PILLARS = [
   },
 ] as const
 
+// Phase HN parity (Directive 159/222) — same convention as financial/index.vue's
+// visiblePillars: Admin/SuperAdmin bypass, otherwise membership in pillar_assignments
+// is required. FIX: an empty list means NO pillars granted (default-deny) — a user
+// with zero assignments has simply never been given pillar access, not "no
+// restriction"; see hasAnyPillarAccess below, which redirects that case away entirely.
+// Disables rather than hides (per this page's spec) — the tab stays visible so the
+// restriction is legible, it just can't be activated.
+function isPillarAccessible(pillarId: string): boolean {
+  if (isAdmin.value || isSuperAdmin.value) return true
+  const assignments = authStore.user?.pillarAssignments ?? []
+  return assignments.includes(pillarId)
+}
+
+// Whether the user has ANY reason to be on this page — Admin/SuperAdmin bypass,
+// otherwise at least one pillar assignment is required. Zero assignments ⇒ redirect
+// with a toast (handled in onMounted) rather than rendering a page with every tab disabled.
+const hasAnyPillarAccess = computed(() => {
+  if (isAdmin.value || isSuperAdmin.value) return true
+  return (authStore.user?.pillarAssignments ?? []).length > 0
+})
+
 // State
 // Phase DW-C: selectedFiscalYear now comes from fiscalYearStore (storeToRefs)
 // Phase DW-A: Remove ALL; default to Q1; Q4 = Final Year Projection
@@ -104,9 +125,9 @@ const selectedQuarter = ref<string>(
     : 'Q1'
 )
 const activePillar = ref<string>(
-  (route.query.pillar as string) && PILLARS.some(p => p.id === route.query.pillar)
+  (route.query.pillar as string) && PILLARS.some(p => p.id === route.query.pillar) && isPillarAccessible(route.query.pillar as string)
     ? (route.query.pillar as string)
-    : PILLARS[0].id
+    : (PILLARS.find(p => isPillarAccessible(p.id))?.id ?? PILLARS[0].id)
 )
 const loading = ref(true)
 const actionLoading = ref(false)
@@ -173,6 +194,15 @@ const pendingEditIndicator = ref<any>(null)
 const unlockRequestDialog = ref(false)
 const unlockRequestReason = ref('')
 const unlockRequestLoading = ref(false)
+
+// In-page reviewer actions — Approve/Reject were previously only reachable from
+// /admin/pending-reviews; a reviewer landing on this page directly (e.g. Submit
+// button owner's own pillar view) had no way to act. approving/rejecting loading
+// flags + reject dialog state, mirroring pending-reviews.vue's pattern.
+const approvingReport = ref(false)
+const rejectReportDialog = ref(false)
+const rejectReportNotes = ref('')
+const rejectingReport = ref(false)
 
 // Phase DT-A: Tab-navigation state removed — dialog now shows all quarters simultaneously
 
@@ -373,7 +403,7 @@ async function findCurrentOperation() {
 
     // Phase EK-C: Add filters to avoid pagination miss
     const response = await api.get<any>(
-      `/api/university-operations?type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
+      `/api/university-operations?operation_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&limit=100`
     )
     const data = Array.isArray(response) ? response : (response?.data || [])
 
@@ -512,7 +542,10 @@ function isOwnerOrAssigned(op: any): boolean {
 }
 
 function canEditData(): boolean {
-  if (!currentOperation.value) return canAdd('operations')
+  // Phase HU: gate by the Physical sub-module's own granted level, not the stale
+  // 'operations' key (which matched no moduleLevels entry and silently fell through
+  // to the plain role table, letting any Staff user add data regardless of level).
+  if (!currentOperation.value) return canAdd('university-operations-physical')
   // Phase GOV-C: Admin on PUBLISHED quarterly must have explicit unlock approval
   if (isAdmin.value) {
     if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') {
@@ -523,6 +556,11 @@ function canEditData(): boolean {
   if (currentOperation.value.publication_status === 'PUBLISHED') return false
   // Phase ER-A: Published quarterly report locks indicator/financial edits for non-admin users
   if (currentQuarterlyReport.value?.publication_status === 'PUBLISHED') return false
+  // Layer 3 enforcement order (technical-reference/architecture.md): Approver/Manager get
+  // full module CRUD with record scope bypassed; Contributor is scoped to owned/assigned
+  // records only; Viewer/no grant is denied outright even if flagged owner/assigned.
+  if (canApprove('university-operations-physical')) return true
+  if (!canAdd('university-operations-physical')) return false
   return isOwnerOrAssigned(currentOperation.value)
 }
 
@@ -532,17 +570,30 @@ function canSubmitAllPillars(): boolean {
   if (isLoadingQuarterlyReport.value) return false
   // Phase EP-D: Block Submit when quarterly report state is unknown (fetch failed)
   if (quarterlyReportFetchFailed.value) return false
+  // Submitting for admin review requires Approver/Manager module level (or Admin) —
+  // Contributor may create/edit quarterly data but does not submit the batch for review.
+  if (!isAdmin.value && !canApprove('university-operations-physical')) return false
   // If we have a quarterly report, check its status
   if (currentQuarterlyReport.value) {
     const status = currentQuarterlyReport.value.publication_status
-    if (status !== 'DRAFT' && status !== 'REJECTED') return false
-    if (isAdmin.value) return true
-    return currentQuarterlyReport.value.created_by === authStore.user?.id
+    return status === 'DRAFT' || status === 'REJECTED'
   }
   // No quarterly report yet — allow creating one if there are pillar operations
-  if (allPillarOperations.value.length === 0) return false
-  if (isAdmin.value) return true
-  return allPillarOperations.value.some(op => isOwnerOrAssigned(op))
+  return allPillarOperations.value.length > 0
+}
+
+// In-page reviewer guard — Approve/Reject buttons on this page itself.
+// This page is scoped to the Physical pillar only — every authorization check here
+// uses the 'university-operations-physical' module level exclusively, never the
+// parent 'university_operations' key (which ORs across Physical + Financial via
+// UO_LEVEL_KEYS on the backend). The parent key is reserved for
+// university-operations/index.vue, the shared landing page that isn't tied to one pillar.
+// A reviewer scoped only to Financial (or only holding the bare parent grant) won't
+// see Approve/Reject here — Admin/SuperAdmin still bypass via isAdmin/isSuperAdmin.
+function canReviewThisReport(): boolean {
+  if (!currentQuarterlyReport.value) return false
+  if (currentQuarterlyReport.value.publication_status !== 'PENDING_REVIEW') return false
+  return isAdmin.value || isSuperAdmin.value || canApprove('university-operations-physical')
 }
 
 // Phase EM-C: Withdraw guard — checks quarterly report status
@@ -550,6 +601,10 @@ function canWithdrawAllPillars(): boolean {
   if (!currentQuarterlyReport.value) return false
   if (currentQuarterlyReport.value.publication_status !== 'PENDING_REVIEW') return false
   if (isAdmin.value) return true
+  // Approver/Manager may withdraw any pending submission in this module, not just the
+  // one they personally submitted — mirrors canSubmitAllPillars' authority. The
+  // submitted_by fallback covers historical rows submitted before this rule existed.
+  if (canApprove('university-operations-physical')) return true
   return currentQuarterlyReport.value.submitted_by === authStore.user?.id
 }
 
@@ -636,6 +691,7 @@ async function openEntryDialogDirect(indicator: any) {
       score_q4: existingData.score_q4 || '',
       remarks: existingData.remarks || '',
       override_rate: existingData.override_rate ?? null,
+      override_variance: existingData.override_variance ?? null,
       _existingId: existingData.id || null,
     }
   } else {
@@ -681,7 +737,10 @@ async function openEntryDialogDirect(indicator: any) {
         score_q3: priorData.score_q3 || '',
         score_q4: priorData.score_q4 || '',
         remarks: priorData.remarks || '',
-        override_rate: null, // Phase FY-2: do not inherit prior quarter's override
+        // Overrides are a judgement about one quarter's own figures, so neither the rate
+        // nor the variance override is carried over from the prior quarter.
+        override_rate: null,
+        override_variance: null,
         _existingId: preservedId,
       }
       wasPrefilled.value = true
@@ -696,6 +755,7 @@ async function openEntryDialogDirect(indicator: any) {
         score_q1: '', score_q2: '', score_q3: '', score_q4: '',
         remarks: '',
         override_rate: null,
+        override_variance: null,
         _existingId: preservedId,
       }
     }
@@ -722,6 +782,8 @@ function sanitizeNumericPayload(data: any): any {
     'accomplishment_q2',
     'accomplishment_q3',
     'accomplishment_q4',
+    'override_rate',
+    'override_variance',
   ]
 
   const sanitized = { ...data }
@@ -802,6 +864,10 @@ async function saveQuarterlyData() {
       score_q3: entryForm.value.score_q3,
       score_q4: entryForm.value.score_q4,
       remarks: entryForm.value.remarks,
+      // Without these two the override inputs were write-only: the dialog showed them,
+      // the server never received them, and the column kept its old value (Directives 213/359).
+      override_rate: entryForm.value.override_rate,
+      override_variance: entryForm.value.override_variance,
     }
 
     // Phase DV-A: Sanitize empty strings to null for numeric fields
@@ -891,6 +957,18 @@ async function saveQuarterlyData() {
   }
 }
 
+/**
+ * Read an override input as a number, or null when it is blank.
+ *
+ * v-model.number leaves an empty string behind when the user deletes the field's contents,
+ * and 0 is a legitimate override value, so a plain falsy check would silently discard it.
+ */
+function toNullableNumber(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 // Phase FY-1: DBM BAR1 standard — ALL indicator types use SUM (Directive 211/212)
 const computedPreview = computed(() => {
   const f = entryForm.value
@@ -906,12 +984,31 @@ const computedPreview = computed(() => {
     ? actuals.reduce((a, b) => Number(a) + Number(b), 0)
     : null
 
-  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
-  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+  const computedVariance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const computedRate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
     ? (totalActual / totalTarget) * 100
     : null
 
-  return { totalTarget, totalActual, variance, rate }
+  // Mirror the server's precedence (computeIndicatorMetrics) so the dialog previews the
+  // figures that will actually be stored: explicit variance override first, then the
+  // variance implied by an override rate, then the auto-calculation.
+  const overrideRate = toNullableNumber(f.override_rate)
+  const overrideVariance = toNullableNumber(f.override_variance)
+
+  // A zero target makes the rate meaningless, so nothing is derived from it there.
+  const rateVariance = overrideVariance === null && overrideRate !== null && totalTarget !== null && totalTarget !== 0
+    ? totalTarget * (overrideRate / 100 - 1)
+    : null
+
+  const variance = overrideVariance ?? rateVariance ?? computedVariance
+  const rate = overrideRate ?? computedRate
+  const varianceSource = overrideVariance !== null
+    ? 'override_variance'
+    : rateVariance !== null
+      ? 'override_rate'
+      : 'computed'
+
+  return { totalTarget, totalActual, variance, rate, computedVariance, computedRate, varianceSource }
 })
 
 // Phase EM-C: Submit quarterly report for the current FY+quarter (single API call)
@@ -992,6 +1089,53 @@ async function submitUnlockRequest() {
   }
 }
 
+// In-page reviewer action: approve the current FY+quarter report directly from
+// this pillar view. Backend still enforces the PENDING_REVIEW status check and
+// rank-based approval (self-approval / rank hierarchy) — this only gates visibility.
+async function approveThisReport() {
+  if (!currentQuarterlyReport.value) return
+  approvingReport.value = true
+  try {
+    await api.post(`/api/university-operations/quarterly-reports/${currentQuarterlyReport.value.id}/approve`, {})
+    toast.success(`${selectedQuarter.value} report approved`)
+    await fetchQuarterlyReport()
+    await findCurrentOperation()
+  } catch (err: any) {
+    console.error('[Physical] approveThisReport:', err)
+    toast.error(err.message || 'Failed to approve quarterly report')
+  } finally {
+    approvingReport.value = false
+  }
+}
+
+function openRejectReportDialog() {
+  rejectReportNotes.value = ''
+  rejectReportDialog.value = true
+}
+
+async function rejectThisReport() {
+  if (!currentQuarterlyReport.value) return
+  if (!rejectReportNotes.value.trim()) {
+    toast.warning('Please provide rejection notes')
+    return
+  }
+  rejectingReport.value = true
+  try {
+    await api.post(`/api/university-operations/quarterly-reports/${currentQuarterlyReport.value.id}/reject`, {
+      notes: rejectReportNotes.value.trim(),
+    })
+    toast.success(`${selectedQuarter.value} report rejected`)
+    rejectReportDialog.value = false
+    await fetchQuarterlyReport()
+    await findCurrentOperation()
+  } catch (err: any) {
+    console.error('[Physical] rejectThisReport:', err)
+    toast.error(err.message || 'Failed to reject quarterly report')
+  } finally {
+    rejectingReport.value = false
+  }
+}
+
 
 // Phase DQ-B: Decoupled Watch Handlers
 // Pillar changes refetch taxonomy + indicator data
@@ -1042,6 +1186,13 @@ watch(selectedQuarter, async () => {
 
 // Phase DW-C: Fix race condition - await fiscal year fetch before indicator data
 onMounted(async () => {
+  // Zero pillar assignments ⇒ nothing on this page is accessible — bounce back to
+  // the UO landing page instead of rendering with every tab disabled.
+  if (!hasAnyPillarAccess.value) {
+    toast.error('No pillar access assigned. Contact your administrator.')
+    router.push('/university-operations')
+    return
+  }
   // Ensure fiscal year is initialized before fetching pillar data
   await fiscalYearStore.fetchFiscalYears()
   await fetchPillarData()
@@ -1179,6 +1330,37 @@ onMounted(async () => {
           Approved
         </v-chip>
         <!-- Phase DW-C: "Add Fiscal Year" button moved to main university-operations page -->
+        <!-- In-page reviewer actions: Admin/SuperAdmin or an Approver/Manager grant scoped
+             to 'university-operations-physical' specifically (this page's own pillar, not
+             the shared parent key). Shown alongside the chain above rather than replacing
+             it — a reviewer may hold both submitter and reviewer authority at once. Backend
+             still enforces PENDING_REVIEW status + rank-based approval on click. -->
+        <v-btn
+          v-if="canReviewThisReport()"
+          color="success"
+          variant="tonal"
+          density="compact"
+          prepend-icon="mdi-check-circle"
+          :loading="approvingReport"
+          @click="approveThisReport"
+          class="flex-sm-0-0-auto"
+        >
+          <span class="d-none d-sm-inline">Approve</span>
+          <v-icon class="d-sm-none">mdi-check-circle</v-icon>
+        </v-btn>
+        <v-btn
+          v-if="canReviewThisReport()"
+          color="error"
+          variant="tonal"
+          density="compact"
+          prepend-icon="mdi-close-circle"
+          :loading="rejectingReport"
+          @click="openRejectReportDialog"
+          class="flex-sm-0-0-auto"
+        >
+          <span class="d-none d-sm-inline">Reject</span>
+          <v-icon class="d-sm-none">mdi-close-circle</v-icon>
+        </v-btn>
       </div>
     </div>
 
@@ -1289,9 +1471,22 @@ onMounted(async () => {
     <!-- Phase DR-C: Pillar Tabs with Full Program Names -->
     <v-card class="mb-4">
       <v-tabs v-model="activePillar" bg-color="primary" show-arrows class="pillar-tabs">
-        <v-tab v-for="pillar in PILLARS" :key="pillar.id" :value="pillar.id" class="pillar-tab">
+        <v-tab
+          v-for="pillar in PILLARS"
+          :key="pillar.id"
+          :value="pillar.id"
+          :disabled="!isPillarAccessible(pillar.id)"
+          class="pillar-tab"
+        >
           <v-icon start>{{ pillar.icon }}</v-icon>
           {{ pillar.fullName }}
+          <v-tooltip
+            v-if="!isPillarAccessible(pillar.id)"
+            activator="parent"
+            location="bottom"
+          >
+            You are not assigned to this pillar
+          </v-tooltip>
         </v-tab>
       </v-tabs>
     </v-card>
@@ -1802,28 +1997,54 @@ onMounted(async () => {
                   Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}
                 </v-chip>
                 <!-- Phase FY-2: Override active badge -->
-                <v-chip v-if="entryForm.override_rate !== null && entryForm.override_rate !== ''" color="warning" variant="tonal" size="small">
+                <v-chip v-if="computedPreview.varianceSource !== 'computed'" color="warning" variant="tonal" size="small">
                   <v-icon start size="x-small">mdi-pencil-circle</v-icon>
-                  Override Applied: {{ entryForm.override_rate }}%
+                  Override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
                 </v-chip>
               </div>
-              <!-- Phase FY-2: Optional rate override input (Directive 213) -->
-              <v-text-field
-                v-model.number="entryForm.override_rate"
-                label="Override Rate (%) — Optional"
-                type="number"
-                variant="outlined"
-                density="compact"
-                :min="0"
-                :max="9999.99"
-                clearable
-                hide-details="auto"
-                hint="Leave blank to use auto-calculated rate. Override does not affect Target or Actual values."
-                persistent-hint
-                class="mt-1"
-                style="max-width: 280px;"
-                @click:clear="entryForm.override_rate = null"
-              />
+
+              <!-- Overrides are entered when the auto-calculation is wrong for this record:
+                   the rate override also restates the variance, unless a variance override
+                   is given explicitly. -->
+              <div class="d-flex ga-3 flex-wrap mt-1">
+                <v-text-field
+                  v-model.number="entryForm.override_rate"
+                  label="Override Rate (%) — Optional"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  :min="0"
+                  :max="9999.99"
+                  clearable
+                  hide-details="auto"
+                  hint="Leave blank to use the auto-calculated rate. Also restates Variance unless overridden below. Does not change Target or Actual."
+                  persistent-hint
+                  style="max-width: 280px;"
+                  @click:clear="entryForm.override_rate = null"
+                />
+                <v-text-field
+                  v-model.number="entryForm.override_variance"
+                  label="Override Variance — Optional"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  :min="-999999.99"
+                  :max="999999.99"
+                  clearable
+                  hide-details="auto"
+                  hint="Leave blank to derive Variance from the override rate, or from the quarterly totals."
+                  persistent-hint
+                  style="max-width: 280px;"
+                  @click:clear="entryForm.override_variance = null"
+                />
+              </div>
+
+              <div
+                v-if="computedPreview.varianceSource !== 'computed' && computedPreview.computedVariance !== null"
+                class="text-caption text-grey-darken-1 mt-2"
+              >
+                Auto-calculated variance was {{ formatNumber(computedPreview.computedVariance) }}; the override above replaces it.
+              </div>
             </v-card-text>
           </v-card>
         </v-card-text>
@@ -1908,6 +2129,46 @@ onMounted(async () => {
             @click="submitUnlockRequest"
           >
             Submit Request
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- In-page reviewer action: Reject Report Dialog -->
+    <v-dialog v-model="rejectReportDialog" max-width="500">
+      <v-card>
+        <v-card-title class="text-h6">
+          Reject {{ selectedQuarter }} Report
+        </v-card-title>
+        <v-card-text>
+          <p class="mb-4">
+            Are you sure you want to reject the <strong>{{ selectedQuarter }} FY {{ selectedFiscalYear }}</strong> quarterly report?
+          </p>
+          <v-textarea
+            v-model="rejectReportNotes"
+            label="Rejection Notes"
+            placeholder="Provide feedback for the submitter..."
+            rows="3"
+            variant="outlined"
+            hide-details
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            variant="text"
+            @click="rejectReportDialog = false"
+            :disabled="rejectingReport"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            color="error"
+            variant="flat"
+            @click="rejectThisReport"
+            :loading="rejectingReport"
+          >
+            Reject
           </v-btn>
         </v-card-actions>
       </v-card>

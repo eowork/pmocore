@@ -42,7 +42,6 @@ const {
   canViewTab,
   canEditMilestones: canEditMilestonesFromAccess,
   canEditWorkLog: canEditWorkLogFromAccess,
-  canEditFinancial: canEditFinancialFromAccess,
   canEditPersonnel: canEditPersonnelFromAccess,
   canUploadDocuments,
   canDeleteResources,
@@ -71,7 +70,6 @@ const showNotAssignedNotice = computed(
 // PR-B: per-tab edit flags now respect project-level effectivePermissions
 const canEditMilestones = computed(() => canEditMilestonesFromAccess.value)
 const canEditWorkLog    = computed(() => canEditWorkLogFromAccess.value)
-const canEditFinancial  = computed(() => canEditFinancialFromAccess.value)
 const canEditPersonnel  = computed(() => canEditPersonnelFromAccess.value)
 
 // ACE-R15 Tier 3: Direct ID extraction (no computed, no watchEffect)
@@ -885,41 +883,16 @@ const progAsOfDateMenu       = ref(false)
 const progDateCompletedMenu  = ref(false)
 // OE: Remarks helpers removed — handled by CiRemarksLog component
 
-// MH: Revision Order MOV upload state (immediate POST since project exists)
-const revisionMovLink         = ref('')
-const revisionMovFile         = ref<File | null>(null)
-const uploadingRevisionMov    = ref(false)
-async function uploadRevisionMov() {
-  if (!revisionMovLink.value && !revisionMovFile.value) return
-  uploadingRevisionMov.value = true
-  try {
-    if (revisionMovFile.value) {
-      const fd = new FormData()
-      fd.append('file', revisionMovFile.value)
-      fd.append('documentType', 'revision_order_mov')
-      fd.append('description', 'Variation Order MOV')
-      await api.upload(`/api/construction-projects/${projectId}/documents`, fd)
-    }
-    if (revisionMovLink.value.trim()) {
-      await api.post(`/api/construction-projects/${projectId}/documents`, {
-        documentType: 'revision_order_mov',
-        externalLink: revisionMovLink.value.trim(),
-        title: 'Variation Order MOV',
-        description: 'Documentary means of verification for variation orders',
-      })
-    }
-    toast.success('Variation Order MOV uploaded')
-    revisionMovLink.value = ''
-    revisionMovFile.value = null
-    // Refresh attached docs cache (function declared further below — hoisted)
-    try { await fetchDocs() } catch { /* non-blocking */ }
-  } catch (err: unknown) {
-    const apiError = err as { message?: string }
-    toast.error(apiError.message || 'Failed to upload MOV')
-  } finally {
-    uploadingRevisionMov.value = false
-  }
-}
+// Byte-level transfer progress plus the server's post-transfer phases for MOV evidence
+// files attached in the milestone and diary dialogs, rendered by CiUploadProgressPanel
+// inside each dialog. A MOV is often a photo or a scanned form, long enough to need
+// feedback rather than a button that appears to do nothing.
+const {
+  tasks: movUploadTasks,
+  isUploading: movUploadRunning,
+  overallPercent: movUploadPercent,
+  uploadMovFile: trackedUploadMovFile,
+} = useDocumentUpload(projectId)
 
 const deleteMilestoneDialog = ref(false)
 const deleteMilestoneTarget = ref<EditMilestoneItem | null>(null)
@@ -999,51 +972,6 @@ const milestoneStatusOptions = [
   { title: 'Cancelled', value: 'CANCELLED' },
 ]
 
-// JW-F: Financial records (per-fiscal-year) state + CRUD
-interface EditFinancialItem {
-  id: string
-  fiscalYear: number
-  appropriation: string | number
-  obligation: string | number
-  disbursement: string | number
-  // KB-F: Traceability fields
-  activityTitle?: string | null
-  transactionCategory?: string | null
-  remarks?: string | null
-  paymentReference?: string | null
-  status?: string | null
-}
-const existingFinancials = ref<EditFinancialItem[]>([])
-const loadingFinancials = ref(false)
-const deletingFinancial = ref<Record<string, boolean>>({})
-
-const financialDialog = ref(false)
-const financialDialogMode = ref<'create' | 'edit'>('create')
-const financialEditingId = ref<string | null>(null)
-const financialSubmitting = ref(false)
-const financialForm = ref({
-  fiscal_year: new Date().getFullYear(),
-  appropriation: 0,
-  obligation: 0,
-  disbursement: 0,
-  // KB-F: Traceability fields
-  activity_title: '',
-  transaction_category: '',
-  remarks: '',
-  payment_reference: '',
-  status: 'ALLOCATED',
-})
-
-const financialStatusOptions = [
-  { title: 'Allocated', value: 'ALLOCATED', color: 'grey' },
-  { title: 'Obligated', value: 'OBLIGATED', color: 'info' },
-  { title: 'Disbursed', value: 'DISBURSED', color: 'primary' },
-  { title: 'Liquidated', value: 'LIQUIDATED', color: 'success' },
-]
-
-const deleteFinancialDialog = ref(false)
-const deleteFinancialTarget = ref<EditFinancialItem | null>(null)
-
 // JW-G: Timeline diary entries (per-period work log) state + CRUD
 interface EditDiaryEntry {
   id: string
@@ -1117,13 +1045,6 @@ function getMilestoneStatusColor(status: string): string {
   return map[status] || 'grey'
 }
 
-const docFile = ref<File | null>(null)
-const docType = ref('attachment')
-// KO-F: Additional upload form fields (title + category alongside description)
-const docTitle = ref('')
-const docCategory = ref('')
-const docDescription = ref('')
-const docUploading = ref(false)
 
 // KO-F: KB-E document type taxonomy
 const documentTypes = ref<DocumentTypeOption[]>([])
@@ -1162,11 +1083,6 @@ const typeCodeToLabel = computed(() => {
   return map
 })
 
-// KQ-C: Auto-derive category (groupCode) when documentType selection changes
-watch(docType, (newType) => {
-  const match = documentTypes.value.find(t => t.typeCode === newType)
-  docCategory.value = match?.groupCode ?? ''
-})
 
 // KV-E2: Key docs vs Other docs split
 const keyDocTypeSet = new Set(KEY_DOC_TYPECODES as readonly string[])
@@ -1203,69 +1119,6 @@ const galleryFullscreen = ref(false)
 const checklistFullscreen = ref(false)
 const otherDocsFullscreen = ref(false)
 
-// KW-A2: Separate upload refs for Key Documents (isolated from Other Attachments)
-const keyDocFile      = ref<File | null>(null)
-const keyDocType      = ref('')
-const keyDocTitle     = ref('')
-const keyDocUploading = ref(false)
-
-// KW-A2: Key Documents upload function (isolated refs, no collision with Other Attachments)
-async function uploadKeyDoc() {
-  if (!keyDocFile.value) return
-  if (keyDocFile.value.size > 20 * 1024 * 1024) { toast.error('File exceeds 20 MB'); return }
-  keyDocUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', keyDocFile.value)
-    fd.append('documentType', keyDocType.value || 'other')
-    if (keyDocTitle.value) fd.append('title', keyDocTitle.value)
-    await api.upload(`/api/construction-projects/${projectId}/documents`, fd)
-    toast.success('Key document uploaded')
-    keyDocFile.value = null
-    keyDocType.value = ''
-    keyDocTitle.value = ''
-    await fetchDocs()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Upload failed')
-  } finally {
-    keyDocUploading.value = false
-  }
-}
-
-// ZP: Drag-and-drop upload handler for Key Documents and Other Attachments
-async function handleKeyDocDrop(event: DragEvent) {
-  if (!canUploadDocuments.value) return
-  const files = Array.from(event.dataTransfer?.files ?? [])
-  if (!files.length) return
-  const allowed = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip']
-  const valid = files.filter(f => allowed.some(ext => f.name.toLowerCase().endsWith(ext)))
-  if (!valid.length) { toast.error('No valid file types. Accepted: PDF, DOCX, XLSX, ZIP'); return }
-  for (const file of valid) {
-    if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} exceeds 20 MB`); continue }
-    const fd = new FormData()
-    fd.append('file', file)
-    fd.append('documentType', 'other')
-    try { await api.upload(`/api/construction-projects/${projectId}/documents`, fd) }
-    catch { toast.error(`Upload failed: ${file.name}`) }
-  }
-  await fetchDocs()
-  toast.success(`${valid.length} file(s) uploaded`)
-}
-
-async function handleOtherDocDrop(event: DragEvent) {
-  if (!canUploadDocuments.value) return
-  const files = Array.from(event.dataTransfer?.files ?? [])
-  if (!files.length) return
-  for (const file of files) {
-    if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} exceeds 20 MB`); continue }
-    const fd = new FormData()
-    fd.append('file', file)
-    try { await api.upload(`/api/construction-projects/${projectId}/documents`, fd) }
-    catch { toast.error(`Upload failed: ${file.name}`) }
-  }
-  await fetchDocs()
-  toast.success(`${files.length} file(s) uploaded`)
-}
 
 // KW-G: MOV evidence aggregated view
 const movEntries = ref<any[]>([])
@@ -1287,18 +1140,6 @@ async function handleRemarksUpdate(groupCode: string, remarks: string) {
   }
 }
 
-const profileImageFile = ref<File | null>(null)
-const profileImageCaption = ref('')
-// LD-B: optional photo capture date for profile uploads
-const profileImageTakenDate = ref('')
-const profileUploading = ref(false)
-
-const galleryImageFile = ref<File | null>(null)
-const galleryImageCaption = ref('')
-const imageCategory = ref('IN_PROGRESS')
-// LB-C: user-supplied photo capture date
-const galleryImageTakenDate = ref('')
-const imageUploading = ref(false)
 
 const linkUrl = ref('')
 const linkTitle = ref('')
@@ -1494,12 +1335,7 @@ async function saveMilestone() {
           const movId = (movRes as any)?.id ?? (movRes as any)?.data?.id
           if (mov.file && movId) {
             try {
-              const fd = new FormData()
-              fd.append('file', mov.file)
-              await api.post(
-                `/api/construction-projects/${projectId}/mov-entries/${movId}/upload-file`,
-                fd,
-              )
+              await trackedUploadMovFile(movId, mov.file)
             } catch {
               toast.warning(`MOV entry "${mov.title}" created but file upload failed — attach manually`)
             }
@@ -1553,127 +1389,6 @@ async function executeDeleteMilestone() {
     toast.error((err as { message?: string })?.message || 'Failed to delete milestone')
   } finally {
     deletingMilestone.value[id] = false
-  }
-}
-
-// JW-F: Financial records CRUD
-async function fetchFinancials() {
-  if (!projectId) return
-  loadingFinancials.value = true
-  try {
-    const res = await api.get<any>(
-      `/api/construction-projects/${projectId}/financials`
-    )
-    const financialList: any[] = Array.isArray(res) ? res : (res?.data || [])
-    existingFinancials.value = financialList.map((f: any) => ({
-      id: f.id,
-      fiscalYear: Number(f.fiscalYear ?? f.fiscal_year),
-      appropriation: f.appropriation,
-      obligation: f.obligation,
-      disbursement: f.disbursement,
-      activityTitle: f.activityTitle ?? f.activity_title,
-      transactionCategory: f.transactionCategory ?? f.transaction_category,
-      remarks: f.remarks,
-      paymentReference: f.paymentReference ?? f.payment_reference,
-      status: f.status,
-    }))
-  } catch (err: unknown) {
-    console.error('[COI Edit] Failed to fetch financials:', err)
-  } finally {
-    loadingFinancials.value = false
-  }
-}
-
-function openCreateFinancial() {
-  financialForm.value = {
-    fiscal_year: new Date().getFullYear(),
-    appropriation: 0,
-    obligation: 0,
-    disbursement: 0,
-    activity_title: '',
-    transaction_category: '',
-    remarks: '',
-    payment_reference: '',
-    status: 'ALLOCATED',
-  }
-  financialEditingId.value = null
-  financialDialogMode.value = 'create'
-  financialDialog.value = true
-}
-
-function openEditFinancial(f: EditFinancialItem) {
-  financialForm.value = {
-    fiscal_year: f.fiscalYear,
-    appropriation: Number(f.appropriation) || 0,
-    obligation: Number(f.obligation) || 0,
-    disbursement: Number(f.disbursement) || 0,
-    activity_title: f.activityTitle || '',
-    transaction_category: f.transactionCategory || '',
-    remarks: f.remarks || '',
-    payment_reference: f.paymentReference || '',
-    status: f.status || 'ALLOCATED',
-  }
-  financialEditingId.value = f.id
-  financialDialogMode.value = 'edit'
-  financialDialog.value = true
-}
-
-async function saveFinancial() {
-  if (!financialForm.value.fiscal_year || financialForm.value.fiscal_year < 1900) {
-    toast.error('Fiscal year is required')
-    return
-  }
-  financialSubmitting.value = true
-  try {
-    const payload: Record<string, unknown> = {
-      fiscal_year: Number(financialForm.value.fiscal_year),
-      appropriation: Number(financialForm.value.appropriation) || 0,
-      obligation: Number(financialForm.value.obligation) || 0,
-      disbursement: Number(financialForm.value.disbursement) || 0,
-      activity_title: financialForm.value.activity_title || undefined,
-      transaction_category: financialForm.value.transaction_category || undefined,
-      remarks: financialForm.value.remarks || undefined,
-      payment_reference: financialForm.value.payment_reference || undefined,
-      status: financialForm.value.status || 'ALLOCATED',
-    }
-    if (financialDialogMode.value === 'create') {
-      await api.post(`/api/construction-projects/${projectId}/financials`, payload)
-      toast.success('Financial record added')
-    } else if (financialEditingId.value) {
-      await api.patch(
-        `/api/construction-projects/${projectId}/financials/${financialEditingId.value}`,
-        payload,
-      )
-      toast.success('Financial record updated')
-    }
-    financialDialog.value = false
-    await fetchFinancials()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to save financial record')
-  } finally {
-    financialSubmitting.value = false
-  }
-}
-
-function confirmDeleteFinancial(f: EditFinancialItem) {
-  deleteFinancialTarget.value = f
-  deleteFinancialDialog.value = true
-}
-
-async function executeDeleteFinancial() {
-  if (!deleteFinancialTarget.value) return
-  const id = deleteFinancialTarget.value.id
-  deletingFinancial.value[id] = true
-  try {
-    await api.del(`/api/construction-projects/${projectId}/financials/${id}`)
-    existingFinancials.value = existingFinancials.value.filter(f => f.id !== id)
-    toast.success('Financial record deleted')
-    deleteFinancialDialog.value = false
-    deleteFinancialTarget.value = null
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to delete financial record')
-  } finally {
-    deletingFinancial.value[id] = false
   }
 }
 
@@ -1796,12 +1511,7 @@ async function saveDiary() {
           const movId = (movRes as any)?.id ?? (movRes as any)?.data?.id
           if (mov.file && movId) {
             try {
-              const fd = new FormData()
-              fd.append('file', mov.file)
-              await api.post(
-                `/api/construction-projects/${projectId}/mov-entries/${movId}/upload-file`,
-                fd,
-              )
+              await trackedUploadMovFile(movId, mov.file)
             } catch {
               toast.warning(`MOV entry "${mov.title}" created but file upload failed — attach manually`)
             }
@@ -1866,91 +1576,6 @@ function getEntryTypeColor(entryType: string): string {
     QUARTERLY: 'warning',
   }
   return map[entryType] || 'grey'
-}
-
-async function uploadEditDoc() {
-  if (!docFile.value) return
-  if (docFile.value.size > 20 * 1024 * 1024) {
-    toast.error('File exceeds 20 MB. Use an external link instead.')
-    return
-  }
-  docUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', docFile.value)
-    fd.append('documentType', docType.value)
-    // KO-F: forward optional title + category to backend
-    if (docTitle.value) fd.append('title', docTitle.value)
-    if (docCategory.value) fd.append('category', docCategory.value)
-    if (docDescription.value) fd.append('description', docDescription.value)
-    await api.upload(`/api/construction-projects/${projectId}/documents`, fd)
-    toast.success('Document uploaded')
-    docFile.value = null
-    docType.value = 'attachment'
-    docTitle.value = ''
-    docCategory.value = ''
-    docDescription.value = ''
-    await fetchDocs()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to upload document')
-  } finally {
-    docUploading.value = false
-  }
-}
-
-async function uploadProfileImage() {
-  if (!profileImageFile.value) return
-  if (profileImageFile.value.size > 10 * 1024 * 1024) {
-    toast.error('Image exceeds 10 MB.')
-    return
-  }
-  profileUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', profileImageFile.value)
-    if (profileImageCaption.value) fd.append('caption', profileImageCaption.value)
-    fd.append('category', 'PROFILE')
-    // LD-B: include optional photo capture date
-    if (profileImageTakenDate.value) fd.append('image_taken_date', profileImageTakenDate.value)
-    await api.upload(`/api/construction-projects/${projectId}/gallery`, fd)
-    toast.success('Profile image uploaded')
-    profileImageFile.value = null
-    profileImageCaption.value = ''
-    profileImageTakenDate.value = ''
-    await fetchGallery()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to upload image')
-  } finally {
-    profileUploading.value = false
-  }
-}
-
-async function uploadGalleryImage() {
-  if (!galleryImageFile.value) return
-  if (galleryImageFile.value.size > 10 * 1024 * 1024) {
-    toast.error('Image exceeds 10 MB.')
-    return
-  }
-  imageUploading.value = true
-  try {
-    const fd = new FormData()
-    fd.append('file', galleryImageFile.value)
-    if (galleryImageCaption.value) fd.append('caption', galleryImageCaption.value)
-    fd.append('category', imageCategory.value)
-    // LB-C: send user-supplied photo capture date when provided
-    if (galleryImageTakenDate.value) fd.append('image_taken_date', galleryImageTakenDate.value)
-    await api.upload(`/api/construction-projects/${projectId}/gallery`, fd)
-    toast.success('Image uploaded')
-    galleryImageFile.value = null
-    galleryImageCaption.value = ''
-    imageCategory.value = 'IN_PROGRESS'
-    galleryImageTakenDate.value = ''
-    await fetchGallery()
-  } catch (err: unknown) {
-    toast.error((err as { message?: string })?.message || 'Failed to upload image')
-  } finally {
-    imageUploading.value = false
-  }
 }
 
 async function submitEditLink() {
@@ -2036,7 +1661,6 @@ onMounted(() => {
   fetchDocs()
   fetchGallery()
   fetchMilestones()  // JV-A
-  fetchFinancials()  // JW-F
   fetchDiaryEntries()  // JW-G
   fetchDocumentTypes()  // KO-F: load KB-E taxonomy for upload form
   fetchMovEntries()  // KW-G: MOV evidence aggregation
@@ -2623,6 +2247,12 @@ onBeforeUnmount(() => {
         </v-card-title>
         <v-divider />
         <v-card-text>
+          <!-- Live progress for MOV files queued in this dialog. -->
+          <CiUploadProgressPanel
+            :tasks="movUploadTasks"
+            :running="movUploadRunning"
+            :overall-percent="movUploadPercent"
+          />
           <v-row dense>
             <v-col cols="12">
               <v-text-field
@@ -2859,150 +2489,6 @@ onBeforeUnmount(() => {
       </v-card>
     </v-dialog>
 
-    <!-- ============= JW-F + KB-F: Financial Add/Edit Dialog ============= -->
-    <v-dialog v-model="financialDialog" max-width="720" persistent>
-      <v-card>
-        <v-card-title>
-          {{ financialDialogMode === 'create' ? 'Add Financial Record' : 'Edit Financial Record' }}
-        </v-card-title>
-        <v-divider />
-        <v-card-text class="pt-4">
-          <v-row dense>
-            <v-col cols="12" sm="4">
-              <v-text-field
-                v-model.number="financialForm.fiscal_year"
-                label="Fiscal Year *"
-                type="number"
-                min="1900"
-                max="2100"
-                placeholder="2026"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="4">
-              <v-select
-                v-model="financialForm.status"
-                :items="financialStatusOptions"
-                item-title="title"
-                item-value="value"
-                label="Status"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="4">
-              <v-text-field
-                v-model="financialForm.transaction_category"
-                label="Transaction Category"
-                placeholder="Civil Works, Materials…"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12">
-              <v-text-field
-                v-model="financialForm.activity_title"
-                label="Activity Title"
-                placeholder="e.g., Foundation excavation, Q1 progress billing…"
-                hint="Links the record to a specific work activity or contract item"
-                persistent-hint
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="financialForm.appropriation"
-                label="Appropriation (₱)"
-                type="number"
-                min="0"
-                step="0.01"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="financialForm.obligation"
-                label="Obligation (₱)"
-                type="number"
-                min="0"
-                step="0.01"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="financialForm.disbursement"
-                label="Disbursement (₱)"
-                type="number"
-                min="0"
-                step="0.01"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12" sm="6">
-              <v-text-field
-                v-model="financialForm.payment_reference"
-                label="Payment Reference"
-                placeholder="JEV/billing/transaction number"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-            <v-col cols="12">
-              <v-textarea
-                v-model="financialForm.remarks"
-                label="Remarks / Justification"
-                rows="2"
-                placeholder="Audit annotation or justification…"
-                variant="outlined"
-                density="comfortable"
-              />
-            </v-col>
-          </v-row>
-        </v-card-text>
-        <v-divider />
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" :disabled="financialSubmitting" @click="financialDialog = false">
-            Cancel
-          </v-btn>
-          <v-btn color="primary" :loading="financialSubmitting" @click="saveFinancial">
-            {{ financialDialogMode === 'create' ? 'Add' : 'Save' }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- ============= JW-F: Financial Delete Confirm Dialog ============= -->
-    <v-dialog v-model="deleteFinancialDialog" max-width="420">
-      <v-card>
-        <v-card-title>Delete financial record?</v-card-title>
-        <v-card-text>
-          <p class="mb-2">
-            This will permanently delete the
-            <strong>FY {{ deleteFinancialTarget?.fiscalYear }}</strong> financial record.
-          </p>
-          <p class="text-caption text-grey">This action cannot be undone.</p>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="deleteFinancialDialog = false">Cancel</v-btn>
-          <v-btn
-            color="error"
-            :loading="deleteFinancialTarget ? deletingFinancial[deleteFinancialTarget.id] : false"
-            @click="executeDeleteFinancial"
-          >
-            Delete
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
     <!-- ============= JW-G: Diary Add/Edit Dialog ============= -->
     <v-dialog v-model="diaryDialog" max-width="720" persistent>
       <v-card>
@@ -3011,6 +2497,12 @@ onBeforeUnmount(() => {
         </v-card-title>
         <v-divider />
         <v-card-text class="pt-4">
+          <!-- Live progress for MOV files queued in this dialog. -->
+          <CiUploadProgressPanel
+            :tasks="movUploadTasks"
+            :running="movUploadRunning"
+            :overall-percent="movUploadPercent"
+          />
           <v-row dense>
             <v-col cols="12" sm="4">
               <v-select

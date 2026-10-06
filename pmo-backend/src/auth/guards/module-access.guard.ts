@@ -86,24 +86,41 @@ export class ModuleAccessGuard implements CanActivate {
     }
 
     // AUTHORIZATION LAYER — writes require an explicit override grant AND a sufficient level.
+    // Phase HU: university_operations has 2 independent per-pillar sub-modules
+    // (university-operations-physical / -financial). The whole controller is gated by the
+    // single class-level @RequireModule('university_operations'), so a write would otherwise
+    // be checked ONLY against the parent key's level — ignoring a sub-module-scoped
+    // Approver/Manager grant entirely (the exact gap Phase HU's sub-module split was meant to
+    // enable). When the required module is the parent, also check both sub-modules and allow
+    // if ANY of the three grants a sufficient level for this action.
     const em = this.em.fork();
-    const override = await em.findOne(UserPermissionOverride, {
+    const candidateKeys =
+      requiredModule === 'university_operations'
+        ? [
+            'university_operations',
+            'university-operations-physical',
+            'university-operations-financial',
+          ]
+        : [requiredModule];
+
+    const overrides = await em.find(UserPermissionOverride, {
       userId: user.sub,
-      moduleKey: requiredModule,
+      moduleKey: { $in: candidateKeys },
     });
 
-    if (!override || !override.canAccess) {
+    const granted = overrides.filter((o) => o.canAccess);
+    if (granted.length === 0) {
       this.logger.warn(
         `MODULE_ACTION_DENIED: user=${user.sub}, module=${requiredModule}, action=${action}, reason=NO_GRANT`,
       );
       throw new ForbiddenException('MODULE_ACTION_DENIED');
     }
-    if (levelAllowsAction(override.grantedLevel, action)) {
+    if (granted.some((o) => levelAllowsAction(o.grantedLevel, action))) {
       return true;
     }
 
     this.logger.warn(
-      `MODULE_ACTION_DENIED: user=${user.sub}, module=${requiredModule}, action=${action}, level=${override.grantedLevel ?? 'none'}`,
+      `MODULE_ACTION_DENIED: user=${user.sub}, module=${requiredModule}, action=${action}, levels=${granted.map((o) => o.grantedLevel ?? 'none').join(',')}`,
     );
     throw new ForbiddenException('MODULE_ACTION_DENIED');
   }

@@ -35,6 +35,16 @@ const MODULE_KEY_MAP: Record<string, string> = {
   'users': 'users',
 }
 
+// Mirrors backend's UniversityOperationsService.UO_LEVEL_KEYS (university-operations.service.ts):
+// the parent 'university_operations' key plus its 2 independent per-pillar sub-modules. A
+// Physical-only or Financial-only Approver/Manager grant lives under its own sub-key and never
+// rolls up into the parent — approval authority must OR across all three, same as the backend.
+const UO_LEVEL_KEYS = [
+  'university_operations',
+  'university-operations-physical',
+  'university-operations-financial',
+]
+
 /**
  * Default permission matrix by role
  * Maps role names to CRUD capabilities
@@ -97,6 +107,33 @@ const CONTRACTOR_ALLOWED_MODULES = ['coi', 'dashboard']
 // (view is universal). Non-admins without a granted level get view-only here (aligns with the
 // backend ModuleAccessGuard: no override ⇒ reads pass, writes 403).
 const GATED_MODULES = ['coi', 'repairs', 'university_operations']
+
+/**
+ * Route prefixes of the modules whose entry is gated, mapped to their override/level key.
+ *
+ * Longest prefix first: /university-operations/physical must resolve before the parent so a
+ * sub-module grant is judged against its own key.
+ */
+export const GATED_MODULE_ROUTES: { prefix: string; module: string }[] = [
+  { prefix: '/university-operations', module: 'university_operations' },
+  { prefix: '/repairs', module: 'repairs' },
+  { prefix: '/coi', module: 'coi' },
+]
+
+/**
+ * Routes under a gated prefix that are NOT gated — the public project pages, which render on
+ * the public layout without authentication at all.
+ */
+const GATE_EXEMPT_PREFIXES = ['/coi/public']
+
+/** The gated module a path belongs to, or null when the path is ungated or exempt. */
+export function gatedModuleForPath(path: string): string | null {
+  if (GATE_EXEMPT_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) return null
+  const hit = GATED_MODULE_ROUTES.find(
+    ({ prefix }) => path === prefix || path.startsWith(prefix + '/'),
+  )
+  return hit?.module ?? null
+}
 
 export function usePermissions() {
   const authStore = useAuthStore()
@@ -240,6 +277,35 @@ export function usePermissions() {
   }
 
   /**
+   * Whether the user may ENTER a gated module at all (sidebar lock + route guard).
+   *
+   * Distinct from canAccessModule, which treats every project module as universally viewable.
+   * That rule (BBBE Track 2 / Task H) let anyone who typed the URL land inside COI, Repairs or
+   * University Operations. Entry to those three now requires an actual grant: an explicit
+   * module override, or a per-module level from an approved access request. Admins and
+   * SuperAdmins administer every project module, so they are never locked out.
+   *
+   * University Operations resolves across its parent key and both per-pillar sub-keys, since a
+   * Physical-only or Financial-only grant never rolls up into the parent (same rule the backend
+   * applies in UniversityOperationsService.UO_LEVEL_KEYS).
+   */
+  function canViewModule(moduleId: string): boolean {
+    if (isSuperAdmin.value) return true
+    if (isContractor.value) {
+      return CONTRACTOR_ALLOWED_MODULES.includes(moduleId.toLowerCase())
+    }
+
+    const key = normalizeModuleKey(moduleId)
+    if (!GATED_MODULES.includes(key)) return canAccessModule(moduleId)
+    if (isAdmin.value) return true
+
+    const keys = key === 'university_operations' ? UO_LEVEL_KEYS : [key]
+    return keys.some(
+      (k) => moduleOverrides.value[k] === true || !!moduleLevels.value[k],
+    )
+  }
+
+  /**
    * Get permissions for a specific module
    */
   function getModulePermissions(moduleId: string): ModulePermissions {
@@ -259,6 +325,20 @@ export function usePermissions() {
         return { canView: true, canAdd: false, canEdit: false, canDelete: false }
       }
       return { canView: false, canAdd: false, canEdit: false, canDelete: false }
+    }
+
+    // 'users' (User Management) is the one Admin-only module where Admin does NOT bypass the
+    // level check — unlike coi/repairs/university_operations (Admins administer every project
+    // module), user-account writes (reset password, manage access, edit profile) require an
+    // explicit Contributor+ grant even for an Admin; a Viewer-level Admin gets read-only.
+    // SuperAdmin already bypassed above. Mirrors users.controller.ts's own SuperAdmin-only
+    // lockdown on create/update/delete/assignRole/unlockAccount — Admin alone isn't enough there
+    // either, so the frontend shouldn't hand an Admin full CRUD here by role alone.
+    if (normalizedId === 'users') {
+      const level = moduleLevels.value['users']
+      return (
+        LEVEL_PERMISSIONS[level] || { canView: true, canAdd: false, canEdit: false, canDelete: false }
+      )
     }
 
     // PHASE BBBC (Track 8d) + BBBE (Track 2): for non-admins, a granted module's LEVEL governs CRUD —
@@ -346,8 +426,22 @@ export function usePermissions() {
     if (isSuperAdmin.value) return true
     if (isAdmin.value) return true
 
+    const normalized = normalizeModuleKey(moduleId)
+
+    // FIX: 'university_operations' has 2 independent per-pillar sub-modules
+    // ('university-operations-physical' / '-financial') that each carry their own
+    // module level — a grant scoped to just one pillar never rolls up into the parent
+    // key. Checking only the parent silently denied approval authority the backend
+    // itself grants (UniversityOperationsService.UO_LEVEL_KEYS ORs across all three).
+    if (normalized === 'university_operations') {
+      return UO_LEVEL_KEYS.some((key) => {
+        const level = moduleLevels.value[key]
+        return level === 'Approver' || level === 'Manager'
+      })
+    }
+
     // Layer 3: an Approver/Manager module-level grant confers approval authority for this module.
-    const level = moduleLevels.value[normalizeModuleKey(moduleId)]
+    const level = moduleLevels.value[normalized]
     return level === 'Approver' || level === 'Manager'
   }
 
@@ -387,6 +481,7 @@ export function usePermissions() {
 
     // Module access (for sidebar filtering)
     canAccessModule,
+    canViewModule,
     moduleOverrides,
     moduleLevels,
     moduleAssignments,

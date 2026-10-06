@@ -13,6 +13,10 @@ const route = useRoute()
 const router = useRouter()
 const api = useApi()
 const toast = useToast()
+// 'users' module-level scope: a Viewer-level grant is read-only — Reset Password,
+// Manage Access, and Edit Profile are writes and need Contributor+ (see usePermissions.ts).
+const { canEdit } = usePermissions()
+const canManageUsers = computed(() => canEdit('users'))
 
 const user = ref<BackendUserDetail | null>(null)
 const loading = ref(true)
@@ -104,12 +108,20 @@ function goBack() {
 }
 
 function editUser() {
+  if (!canManageUsers.value) {
+    toast.error('You do not have permission to edit this user')
+    return
+  }
   router.push(`/users/edit-${userId}`)
 }
 
 // Unlock account
 async function unlockAccount() {
   if (!userId) return
+  if (!canManageUsers.value) {
+    toast.error('You do not have permission to unlock this account')
+    return
+  }
 
   unlocking.value = true
   try {
@@ -127,6 +139,10 @@ async function unlockAccount() {
 
 // Reset password
 async function resetPassword() {
+  if (!canManageUsers.value) {
+    toast.error('You do not have permission to reset this password')
+    return
+  }
   if (!newPassword.value) {
     toast.error('Please enter a new password')
     return
@@ -182,7 +198,7 @@ onMounted(() => {
       </div>
       <div class="d-flex ga-2">
         <v-btn
-          v-if="isAccountLocked"
+          v-if="isAccountLocked && canManageUsers"
           color="warning"
           prepend-icon="mdi-lock-open"
           @click="unlockAccount"
@@ -191,6 +207,7 @@ onMounted(() => {
           Unlock Account
         </v-btn>
         <v-btn
+          v-if="canManageUsers"
           color="primary"
           prepend-icon="mdi-key"
           @click="resetPasswordDialog = true"
@@ -198,6 +215,7 @@ onMounted(() => {
           Reset Password
         </v-btn>
         <v-btn
+          v-if="canManageUsers"
           color="primary"
           variant="outlined"
           prepend-icon="mdi-shield-account"
@@ -206,6 +224,7 @@ onMounted(() => {
           Manage Access
         </v-btn>
         <v-btn
+          v-if="canManageUsers"
           color="primary"
           prepend-icon="mdi-pencil"
           @click="editUser"

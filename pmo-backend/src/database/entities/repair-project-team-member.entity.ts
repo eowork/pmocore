@@ -24,8 +24,8 @@ export class RepairProjectTeamMember {
   @Property({ nullable: true, columnType: 'text' })
   responsibilities?: string;
 
-  @Property({ length: 50, default: 'Active' })
-  status: string = 'Active';
+  @Property({ nullable: true, length: 50, default: 'Active' })
+  status?: string = 'Active';
 
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();

@@ -13,6 +13,7 @@ import { JwtPayload } from '../common/interfaces';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import { LoginDto, RegisterDto } from './dto';
+import { VALID_MODULE_KEYS } from '../users/dto/permission-override.dto';
 import {
   User,
   UserRole,
@@ -298,6 +299,7 @@ export class AuthService implements OnModuleInit {
     // (default-DENY) until an administrator grants a role + module access via Access Control.
     // (Superseded the ZG-A auto-Staff grant, which combined with default-ALLOW let any
     // registrant self-provision full Staff access.)
+    await this.createDefaultPermissionOverrides(user.id);
     this.logger.log(
       `ADMIN_ACCOUNT_CREATE: email=${email}, username=${username}, status=ACTIVE, access=DASHBOARD_ONLY`,
     );
@@ -769,6 +771,20 @@ export class AuthService implements OnModuleInit {
     };
   }
 
+  // PHASE BBBA (BBBA-0b) parity: every newly created account gets an explicit
+  // can_access=false row per module — default-DENY made explicit rather than implicit
+  // (absence of a row also denies, but this makes the deny visible/auditable from creation).
+  private async createDefaultPermissionOverrides(userId: string): Promise<void> {
+    const overrides = VALID_MODULE_KEYS.map((moduleKey) =>
+      this.em.create(UserPermissionOverride, {
+        userId,
+        moduleKey,
+        canAccess: false,
+      }),
+    );
+    await this.em.persistAndFlush(overrides);
+  }
+
   // T-UNI: Programmatic LDAP auth for the unified login endpoint.
   // Called when an account has no local passwordHash (LDAP or SSO-only accounts).
   // Returns null immediately if LDAP_URL is not configured — no network call, no hang.
@@ -794,20 +810,44 @@ export class AuthService implements OnModuleInit {
       },
     });
 
+    // LdapAuth is an EventEmitter and ldapjs re-emits connection failures on its
+    // backoff timer, AFTER the authenticate callback has already run. An 'error'
+    // event with no listener is fatal in Node ("Unhandled 'error' event"), which
+    // took the whole API process down on every login attempt while the directory
+    // was unreachable (e.g. EAI_AGAIN when the openldap container is not running).
+    // Swallow it here: the authenticate callback below is the only path that
+    // decides the outcome.
+    auth.on('error', (err: any) => {
+      this.logger.warn(
+        `LDAP_CLIENT_ERROR: code=${err?.code ?? ''}, message=${err?.message ?? err}`,
+      );
+    });
+
     // T-LDAP-JIT: resolve the directory entry (not just a boolean) so the caller can
     // auto-provision from mail/givenName/sn/uid. Resolves null on any bind failure.
     return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: LdapProfile | null) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
       auth.authenticate(username, password, (err: any, _user: any) => {
-        auth.close(() => {});
+        try {
+          auth.close(() => {});
+        } catch {
+          // close() can throw if the client never connected — outcome already decided.
+        }
         if (err || !_user) {
           // T-LDAP-ROOT (RF-5): surface the reason so a 401 is diagnosable in the logs.
           this.logger.warn(
             `LDAP_AUTH_ERROR: name=${err?.name ?? 'NO_ENTRY'}, code=${err?.code ?? ''}, message=${err?.message ?? 'no matching directory entry / bad credentials'}`,
           );
-          resolve(null);
+          finish(null);
           return;
         }
-        resolve({
+        finish({
           email: _user.mail || _user.userPrincipalName,
           firstName: _user.givenName,
           lastName: _user.sn,
@@ -912,6 +952,7 @@ export class AuthService implements OnModuleInit {
 
     // PHASE BBBA (BBBA-0b) parity: NO role, NO module assignment — dashboard-only,
     // default-DENY until an admin grants access via Access Control.
+    await this.createDefaultPermissionOverrides(newUser.id);
     this.logger.log(
       `LDAP_AUTO_CREATED: user_id=${newUser.id}, email=${email}, access=DASHBOARD_ONLY`,
     );

@@ -15,6 +15,9 @@ export class FundingSource {
   @Property({ nullable: true, columnType: 'text' })
   description?: string;
 
+  @Property({ nullable: true, columnType: 'jsonb' })
+  metadata?: Record<string, unknown>;
+
   @Property({ nullable: true, columnType: 'uuid' })
   createdBy?: string;
 

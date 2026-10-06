@@ -1,64 +1,80 @@
 import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  HttpException,
+  Injectable,
   Logger,
+  NotFoundException,
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuid4 } from 'uuid';
 import { InjectRepository } from '@mikro-orm/nestjs';
-import { EntityRepository, EntityManager } from '@mikro-orm/core';
-import type { FilterQuery } from '@mikro-orm/core';
+import { EntityManager, FilterQuery, QueryOrder, wrap } from '@mikro-orm/core';
 import { createPaginatedResponse, PaginatedResponse } from '../common/dto';
 import {
-  CreateConstructionProjectDto,
-  UpdateConstructionProjectDto,
-  QueryConstructionProjectDto,
-  CreateMilestoneDto,
-  CreateGalleryDto,
-  QueryGalleryDto,
-  UploadDocumentDto,
-  CreateTimelineEntryDto,
-  UpdateTimelineEntryDto,
-  CreateRevisionOrderDto,
-  UpdateRevisionOrderDto,
-  CreateProgressReportDto,
-  UpdateProgressReportDto,
-  UpdateDocumentChecklistDto,
-  CreateDiaryEntryDto,
-  UpdateDiaryEntryDto,
-  CreateMovEntryDto,
   BatchCreateMilestoneDto,
   BatchCreateTimelineEntryDto,
+  CreateConstructionProjectDto,
+  CreateDiaryEntryDto,
+  CreateGalleryDto,
+  CreateMilestoneDto,
+  CreateMovEntryDto,
+  CreateProgressReportDto,
+  CreateRevisionOrderDto,
+  CreateTimelineEntryDto,
+  QueryConstructionProjectDto,
+  QueryGalleryDto,
+  UpdateConstructionProjectDto,
+  UpdateDiaryEntryDto,
+  UpdateDocumentChecklistDto,
+  UpdateProgressReportDto,
+  UpdateRevisionOrderDto,
+  UpdateTimelineEntryDto,
+  UploadDocumentDto,
 } from './dto';
-import { UploadsService } from '../uploads/uploads.service';
+import { UploadsService } from '../uploads';
+import { UploadProgressService } from '../uploads/upload-progress.service';
 import { PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
 import { JwtPayload } from '../common/interfaces';
 import { PermissionResolverService } from '../common/services';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import {
-  ConstructionProject,
-  ConstructionMilestone,
-  ConstructionTimelineEntry,
-  ConstructionRevisionOrder,
-  ConstructionProgressReport,
-  ConstructionDocumentType,
-  ConstructionDocumentChecklist,
-  ConstructionDocumentSubmission,
-  ConstructionDocumentFolder,
   ConstructionDiaryEntry,
+  ConstructionDocumentChecklist,
+  ConstructionDocumentFolder,
+  ConstructionDocumentSubmission,
+  ConstructionDocumentType,
   ConstructionGallery,
+  ConstructionMilestone,
   ConstructionMovEntry,
-  RecordAssignment,
-  Project,
+  ConstructionProgressReport,
+  ConstructionProject,
+  ConstructionRevisionOrder,
+  ConstructionTimelineEntry,
   Document,
+  Project,
+  RecordAssignment,
 } from '../database/entities';
+import { ConstructionProjectRepository } from './repository/construction-project.repository';
+import { ConstructionMilestoneRepository } from './repository/construction-milestone.repository';
+import { ConstructionTimelineEntryRepository } from './repository/construction-timeline-entry.repository';
+import { ConstructionRevisionOrderRepository } from './repository/construction-revision-order.repository';
+import { ConstructionProgressReportRepository } from './repository/construction-progress-report.repository';
+import { ConstructionDocumentTypeRepository } from './repository/construction-document-type.repository';
+import { ConstructionDocumentChecklistRepository } from './repository/construction-document-checklist.repository';
+import { ConstructionDiaryEntryRepository } from './repository/construction-diary-entry.repository';
+import { ConstructionGalleryRepository } from './repository/construction-gallery.repository';
+import { ConstructionMovEntryRepository } from './repository/construction-mov-entry.repository';
+import { RecordAssignmentRepository } from './repository/record-assignment.repository';
+import { ConstructionDocumentSubmissionRepository } from './repository/construction-document-submission.repository';
+import { ConstructionDocumentFolderRepository } from './repository/construction-document-folder.repository';
+import { ProjectRepository } from '../projects/repository/project.repository';
+import { DocumentRepository } from '../documents/repository/document.repository';
 
 // Publication status values matching database enum
 export type PublicationStatus =
@@ -70,49 +86,42 @@ export type PublicationStatus =
 @Injectable()
 export class ConstructionProjectsService {
   private readonly logger = new Logger(ConstructionProjectsService.name);
-  private readonly ALLOWED_SORTS = [
-    'created_at',
-    'title',
-    'status',
-    'start_date',
-    'target_completion_date',
-    'physical_progress',
-  ];
 
   constructor(
     @InjectRepository(ConstructionProject)
-    private readonly cpRepo: EntityRepository<ConstructionProject>,
+    private readonly cpRepo: ConstructionProjectRepository,
     @InjectRepository(ConstructionMilestone)
-    private readonly milestoneRepo: EntityRepository<ConstructionMilestone>,
+    private readonly milestoneRepo: ConstructionMilestoneRepository,
     @InjectRepository(ConstructionTimelineEntry)
-    private readonly timelineEntryRepo: EntityRepository<ConstructionTimelineEntry>,
+    private readonly timelineEntryRepo: ConstructionTimelineEntryRepository,
     @InjectRepository(ConstructionRevisionOrder)
-    private readonly revisionOrderRepo: EntityRepository<ConstructionRevisionOrder>,
+    private readonly revisionOrderRepo: ConstructionRevisionOrderRepository,
     @InjectRepository(ConstructionProgressReport)
-    private readonly progressReportRepo: EntityRepository<ConstructionProgressReport>,
+    private readonly progressReportRepo: ConstructionProgressReportRepository,
     @InjectRepository(ConstructionDocumentType)
-    private readonly docTypeRepo: EntityRepository<ConstructionDocumentType>,
+    private readonly docTypeRepo: ConstructionDocumentTypeRepository,
     @InjectRepository(ConstructionDocumentChecklist)
-    private readonly docChecklistRepo: EntityRepository<ConstructionDocumentChecklist>,
+    private readonly docChecklistRepo: ConstructionDocumentChecklistRepository,
     @InjectRepository(ConstructionDiaryEntry)
-    private readonly diaryRepo: EntityRepository<ConstructionDiaryEntry>,
+    private readonly diaryRepo: ConstructionDiaryEntryRepository,
     // NI: financialRepo removed
     @InjectRepository(ConstructionGallery)
-    private readonly galleryRepo: EntityRepository<ConstructionGallery>,
+    private readonly galleryRepo: ConstructionGalleryRepository,
     @InjectRepository(ConstructionMovEntry)
-    private readonly movEntryRepo: EntityRepository<ConstructionMovEntry>,
+    private readonly movEntryRepo: ConstructionMovEntryRepository,
     @InjectRepository(RecordAssignment)
-    private readonly assignmentRepo: EntityRepository<RecordAssignment>,
+    private readonly assignmentRepo: RecordAssignmentRepository,
     @InjectRepository(Project)
-    private readonly projectRepo: EntityRepository<Project>,
+    private readonly projectRepo: ProjectRepository,
     @InjectRepository(Document)
-    private readonly documentRepo: EntityRepository<Document>,
+    private readonly documentRepo: DocumentRepository,
     @InjectRepository(ConstructionDocumentSubmission)
-    private readonly docSubmissionRepo: EntityRepository<ConstructionDocumentSubmission>,
+    private readonly docSubmissionRepo: ConstructionDocumentSubmissionRepository,
     @InjectRepository(ConstructionDocumentFolder)
-    private readonly docFolderRepo: EntityRepository<ConstructionDocumentFolder>,
+    private readonly docFolderRepo: ConstructionDocumentFolderRepository,
     private readonly em: EntityManager,
     private readonly uploadsService: UploadsService,
+    private readonly uploadProgress: UploadProgressService,
     private readonly permissionResolver: PermissionResolverService,
     private readonly activityLog: ActivityLogService,
   ) {}
@@ -130,23 +139,6 @@ export class ConstructionProjectsService {
       .catch(() => {});
   }
 
-  /**
-   * Delegate to centralized permission resolver
-   * @deprecated Use this.permissionResolver.isAdmin() directly
-   */
-  private isAdmin(user: JwtPayload): boolean {
-    return this.permissionResolver.isAdmin(user);
-  }
-
-  private normalizeUserCampusToRecordCampus(
-    userCampus: string | null | undefined,
-  ): string | null {
-    if (!userCampus) return null;
-    if (userCampus === 'Butuan Campus') return 'MAIN';
-    if (userCampus === 'Cabadbaran') return 'CABADBARAN';
-    return null;
-  }
-
   private async updateRecordAssignments(
     recordId: string,
     userIds: string[],
@@ -161,9 +153,9 @@ export class ConstructionProjectsService {
         recordId,
         userId,
       });
-      this.em.persist(assignment);
+      this.assignmentRepo.getEntityManager().persist(assignment);
     }
-    await this.em.flush();
+    await this.assignmentRepo.getEntityManager().flush();
   }
 
   // VD-A: Deny-by-default for contractor assignments with null permissions JSONB.
@@ -265,7 +257,7 @@ export class ConstructionProjectsService {
     user: JwtPayload | undefined,
     permission: 'canCreate' | 'canEdit' | 'canDelete' | 'canUpload',
   ): Promise<void> {
-    if (user && this.isAdmin(user)) return; // Admin bypass
+    if (user && this.permissionResolver.isAdmin(user)) return; // Admin bypass
     const conn = this.em.getConnection();
     // Owner bypass
     const proj = await conn.execute(
@@ -289,114 +281,64 @@ export class ConstructionProjectsService {
     }
   }
 
+  // Approval authority for submit/publish/reject/withdraw: Admin, OR a module-level
+  // Approver/Manager grant on 'coi' (Layer 3 — bypasses record scope org-wide), OR
+  // this specific project's record_assignments.permissions.canApprove (Layer 4 —
+  // a record-level Manager assigned to just this project, per the frontend's
+  // FullPermissions shape / accessLevel: Manager). Deliberately NO owner bypass here
+  // (unlike assertProjectPermission above) — owning a project isn't itself approval
+  // authority; a Contributor/owner may edit but not approve/submit their own work.
+  private async hasApprovalAuthority(
+    projectId: string,
+    userId: string,
+    user: JwtPayload,
+  ): Promise<boolean> {
+    if (await this.permissionResolver.canApproveModule(user, 'coi'))
+      return true;
+    const conn = this.em.getConnection();
+    const rows = await conn.execute(
+      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
+      [projectId, userId],
+    );
+    const perms = rows[0]?.permissions as Record<string, unknown> | null;
+    return !!perms?.canApprove;
+  }
+
   // --- RAW SQL reads (complex JOINs preserved) ---
 
   async findAll(
     query: QueryConstructionProjectDto,
     user?: JwtPayload,
   ): Promise<PaginatedResponse<any>> {
-    const { page = 1, limit = 20, sort = 'created_at', order = 'desc' } = query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 20 } = query;
 
-    const sortColumn = this.ALLOWED_SORTS.includes(sort) ? sort : 'created_at';
-    const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    // Visibility scope: the project list is a directory of the institution's portfolio, not a
+    // personal work queue. Every authenticated user who holds 'coi' module access sees every
+    // project, whether or not they created or were assigned to it. The previous owner/assigned
+    // filter hid the portfolio from the very people expected to read it, and it bought no real
+    // secrecy: findOne() has always served any project by id to an institutional user.
+    //
+    // Authority is deliberately unchanged. Every write still passes through
+    // assertProjectPermission(), which admits exactly three parties — Admin, the project owner,
+    // and a user whose record_assignments row carries the matching permission. Seeing a project
+    // is not being able to act on it.
+    //
+    // Contractors stay record-scoped. That is external-personnel isolation (QD-C), enforced the
+    // same way in findOne(), and is a separate rule from the institutional visibility policy
+    // relaxed here. The policy decision belongs here; the repository only applies the
+    // restriction it is handed, ANDed with the query's own filters.
+    const restrictToAssignedUserId =
+      user && this.permissionResolver.isContractor(user) ? user.sub : null;
 
-    const conditions: string[] = ['cp.deleted_at IS NULL'];
-    const params: any[] = [];
-
-    const queryAny = query as any;
-    // PHASE BBBF (Track 1 / Task B1, R-353): the COI list is universally viewable — all authenticated
-    // institutional users (any role/level with COI access) see/search/filter ALL projects, incl. DRAFT
-    // (operator decision). Per-project edit restrictions apply only INSIDE a project. Contractors remain
-    // scoped to assigned records (security). The former campus/PUBLISHED/own list filter was removed.
-    if (queryAny.publication_status) {
-      conditions.push(`cp.publication_status = ?`);
-      params.push(queryAny.publication_status);
-    } else if (user && this.permissionResolver.isContractor(user)) {
-      // Contractors see ONLY records they are explicitly assigned to.
-      conditions.push(
-        `EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id AND ra.user_id = ?)`,
-      );
-      params.push(user.sub);
-    }
-
-    if (query.status) {
-      conditions.push(`cp.status = ?`);
-      params.push(query.status);
-    }
-    if (query.campus) {
-      conditions.push(`cp.campus = ?`);
-      params.push(query.campus);
-    }
-    if (query.contractor_id) {
-      conditions.push(`cp.contractor_id = ?`);
-      params.push(query.contractor_id);
-    }
-    if (query.funding_source_id) {
-      conditions.push(`cp.funding_source_id = ?`);
-      params.push(query.funding_source_id);
-    }
-    // AAAK: Two-Level Funding filters — primary (controlled Level-1 exact match) +
-    // description (free-text Level-2 partial match).
-    if (query.primary_funding_source) {
-      conditions.push(`cp.primary_funding_source = ?`);
-      params.push(query.primary_funding_source);
-    }
-    if (query.funding_source_description) {
-      conditions.push(`cp.funding_source_description ILIKE ?`);
-      params.push(`%${query.funding_source_description}%`);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const conn = this.em.getConnection();
-
-    const countResult = await conn.execute(
-      `SELECT COUNT(*) FROM construction_projects cp WHERE ${whereClause}`,
-      params,
-    );
-    const total = parseInt(countResult[0].count, 10);
-
-    const dataResult = await conn.execute(
-      `SELECT cp.id, cp.infra_project_uid, cp.project_id, cp.project_code, cp.title,
-              cp.description, cp.status, cp.campus, cp.start_date, cp.target_completion_date,
-              cp.physical_progress, cp.financial_progress, cp.contract_amount,
-              cp.contractor_id, cp.funding_source_id, cp.publication_status, cp.created_at,
-              cp.updated_at, cp.project_duration,
-              cp.submitted_by, cp.submitted_at,
-              cp.original_start_date, cp.revised_start_date,
-              cp.original_completion_date, cp.revised_completion_date,
-              cp.primary_funding_source, cp.funding_source_description,
-              fs.name as funding_source_name,
-              COALESCE(c.name, cp.contractor) as contractor_name,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              (SELECT COALESCE(json_agg(json_build_object(
-                  'id', u.id,
-                  'name', u.first_name || ' ' || u.last_name,
-                  'email', u.email,
-                  'role', ra.role,
-                  'department', ra.department,
-                  'phone', ra.phone,
-                  'personnel_category', ra.personnel_category,
-                  'project_role', ra.project_role,
-                  'permissions', ra.permissions,
-                  'user_role', (SELECT r.name FROM user_roles ur
-                                JOIN roles r ON ur.role_id = r.id
-                                WHERE ur.user_id = u.id LIMIT 1)
-                )), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id) as assigned_users
-       FROM construction_projects cp
-       LEFT JOIN users submitter ON cp.submitted_by = submitter.id
-       LEFT JOIN funding_sources fs ON cp.funding_source_id = fs.id
-       LEFT JOIN contractors c ON cp.contractor_id = c.id
-       WHERE ${whereClause}
-       ORDER BY cp.${sortColumn} ${sortOrder}
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
+    const { rows, total } = await this.cpRepo.findAllConstructionProject(
+      query,
+      {
+        restrictToAssignedUserId,
+      },
     );
 
     // VD-A: deny-by-default for contractor assignments with null permissions
-    const transformed = dataResult.map((p: any) =>
+    const transformed = rows.map((p: any) =>
       this.applyContractorDenyDefault(p),
     );
     return createPaginatedResponse(transformed, total, page, limit);
@@ -666,7 +608,7 @@ export class ConstructionProjectsService {
       );
     }
 
-    const projectId = dto.project_id || uuidv4();
+    const projectId = dto.project_id || uuid4();
     const publicationStatus: PublicationStatus = 'DRAFT';
     const submittedBy = userId;
     const submittedAt = new Date();
@@ -723,113 +665,93 @@ export class ConstructionProjectsService {
       const effectiveContractAmount =
         dto.cost_amount ?? dto.contract_amount ?? null;
 
-      let cpResult: any;
+      // The insert goes through the ORM so the column list, the jsonb handling and the
+      // decimal conversions all come from the entity rather than from a 70-placeholder
+      // VALUES list that had to be kept in sync by eye.
+      //
+      // Note em.create / em.persist, not this.cpRepo: the repository is bound to the
+      // request EntityManager, while em here is the transactional fork. Persisting through
+      // the repository would run the insert outside this transaction.
+      const project = this.cpRepo.create({
+        projectId: projectId,
+        projectCode: dto.project_code,
+        title: dto.title,
+        description: dto.description,
+        idealInfrastructureImage: dto.ideal_infrastructure_image,
+        beneficiaries: dto.beneficiaries,
+        summary: dto.summary,
+        scope: dto.scope,
+        facilities: dto.facilities,
+        objectives: dto.objectives,
+        keyFeatures: dto.key_features,
+        originalContractDuration: dto.original_contract_duration,
+        implementationPeriod: dto.implementation_period,
+        contractNumber: dto.contract_number,
+        contractorId: dto.contractor_id,
+        contractor: dto.contractor,
+        contractAmount: toDecimal(effectiveContractAmount),
+        startDate: toDate(dto.start_date),
+        targetCompletionDate: toDate(dto.target_completion_date),
+        actualCompletionDate: toDate(dto.actual_completion_date),
+        projectDuration: dto.project_duration,
+        projectEngineer: dto.project_engineer,
+        projectManager: dto.project_manager,
+        buildingType: dto.building_type,
+        floorArea: toDecimal(dto.floor_area),
+        numberOfFloors: dto.number_of_floors,
+        fundingSourceId: dto.funding_source_id,
+        subcategoryId: dto.subcategory_id,
+        campus: dto.campus,
+        status: dto.status,
+        latitude: toDecimal(dto.latitude),
+        longitude: toDecimal(dto.longitude),
+        physicalProgress: toDecimal(dto.physical_progress ?? 0)!,
+        financialProgress: toDecimal(dto.financial_progress ?? 0)!,
+        targetPhysicalProgress: toDecimal(dto.target_physical_progress ?? 100)!,
+        targetFinancialProgress: toDecimal(
+          dto.target_financial_progress ?? 100,
+        )!,
+        metadata: dto.metadata,
+        createdBy: userId,
+        publicationStatus,
+        submittedBy,
+        submittedAt,
+        assignedTo: dto.assigned_to || undefined,
+        spatialCoverage: dto.spatial_coverage,
+        municipality: dto.municipality,
+        province: dto.province,
+        coImplementingAgency: dto.co_implementing_agency,
+        attachedAgency: dto.attached_agency,
+        originalStartDate: toDate(dto.original_start_date),
+        revisedStartDate: toDate(dto.revised_start_date),
+        originalCompletionDate: toDate(dto.original_completion_date),
+        revisedCompletionDate: toDate(dto.revised_completion_date),
+        revisedProjectDuration: dto.revised_project_duration,
+        asOfDate: toDate(dto.as_of_date),
+        costIncurredToDate: toDecimal(dto.cost_incurred_to_date),
+        rdpAlignment: dto.rdp_alignment,
+        socioeconomicAgenda: dto.socioeconomic_agenda,
+        csuLikhaGoals: dto.csu_likha_goals,
+        sdgGoals: dto.sdg_goals,
+        rdp2017Alignment: dto.rdp2017_alignment,
+        pointAgenda10: dto.point_agenda_10,
+        beneficiaryList: dto.beneficiary_list,
+        fundingSourceType: dto.funding_source_type,
+        additionalFundingSources: dto.additional_funding_sources,
+        remarksLog: dto.remarks_log ?? [],
+        personnelGroups: dto.personnel_groups,
+        // FFF-B: Others-tab JSONB fields — persisted at creation so an edit reload shows
+        // the correct data. They default to an empty array, never null.
+        statusUpdates: dto.status_updates ?? [],
+        readinessDocuments: dto.readiness_documents ?? [],
+        signatories: dto.signatories ?? [],
+        // AAAK: Two-Level Funding — Level 1 defaults to OTHER if omitted, Level 2 free text
+        primaryFundingSource: dto.primary_funding_source ?? 'OTHER',
+        fundingSourceDescription: dto.funding_source_description,
+      });
+
       try {
-        cpResult = await conn.execute(
-          `INSERT INTO construction_projects
-           (project_id, project_code, title, description, ideal_infrastructure_image, beneficiaries,
-            summary, scope, facilities,
-            objectives, key_features, original_contract_duration, implementation_period, contract_number, contractor_id, contractor,
-            contract_amount, start_date, target_completion_date, actual_completion_date, project_duration, project_engineer,
-            project_manager, building_type, floor_area, number_of_floors, funding_source_id,
-            subcategory_id, campus, status, latitude, longitude,
-            physical_progress, financial_progress, target_physical_progress, target_financial_progress,
-            metadata, created_by,
-            publication_status, submitted_by, submitted_at, assigned_to,
-            spatial_coverage, municipality, province,
-            co_implementing_agency, attached_agency,
-            original_start_date, revised_start_date, original_completion_date, revised_completion_date, revised_project_duration,
-            as_of_date, cost_incurred_to_date,
-            rdp_alignment, socioeconomic_agenda, csu_likha_goals, sdg_goals, rdp2017_alignment, point_agenda_10, beneficiary_list,
-            funding_source_type, additional_funding_sources,
-            remarks_log, personnel_groups,
-            status_updates, readiness_documents, signatories,
-            primary_funding_source, funding_source_description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           RETURNING *`,
-          [
-            projectId,
-            dto.project_code,
-            dto.title,
-            dto.description,
-            dto.ideal_infrastructure_image,
-            dto.beneficiaries ?? null,
-            dto.summary ?? null,
-            dto.scope ?? null,
-            dto.facilities ?? null,
-            dto.objectives ? JSON.stringify(dto.objectives) : null,
-            dto.key_features ? JSON.stringify(dto.key_features) : null,
-            dto.original_contract_duration,
-            dto.implementation_period ?? null,
-            dto.contract_number,
-            dto.contractor_id,
-            dto.contractor ?? null,
-            effectiveContractAmount,
-            dto.start_date,
-            dto.target_completion_date,
-            dto.actual_completion_date,
-            dto.project_duration,
-            dto.project_engineer,
-            dto.project_manager,
-            dto.building_type,
-            dto.floor_area,
-            dto.number_of_floors,
-            dto.funding_source_id,
-            dto.subcategory_id,
-            dto.campus,
-            dto.status,
-            dto.latitude,
-            dto.longitude,
-            dto.physical_progress ?? 0,
-            dto.financial_progress ?? 0,
-            dto.target_physical_progress ?? 100,
-            dto.target_financial_progress ?? 100,
-            dto.metadata ? JSON.stringify(dto.metadata) : null,
-            userId,
-            publicationStatus,
-            submittedBy,
-            submittedAt,
-            dto.assigned_to || null,
-            dto.spatial_coverage ?? null,
-            dto.municipality ?? null,
-            dto.province ?? null,
-            dto.co_implementing_agency ?? null,
-            dto.attached_agency ?? null,
-            dto.original_start_date ?? null,
-            dto.revised_start_date ?? null,
-            dto.original_completion_date ?? null,
-            dto.revised_completion_date ?? null,
-            dto.revised_project_duration ?? null,
-            dto.as_of_date ?? null,
-            dto.cost_incurred_to_date ?? null,
-            dto.rdp_alignment ? JSON.stringify(dto.rdp_alignment) : null,
-            dto.socioeconomic_agenda
-              ? JSON.stringify(dto.socioeconomic_agenda)
-              : null,
-            dto.csu_likha_goals ? JSON.stringify(dto.csu_likha_goals) : null,
-            dto.sdg_goals ? JSON.stringify(dto.sdg_goals) : null,
-            dto.rdp2017_alignment
-              ? JSON.stringify(dto.rdp2017_alignment)
-              : null,
-            dto.point_agenda_10 ? JSON.stringify(dto.point_agenda_10) : null,
-            dto.beneficiary_list ? JSON.stringify(dto.beneficiary_list) : null,
-            dto.funding_source_type ?? null,
-            dto.additional_funding_sources
-              ? JSON.stringify(dto.additional_funding_sources)
-              : null,
-            dto.remarks_log ? JSON.stringify(dto.remarks_log) : '[]',
-            dto.personnel_groups ? JSON.stringify(dto.personnel_groups) : null,
-            // FFF-B: Others-tab JSONB fields — persist at creation so edit reload shows correct data
-            dto.status_updates ? JSON.stringify(dto.status_updates) : '[]',
-            dto.readiness_documents
-              ? JSON.stringify(dto.readiness_documents)
-              : '[]',
-            dto.signatories ? JSON.stringify(dto.signatories) : '[]',
-            // AAAK: Two-Level Funding — Level 1 defaults to OTHER if omitted, Level 2 free text
-            dto.primary_funding_source ?? 'OTHER',
-            dto.funding_source_description ?? null,
-          ],
-        );
+        await this.cpRepo.getEntityManager().persist(project).flush();
       } catch (err: any) {
         if (err?.code === '23505') {
           throw new ConflictException(
@@ -839,7 +761,7 @@ export class ConstructionProjectsService {
         throw err;
       }
 
-      const recordId = cpResult[0].id;
+      const recordId = project.id;
 
       // Phase JW-E: prefer rich `assignments[]` (with role/department/phone)
       // over legacy `assigned_user_ids[]` when both are present.
@@ -886,7 +808,16 @@ export class ConstructionProjectsService {
       this.fireLog(user, ActivityAction.CREATE, recordId, {
         projectCode: dto.project_code,
       });
-      return cpResult[0];
+
+      // The endpoint has always answered with the inserted row exactly as Postgres stores
+      // it — snake_case keys, every column, including the ones the database filled in.
+      // Reading it back keeps that response identical; serialising the entity instead would
+      // hand callers camelCase keys and a different set of fields.
+      const [created] = await conn.execute(
+        `SELECT * FROM construction_projects WHERE id = ?`,
+        [recordId],
+      );
+      return created;
     });
   }
 
@@ -1093,6 +1024,9 @@ export class ConstructionProjectsService {
   async remove(id: string, userId: string, user?: JwtPayload): Promise<void> {
     const project = await this.findOne(id);
 
+    // Admin, project owner, or this project's own record_assignments.permissions.canDelete.
+    await this.assertProjectPermission(id, userId, user, 'canDelete');
+
     await this.em.transactional(async (em) => {
       const conn = em.getConnection();
       await conn.execute(
@@ -1127,11 +1061,13 @@ export class ConstructionProjectsService {
       );
     }
 
-    const isOwner = project.created_by === userId;
-    const isAssigned = await this.isUserAssigned(id, userId);
-    if (!isOwner && !isAssigned) {
+    // Submitting requires Approver/Manager authority — module-level 'coi' OR this
+    // project's own record_assignments.permissions.canApprove. Deliberately NOT
+    // owner/assigned alone (that was the prior rule; it let a Viewer/Contributor
+    // submit their own draft, contradicting the frontend's Approver/Manager-only gate).
+    if (user && !(await this.hasApprovalAuthority(id, userId, user))) {
       throw new ForbiddenException(
-        'Only the creator or assigned user can submit this draft for review',
+        'Insufficient approval authority to submit this project for review',
       );
     }
 
@@ -1155,8 +1091,12 @@ export class ConstructionProjectsService {
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
-    if (!this.permissionResolver.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can publish records');
+    // Admin, OR module-level 'coi' Approver/Manager, OR this project's own
+    // record_assignments.permissions.canApprove (record-level Manager).
+    if (!(await this.hasApprovalAuthority(id, adminId, user))) {
+      throw new ForbiddenException(
+        'Insufficient approval authority to publish this project',
+      );
     }
 
     const project = await this.findOne(id);
@@ -1200,8 +1140,12 @@ export class ConstructionProjectsService {
     notes: string,
     user: JwtPayload,
   ): Promise<any> {
-    if (!this.isAdmin(user)) {
-      throw new ForbiddenException('Only Admin can reject records');
+    // Admin, OR module-level 'coi' Approver/Manager, OR this project's own
+    // record_assignments.permissions.canApprove (record-level Manager).
+    if (!(await this.hasApprovalAuthority(id, adminId, user))) {
+      throw new ForbiddenException(
+        'Insufficient approval authority to reject this project',
+      );
     }
 
     const project = await this.findOne(id);
@@ -1242,9 +1186,14 @@ export class ConstructionProjectsService {
       );
     }
 
-    if (project.submitted_by !== userId) {
+    // Original submitter, OR Admin/module-level/record-level approval authority —
+    // mirrors publish/reject/submitForReview's hasApprovalAuthority.
+    if (
+      project.submitted_by !== userId &&
+      !(user && (await this.hasApprovalAuthority(id, userId, user)))
+    ) {
       throw new ForbiddenException(
-        'Only the original submitter can withdraw this submission',
+        'Only the original submitter or an Approver/Manager can withdraw this submission',
       );
     }
 
@@ -1265,7 +1214,7 @@ export class ConstructionProjectsService {
   }
 
   async findPendingReview(user: JwtPayload): Promise<any[]> {
-    if (!this.isAdmin(user)) {
+    if (!this.permissionResolver.isAdmin(user)) {
       throw new ForbiddenException('Only Admin can view pending reviews');
     }
 
@@ -1280,18 +1229,22 @@ export class ConstructionProjectsService {
       if (accessCheck.length === 0) return [];
     }
 
-    const result = await conn.execute(
-      `SELECT cp.id, cp.project_code, cp.title, cp.campus, cp.publication_status,
-              cp.submitted_by, cp.submitted_at, cp.created_at,
+    return await conn.execute(
+      `SELECT cp.id,
+              cp.project_code,
+              cp.title,
+              cp.campus,
+              cp.publication_status,
+              cp.submitted_by,
+              cp.submitted_at,
+              cp.created_at,
               u.first_name || ' ' || u.last_name as submitter_name
        FROM construction_projects cp
-       LEFT JOIN users u ON cp.submitted_by = u.id
+              LEFT JOIN users u ON cp.submitted_by = u.id
        WHERE cp.publication_status = 'PENDING_REVIEW'
          AND cp.deleted_at IS NULL
-       ORDER BY cp.submitted_at ASC`,
+       ORDER BY cp.submitted_at `,
     );
-
-    return result;
   }
 
   async findMyDrafts(userId: string): Promise<ConstructionProject[]> {
@@ -1431,6 +1384,15 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMilestone[]> {
     await this.findOne(projectId);
+    // Record-scope guard. The single-create route above has always had one; the batch route
+    // did not, and was reachable by anyone holding 'coi' module access.
+    if (user)
+      await this.assertProjectPermission(
+        projectId,
+        user.sub,
+        user,
+        'canCreate',
+      );
     const entities = dto.items.map((item) =>
       this.milestoneRepo.create({
         projectId,
@@ -1466,23 +1428,19 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionTimelineEntry[]> {
     await this.findOne(projectId);
-    const entities = dto.items.map((item) =>
-      this.timelineEntryRepo.create({
+    // Record-scope guard — parity with the single-create timeline route.
+    if (user)
+      await this.assertProjectPermission(
         projectId,
-        entryType: item.entry_type || 'WEEKLY',
-        entryDate: item.entry_date ? new Date(item.entry_date) : undefined,
-        periodLabel: item.period_label,
-        title: item.title,
-        description: item.description,
-        weather: item.weather,
-        manpowerCount: item.manpower_count ?? undefined,
-        equipmentUsed: item.equipment_used,
-        workAccomplished: item.work_accomplished,
-        issuesEncountered: item.issues_encountered,
-        reporterType: item.reporter_type,
-      }),
+        user.sub,
+        user,
+        'canCreate',
+      );
+    const entities = await this.timelineEntryRepo.createManyForProject(
+      projectId,
+      dto.items,
+      user?.sub,
     );
-    await this.em.persist(entities).flush();
     this.logger.log(
       `BATCH_TIMELINE_CREATED: ${entities.length} items, project=${projectId}`,
     );
@@ -1498,10 +1456,7 @@ export class ConstructionProjectsService {
     projectId: string,
   ): Promise<ConstructionTimelineEntry[]> {
     await this.findOne(projectId);
-    return this.timelineEntryRepo.find(
-      { projectId },
-      { orderBy: { entryDate: 'desc' } },
-    );
+    return this.timelineEntryRepo.findByProject(projectId);
   }
 
   async createTimelineEntry(
@@ -1513,50 +1468,11 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     if (user)
       await this.assertProjectPermission(projectId, userId, user, 'canCreate');
-    const entity = this.timelineEntryRepo.create({
+    const entity = await this.timelineEntryRepo.createForProject(
       projectId,
-      entryType: dto.entry_type || 'WEEKLY',
-      entryDate: new Date(dto.entry_date),
-      periodLabel: dto.period_label,
-      title: dto.title,
-      description: dto.description,
-      weather: dto.weather,
-      manpowerCount: dto.manpower_count,
-      equipmentUsed: dto.equipment_used,
-      workAccomplished: dto.work_accomplished,
-      issuesEncountered: dto.issues_encountered,
-      reporterType: dto.reporter_type,
-      // GGG-F: WAR fields
-      warNumber: dto.war_number,
-      reportingPeriodStart: dto.reporting_period_start
-        ? new Date(dto.reporting_period_start)
-        : undefined,
-      reportingPeriodEnd: dto.reporting_period_end
-        ? new Date(dto.reporting_period_end)
-        : undefined,
-      personnelEquipmentConstraints: dto.personnel_equipment_constraints,
-      mitigationMeasures: dto.mitigation_measures,
-      lookAheadActivities: dto.look_ahead_activities,
-      accomplishments: dto.accomplishments,
-      signatories: dto.signatories,
-      // GGG-F: MPR fields
-      mprNumber: dto.mpr_number,
-      reportingPeriodMonth: dto.reporting_period_month
-        ? new Date(dto.reporting_period_month)
-        : undefined,
-      workItems: dto.work_items,
-      accomplishmentSummaryPercent: dto.accomplishment_summary_percent,
-      percentTimeElapsed: dto.percent_time_elapsed,
-      originalContractAmount: dto.original_contract_amount,
-      revisedContractAmount: dto.revised_contract_amount,
-      // ZZZ-G: structured Project Concerns list
-      concernsList: dto.concerns_list,
-      // BBB-C: WAR/MPR financial billing fields
-      billingAmountThisPeriod: dto.billing_amount_this_period,
-      financialAccomplishmentPercent: dto.financial_accomplishment_percent,
-      createdBy: userId,
-    });
-    await this.em.persist(entity).flush();
+      dto,
+      userId,
+    );
     this.logger.log(
       `TIMELINE_ENTRY_CREATED: id=${entity.id}, project=${projectId}, by=${userId}`,
     );
@@ -1577,75 +1493,14 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     if (user)
       await this.assertProjectPermission(projectId, userId, user, 'canEdit');
-    const entity = await this.timelineEntryRepo.findOne({
-      id: entryId,
+    const entity = await this.timelineEntryRepo.findOneForProject(
       projectId,
-    });
+      entryId,
+    );
     if (!entity)
       throw new NotFoundException(`Timeline entry ${entryId} not found`);
 
-    if (dto.entry_type !== undefined) entity.entryType = dto.entry_type;
-    if (dto.entry_date !== undefined)
-      entity.entryDate = new Date(dto.entry_date);
-    if (dto.period_label !== undefined) entity.periodLabel = dto.period_label;
-    if (dto.title !== undefined) entity.title = dto.title;
-    if (dto.description !== undefined) entity.description = dto.description;
-    if (dto.weather !== undefined) entity.weather = dto.weather;
-    if (dto.manpower_count !== undefined)
-      entity.manpowerCount = dto.manpower_count;
-    if (dto.equipment_used !== undefined)
-      entity.equipmentUsed = dto.equipment_used;
-    if (dto.work_accomplished !== undefined)
-      entity.workAccomplished = dto.work_accomplished;
-    if (dto.issues_encountered !== undefined)
-      entity.issuesEncountered = dto.issues_encountered;
-    if (dto.reporter_type !== undefined)
-      entity.reporterType = dto.reporter_type;
-    // GGG-F: WAR fields
-    if (dto.war_number !== undefined) entity.warNumber = dto.war_number;
-    if (dto.reporting_period_start !== undefined)
-      entity.reportingPeriodStart = dto.reporting_period_start
-        ? new Date(dto.reporting_period_start)
-        : undefined;
-    if (dto.reporting_period_end !== undefined)
-      entity.reportingPeriodEnd = dto.reporting_period_end
-        ? new Date(dto.reporting_period_end)
-        : undefined;
-    if (dto.personnel_equipment_constraints !== undefined)
-      entity.personnelEquipmentConstraints =
-        dto.personnel_equipment_constraints;
-    if (dto.mitigation_measures !== undefined)
-      entity.mitigationMeasures = dto.mitigation_measures;
-    if (dto.look_ahead_activities !== undefined)
-      entity.lookAheadActivities = dto.look_ahead_activities;
-    if (dto.accomplishments !== undefined)
-      entity.accomplishments = dto.accomplishments;
-    if (dto.signatories !== undefined) entity.signatories = dto.signatories;
-    // GGG-F: MPR fields
-    if (dto.mpr_number !== undefined) entity.mprNumber = dto.mpr_number;
-    if (dto.reporting_period_month !== undefined)
-      entity.reportingPeriodMonth = dto.reporting_period_month
-        ? new Date(dto.reporting_period_month)
-        : undefined;
-    if (dto.work_items !== undefined) entity.workItems = dto.work_items;
-    if (dto.accomplishment_summary_percent !== undefined)
-      entity.accomplishmentSummaryPercent = dto.accomplishment_summary_percent;
-    if (dto.percent_time_elapsed !== undefined)
-      entity.percentTimeElapsed = dto.percent_time_elapsed;
-    if (dto.original_contract_amount !== undefined)
-      entity.originalContractAmount = dto.original_contract_amount;
-    if (dto.revised_contract_amount !== undefined)
-      entity.revisedContractAmount = dto.revised_contract_amount;
-    // ZZZ-G: structured Project Concerns list
-    if (dto.concerns_list !== undefined)
-      entity.concernsList = dto.concerns_list;
-    // BBB-C: WAR/MPR financial billing fields
-    if (dto.billing_amount_this_period !== undefined)
-      entity.billingAmountThisPeriod = dto.billing_amount_this_period;
-    if (dto.financial_accomplishment_percent !== undefined)
-      entity.financialAccomplishmentPercent =
-        dto.financial_accomplishment_percent;
-    await this.em.flush();
+    await this.timelineEntryRepo.updateFromDto(entity, dto);
 
     this.logger.log(
       `TIMELINE_ENTRY_UPDATED: id=${entryId}, project=${projectId}, by=${userId}`,
@@ -1665,10 +1520,10 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     if (user)
       await this.assertProjectPermission(projectId, userId, user, 'canDelete');
-    const count = await this.timelineEntryRepo.nativeDelete({
-      id: entryId,
+    const count = await this.timelineEntryRepo.deleteForProject(
       projectId,
-    });
+      entryId,
+    );
     if (count === 0)
       throw new NotFoundException(`Timeline entry ${entryId} not found`);
     this.logger.log(
@@ -1701,6 +1556,10 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionMovEntry> {
     await this.findOne(projectId);
+    // Record-scope guard: a MOV entry is project evidence, so creating one is a write on the
+    // project and needs the same assignment check as any other sub-resource.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canCreate');
 
     // Validate the related entity exists and belongs to this project
     if (dto.related_entity_type === 'MILESTONE') {
@@ -1713,10 +1572,10 @@ export class ConstructionProjectsService {
           `Milestone ${dto.related_entity_id} not found in project ${projectId}`,
         );
     } else {
-      const t = await this.timelineEntryRepo.findOne({
-        id: dto.related_entity_id,
+      const t = await this.timelineEntryRepo.findOneForProject(
         projectId,
-      });
+        dto.related_entity_id,
+      );
       if (!t)
         throw new NotFoundException(
           `Timeline entry ${dto.related_entity_id} not found in project ${projectId}`,
@@ -1754,6 +1613,9 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<void> {
     await this.findOne(projectId);
+    // Record-scope guard — deleting evidence is a write on the project.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canDelete');
     const count = await this.movEntryRepo.nativeDelete({
       id: movEntryId,
       projectId,
@@ -1769,11 +1631,59 @@ export class ConstructionProjectsService {
   }
 
   // LC-C: Upload a file as MOV evidence for an existing MOV entry
+  /**
+   * Attach a file to an existing MOV entry.
+   *
+   * Reports the same upload phases as the document and gallery paths, so every file a user
+   * can send from the COI screens is tracked the same way.
+   */
   async uploadMovFile(
     projectId: string,
     movEntryId: string,
     file: Express.Multer.File,
     userId: string,
+    uploadId?: string,
+    // Optional so existing call sites keep compiling; the controller always passes it, and
+    // without it the record-scope guard below cannot run.
+    user?: JwtPayload,
+  ): Promise<ConstructionMovEntry> {
+    // Record-scope guard, before any progress channel is opened — a caller with no claim on
+    // the project should be refused rather than handed a live upload channel.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canUpload');
+    if (uploadId) this.uploadProgress.open(uploadId, userId);
+    this.uploadProgress.emit(uploadId, userId, 'received', {
+      fileName: file?.originalname,
+    });
+    try {
+      const entry = await this.persistMovFile(
+        projectId,
+        movEntryId,
+        file,
+        userId,
+        uploadId,
+      );
+      this.uploadProgress.finish(uploadId, userId, {
+        fileName: file?.originalname,
+      });
+      return entry;
+    } catch (err) {
+      this.uploadProgress.fail(
+        uploadId,
+        userId,
+        err instanceof HttpException ? err.message : 'Upload failed',
+        { fileName: file?.originalname },
+      );
+      throw err;
+    }
+  }
+
+  private async persistMovFile(
+    projectId: string,
+    movEntryId: string,
+    file: Express.Multer.File,
+    userId: string,
+    uploadId?: string,
   ): Promise<ConstructionMovEntry> {
     await this.findOne(projectId);
     const entry = await this.movEntryRepo.findOne({
@@ -1784,16 +1694,29 @@ export class ConstructionProjectsService {
       throw new NotFoundException(`MOV entry ${movEntryId} not found`);
     if (!file) throw new BadRequestException('File is required');
 
+    this.uploadProgress.emit(uploadId, userId, 'validating', {
+      fileName: file.originalname,
+    });
+    this.uploadsService.validateFile(file);
+    this.uploadProgress.emit(uploadId, userId, 'storing', {
+      fileName: file.originalname,
+    });
     const uploadResult = await this.uploadsService.uploadFile(
       file,
       userId,
       'construction_mov',
       projectId,
     );
+    this.uploadProgress.emit(uploadId, userId, 'stored', {
+      fileName: uploadResult.originalName,
+    });
     entry.filePath = uploadResult.filePath;
     entry.fileName = file.originalname;
     entry.fileSize = file.size;
     entry.mimeType = file.mimetype;
+    this.uploadProgress.emit(uploadId, userId, 'persisting', {
+      fileName: file.originalname,
+    });
     await this.em.flush();
     this.logger.log(
       `MOV_FILE_UPLOADED: id=${movEntryId}, project=${projectId}, by=${userId}`,
@@ -1811,9 +1734,9 @@ export class ConstructionProjectsService {
    * Used by frontend to render checklist categories and admin extension UI.
    */
   async findDocumentTypes(): Promise<ConstructionDocumentType[]> {
-    return this.docTypeRepo.find(
+    return await this.docTypeRepo.find(
       { isActive: true },
-      { orderBy: { groupCode: 'asc', sortOrder: 'asc' } },
+      { orderBy: { groupCode: QueryOrder.ASC, sortOrder: QueryOrder.ASC } },
     );
   }
 
@@ -1830,7 +1753,9 @@ export class ConstructionProjectsService {
   > {
     const all = await this.docTypeRepo.find(
       { isActive: true },
-      { orderBy: { groupCode: 'asc', sortOrder: 'asc' } },
+      {
+        orderBy: [{ groupCode: QueryOrder.ASC }, { sortOrder: QueryOrder.ASC }],
+      },
     );
     const groups = new Map<
       string,
@@ -1855,35 +1780,30 @@ export class ConstructionProjectsService {
 
   /**
    * ZX-2: Flat map of typeCode → templateUrl for all active document types.
-   * Lets the hub show "template available" indicators without re-fetching
+   * Lets the hub show "template-available" indicators without re-fetching
    * the full type list.
    */
   async getDocumentTypeTemplateStatus(): Promise<
     { typeCode: string; templateUrl: string | null }[]
   > {
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `SELECT type_code, template_url
-         FROM construction_document_types
-        WHERE is_active = true
-        ORDER BY group_code ASC, sort_order ASC`,
+    const docTypes = await this.docTypeRepo.find(
+      { isActive: true },
+      {
+        orderBy: [{ groupCode: QueryOrder.ASC }, { sortOrder: QueryOrder.ASC }],
+      },
     );
-    return (
-      rows as Array<{ type_code: string; template_url: string | null }>
-    ).map((r) => ({
-      typeCode: r.type_code,
-      templateUrl: r.template_url ?? null,
+    return docTypes.map((t) => ({
+      typeCode: t.typeLabel,
+      templateUrl: t.templateUrl ?? null,
     }));
   }
 
   /**
-   * KB-E: Returns the per-project document checklist. On first call for a
+   * KB-E: Returns the per-project document checklist. On the first call for a
    * project, lazily seeds checklist rows from the active type reference
    * (one row per active document type). Idempotent — re-call is safe.
    */
-  async findDocumentChecklist(
-    projectId: string,
-  ): Promise<
+  async findDocumentChecklist(projectId: string): Promise<
     Array<
       ConstructionDocumentChecklist & {
         documentType?: ConstructionDocumentType;
@@ -1894,7 +1814,7 @@ export class ConstructionProjectsService {
 
     const activeTypes = await this.docTypeRepo.find(
       { isActive: true },
-      { orderBy: { groupCode: 'asc', sortOrder: 'asc' } },
+      { orderBy: [{ groupCode: QueryOrder.ASC, sortOrder: QueryOrder.ASC }] },
     );
 
     // Lazy initialization: insert missing checklist items
@@ -1931,6 +1851,10 @@ export class ConstructionProjectsService {
     user?: JwtPayload,
   ): Promise<ConstructionDocumentChecklist> {
     await this.findOne(projectId);
+    // Record-scope guard: the checklist records compliance status for this project, so
+    // changing it is a project write.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
     const entity = await this.docChecklistRepo.findOne({
       id: itemId,
       projectId,
@@ -2019,6 +1943,9 @@ export class ConstructionProjectsService {
   ): Promise<void> {
     const entity = await this.cpRepo.findOne({ id: projectId });
     if (!entity) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — checklist remarks are stored on the project row itself.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
     const current: Record<
       string,
       string | Array<{ text: string; author: string; timestamp: string }>
@@ -2075,6 +2002,9 @@ export class ConstructionProjectsService {
   ): Promise<Array<{ id: string; label: string; typeCode: string }>> {
     const entity = await this.cpRepo.findOne({ id: projectId });
     if (!entity) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — custom Key Document sections are per-project configuration.
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     entity.customKeySections = Array.isArray(sections) ? sections : [];
     await this.em.flush();
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
@@ -2093,6 +2023,9 @@ export class ConstructionProjectsService {
   ): Promise<Array<{ id: string; label: string; typeCode: string }>> {
     const entity = await this.cpRepo.findOne({ id: projectId });
     if (!entity) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — custom Supporting Document folders are per-project configuration.
+    if (user)
+      await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     entity.customSupportingSections = Array.isArray(sections) ? sections : [];
     await this.em.flush();
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
@@ -2114,9 +2047,12 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
 
     const { page = 1, limit = 20, sort = 'uploadedAt', order = 'desc' } = query;
-    const sortKey = ['uploadedAt', 'category'].includes(sort)
-      ? sort
+    type sortKeyType = 'uploadedAt' | 'category';
+
+    const sortKey: sortKeyType = ['uploadedAt', 'category'].includes(sort)
+      ? (sort as sortKeyType)
       : 'uploadedAt';
+
     const sortOrder = (order.toLowerCase() === 'asc' ? 'asc' : 'desc') as
       | 'asc'
       | 'desc';
@@ -2127,7 +2063,9 @@ export class ConstructionProjectsService {
     const [items, total] = await this.galleryRepo.findAndCount(where, {
       limit,
       offset: (page - 1) * limit,
-      orderBy: { [sortKey]: sortOrder },
+      orderBy: {
+        [sortKey]: sortOrder == 'asc' ? QueryOrder.ASC : QueryOrder.DESC,
+      },
     });
 
     return createPaginatedResponse(items, total, page, limit);
@@ -2144,14 +2082,62 @@ export class ConstructionProjectsService {
     return entity;
   }
 
+  /**
+   * Upload a gallery image.
+   *
+   * Reports the same phases as a document upload over the caller's SSE channel, for the
+   * same reason: once the browser has sent the last byte it cannot see the storage write
+   * or the database commit, and a 10 MB photo spends real time in both.
+   */
   async createGalleryItem(
     projectId: string,
     file: Express.Multer.File,
     dto: CreateGalleryDto,
     userId: string,
     user?: JwtPayload,
+    uploadId?: string,
+  ): Promise<ConstructionGallery> {
+    if (uploadId) this.uploadProgress.open(uploadId, userId);
+    this.uploadProgress.emit(uploadId, userId, 'received', {
+      fileName: file?.originalname,
+    });
+    try {
+      const entity = await this.persistGalleryItem(
+        projectId,
+        file,
+        dto,
+        userId,
+        user,
+        uploadId,
+      );
+      this.uploadProgress.finish(uploadId, userId, {
+        fileName: file?.originalname,
+      });
+      return entity;
+    } catch (err) {
+      this.uploadProgress.fail(
+        uploadId,
+        userId,
+        err instanceof HttpException ? err.message : 'Upload failed',
+        { fileName: file?.originalname },
+      );
+      throw err;
+    }
+  }
+
+  private async persistGalleryItem(
+    projectId: string,
+    file: Express.Multer.File,
+    dto: CreateGalleryDto,
+    userId: string,
+    user?: JwtPayload,
+    uploadId?: string,
   ): Promise<ConstructionGallery> {
     await this.findOne(projectId);
+    // Record-scope guard, at the single choke point the upload route and any future caller
+    // both pass through.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canUpload');
 
     if (!file) throw new BadRequestException('Image file is required');
 
@@ -2168,12 +2154,24 @@ export class ConstructionProjectsService {
       }
     }
 
+    this.uploadProgress.emit(uploadId, userId, 'validating', {
+      fileName: file.originalname,
+    });
+    // Reject an oversized or wrong-typed image before the storage write, so the failure is
+    // reported against the phase that actually rejected it.
+    this.uploadsService.validateFile(file);
+    this.uploadProgress.emit(uploadId, userId, 'storing', {
+      fileName: file.originalname,
+    });
     const uploadResult = await this.uploadsService.uploadFile(
       file,
       userId,
       'construction_gallery',
       projectId,
     );
+    this.uploadProgress.emit(uploadId, userId, 'stored', {
+      fileName: uploadResult.originalName,
+    });
 
     const entity = this.galleryRepo.create({
       projectId,
@@ -2185,6 +2183,9 @@ export class ConstructionProjectsService {
       imageTakenDate: dto.image_taken_date
         ? new Date(dto.image_taken_date)
         : undefined,
+    });
+    this.uploadProgress.emit(uploadId, userId, 'persisting', {
+      fileName: file.originalname,
     });
     await this.em.persist(entity).flush();
 
@@ -2204,8 +2205,13 @@ export class ConstructionProjectsService {
     galleryId: string,
     dto: Partial<CreateGalleryDto>,
     userId: string,
+    // Optional so existing call sites keep compiling; the controller always passes it.
+    user?: JwtPayload,
   ): Promise<ConstructionGallery> {
     const entity = await this.findGalleryItem(projectId, galleryId);
+    // Record-scope guard — editing a caption or category is still a project write.
+    if (user)
+      await this.assertProjectPermission(projectId, userId, user, 'canEdit');
 
     if (dto.caption !== undefined) entity.caption = dto.caption;
     if (dto.category !== undefined) entity.category = dto.category;
@@ -2246,12 +2252,62 @@ export class ConstructionProjectsService {
   // Phase JN-D: Document / Attachment / External Link uploads
   // ============================================================
 
+  /**
+   * Upload a file, or register an external link, against a project.
+   *
+   * When an uploadId is supplied the caller is watching an SSE channel, and each stage
+   * below is published to it. Those stages describe what happens AFTER the request body
+   * has arrived: Multer has already buffered the whole file before this method runs, so
+   * the transfer itself is not observable here. The browser measures that part with
+   * XMLHttpRequest upload progress.
+   */
   async addDocumentToProject(
     projectId: string,
     file: Express.Multer.File | undefined,
     dto: UploadDocumentDto,
     userId: string,
     user?: JwtPayload,
+    uploadId?: string,
+  ): Promise<Document> {
+    if (uploadId) this.uploadProgress.open(uploadId, userId);
+    this.uploadProgress.emit(uploadId, userId, 'received', {
+      fileName: file?.originalname ?? dto.title,
+    });
+    try {
+      const doc = await this.persistProjectDocument(
+        projectId,
+        file,
+        dto,
+        userId,
+        user,
+        uploadId,
+      );
+      this.uploadProgress.finish(uploadId, userId, {
+        fileName: doc.fileName,
+        document: wrap(doc).toJSON(),
+      });
+      return doc;
+    } catch (err) {
+      // Only an HttpException message is safe to republish: it is the same text the HTTP
+      // response already carries. Anything else (a driver error, for instance) would make
+      // the stream a second, less guarded disclosure path.
+      this.uploadProgress.fail(
+        uploadId,
+        userId,
+        err instanceof HttpException ? err.message : 'Upload failed',
+        { fileName: file?.originalname },
+      );
+      throw err;
+    }
+  }
+
+  private async persistProjectDocument(
+    projectId: string,
+    file: Express.Multer.File | undefined,
+    dto: UploadDocumentDto,
+    userId: string,
+    user?: JwtPayload,
+    uploadId?: string,
   ): Promise<Document> {
     await this.findOne(projectId);
     if (user) {
@@ -2292,7 +2348,23 @@ export class ConstructionProjectsService {
     let mimeType: string;
 
     if (file) {
+      // uploadFile() validates the file and then writes it to storage. On a large document
+      // the MinIO PUT is the slow step, and it is invisible to the browser, which is the
+      // whole reason these two events exist.
+      this.uploadProgress.emit(uploadId, userId, 'validating', {
+        fileName: file.originalname,
+      });
+      // Run the size/type/extension checks here so a rejected file fails during the
+      // 'validating' phase rather than appearing to fail mid-write. uploadFile() repeats
+      // them, which keeps it safe to call directly from anywhere else.
+      this.uploadsService.validateFile(file);
+      this.uploadProgress.emit(uploadId, userId, 'storing', {
+        fileName: file.originalname,
+      });
       const upload = await this.uploadsService.uploadFile(file, userId);
+      this.uploadProgress.emit(uploadId, userId, 'stored', {
+        fileName: upload.originalName,
+      });
       filePath = upload.filePath;
       fileName = upload.originalName;
       fileSize = upload.fileSize;
@@ -2310,13 +2382,13 @@ export class ConstructionProjectsService {
     }
 
     // OOO-A: version auto-increment for folder submissions. Each new upload into a
-    // SUBMISSIONS/folder node gets version = (current max in folder) + 1, so the
-    // submissions table doubles as version history. Non-folder uploads stay at v1.
+    // SUBMISSIONS/folder node gets a version = (current max in folder) + 1, so the
+    // submission table doubles as version history. Non-folder uploads stay at v1.
     let version = 1;
     if (dto.folder_id) {
       const latest = await this.documentRepo.findOne(
         { folderId: dto.folder_id },
-        { orderBy: { version: 'desc' } },
+        { orderBy: { version: QueryOrder.DESC } },
       );
       version = (latest?.version ?? 0) + 1;
     }
@@ -2337,7 +2409,10 @@ export class ConstructionProjectsService {
       uploadedBy: userId,
       createdBy: userId,
     });
-    await this.em.persistAndFlush(doc);
+    this.uploadProgress.emit(uploadId, userId, 'persisting', {
+      fileName,
+    });
+    await this.documentRepo.getEntityManager().persist(doc).flush();
 
     // YYY-C: Auto-link checklist — fires on ANY upload whose documentType matches a
     // KB-E taxonomy typeCode. Removed NOT_SUBMITTED filter so re-uploads also update
@@ -2361,7 +2436,12 @@ export class ConstructionProjectsService {
           checklistItem.currentVersion =
             (checklistItem.currentVersion ?? 0) + 1;
           checklistItem.submissionStatus = 'SUBMITTED';
-          await this.em.persistAndFlush(checklistItem);
+
+          await this.docChecklistRepo
+            .getEntityManager()
+            .persist(checklistItem)
+            .flush();
+
           this.logger.log(
             wasFirstSubmission
               ? `CHECKLIST_AUTO_LINKED: project=${projectId}, checklist=${checklistItem.id}, doc=${doc.id}, typeCode=${dto.documentType}`
@@ -2393,14 +2473,23 @@ export class ConstructionProjectsService {
     return doc;
   }
 
+  /**
+   * Every document attached to the project: uploaded files and external links alike,
+   * newest first. Soft-deleted rows are excluded by the entity's default notDeleted filter.
+   *
+   * Returns plain objects rather than entities. uploadedByName is joined in below, and an
+   * entity only serialises its mapped @Property fields, so assigning the name onto the
+   * entity silently dropped it before it ever reached the client: the query ran on every
+   * request and the UI column was always blank.
+   */
   async listProjectDocuments(
     projectId: string,
-  ): Promise<Array<Document & { uploadedByName?: string }>> {
+  ): Promise<Array<Record<string, unknown> & { uploadedByName?: string }>> {
     const docs = await this.documentRepo.find(
       { documentableType: 'CONSTRUCTION_PROJECT', documentableId: projectId },
       { orderBy: { createdAt: 'desc' } },
     );
-    if (!docs.length) return docs;
+    if (!docs.length) return [];
     const uploaderIds = [
       ...new Set(docs.map((d) => d.uploadedBy).filter(Boolean)),
     ];
@@ -2409,7 +2498,10 @@ export class ConstructionProjectsService {
     // `ANY($1, $2, ...)` (invalid SQL) → HTTP 500 whenever a project had documents.
     // Use the codebase-standard IN(placeholders) + flat params instead.
     if (!uploaderIds.length) {
-      return docs.map((d) => Object.assign(d, { uploadedByName: undefined }));
+      return docs.map((d) => ({
+        ...wrap(d).toJSON(),
+        uploadedByName: undefined,
+      }));
     }
     const placeholders = uploaderIds.map(() => '?').join(', ');
     const userRows = (await this.em
@@ -2419,9 +2511,10 @@ export class ConstructionProjectsService {
         uploaderIds,
       )) as Array<{ id: string; display_name: string }>;
     const nameMap = new Map(userRows.map((r) => [r.id, r.display_name]));
-    return docs.map((d) =>
-      Object.assign(d, { uploadedByName: nameMap.get(d.uploadedBy) }),
-    );
+    return docs.map((d) => ({
+      ...wrap(d).toJSON(),
+      uploadedByName: nameMap.get(d.uploadedBy),
+    }));
   }
 
   // UUU-C: Dynamic template discovery. Scans the static templates directory at
@@ -2550,7 +2643,7 @@ export class ConstructionProjectsService {
       createdBy: user.sub,
       updatedBy: user.sub,
     });
-    await this.em.persistAndFlush(entity);
+    await this.docFolderRepo.getEntityManager().persist(entity).flush();
     this.fireLog(user, ActivityAction.CREATE, projectId, {
       section: 'DOCUMENT_FOLDER',
       folderId: entity.id,
@@ -2804,6 +2897,8 @@ export class ConstructionProjectsService {
     document: Document;
   }> {
     await this.findOne(projectId);
+    // Record-scope guard — submitting a document version writes to the project's checklist.
+    await this.assertProjectPermission(projectId, user.sub, user, 'canUpload');
     const checklistItem = await this.docChecklistRepo.findOne({
       id: checklistItemId,
       projectId,
@@ -2912,6 +3007,8 @@ export class ConstructionProjectsService {
   ): Promise<ConstructionDiaryEntry> {
     const project = await this.cpRepo.findOne({ id: projectId });
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+    // Record-scope guard — the delete counterpart already had one.
+    await this.assertProjectPermission(projectId, user.sub, user, 'canCreate');
 
     const entry = this.diaryRepo.create({
       projectId,
@@ -2920,7 +3017,7 @@ export class ConstructionProjectsService {
       content: dto.content,
       authorId: user.sub,
     });
-    await this.em.persistAndFlush(entry);
+    await this.em.persist(entry).flush();
 
     this.fireLog(user, ActivityAction.CREATE, entry.id, {
       entityType: 'diary_entry',
@@ -2942,6 +3039,8 @@ export class ConstructionProjectsService {
         `Diary entry ${entryId} not found for project ${projectId}`,
       );
     }
+    // Record-scope guard — the delete counterpart already had one.
+    await this.assertProjectPermission(projectId, user.sub, user, 'canEdit');
     const before = {
       entryDate: entry.entryDate,
       title: entry.title,
@@ -2989,7 +3088,7 @@ export class ConstructionProjectsService {
       title: entry.title,
       content: entry.content,
     };
-    await this.em.removeAndFlush(entry);
+    await this.em.remove(entry).flush();
     this.fireLog(user, ActivityAction.DELETE, entryId, {
       entityType: 'diary_entry',
       projectId,
@@ -3007,7 +3106,11 @@ export class ConstructionProjectsService {
     await this.findOne(projectId);
     return this.revisionOrderRepo.find(
       { projectId },
-      { orderBy: { revisionDate: 'desc', revisionNumber: 'desc' } },
+      {
+        orderBy: [
+          { revisionDate: QueryOrder.DESC, revisionNumber: QueryOrder.DESC },
+        ],
+      },
     );
   }
 
@@ -3017,20 +3120,20 @@ export class ConstructionProjectsService {
   ): Promise<void> {
     const latest = await this.revisionOrderRepo.findOne(
       { projectId, approvalStatus: 'APPROVED' },
-      { orderBy: { revisionDate: 'desc', revisionNumber: 'desc' } },
+      {
+        orderBy: [
+          { revisionDate: QueryOrder.DESC, revisionNumber: QueryOrder.DESC },
+        ],
+      },
     );
-    const conn = this.em.getConnection();
-    await conn.execute(
-      `UPDATE construction_projects
-       SET revised_start_date = ?, revised_completion_date = ?, revised_project_duration = ?,
-           updated_at = NOW()
-       WHERE id = ?`,
-      [
-        latest?.newStartDate ?? null,
-        latest?.newCompletionDate ?? null,
-        latest?.newDuration ?? null,
-        projectId,
-      ],
+
+    const updated = this.cpRepo.nativeUpdate(
+      { id: projectId },
+      {
+        revisedStartDate: latest?.newStartDate ?? null,
+        revisedCompletionDate: latest?.newCompletionDate ?? null,
+        revisedProjectDuration: latest?.newDuration ?? null,
+      },
     );
   }
 
@@ -3288,8 +3391,14 @@ export class ConstructionProjectsService {
       entity.reportDate = new Date(dto.report_date);
     if (dto.report_number !== undefined)
       entity.reportNumber = dto.report_number;
+    // An explicit null clears the field. percentage_completion is NOT NULL in the
+    // database, so it resets to zero instead of being written as the string "null",
+    // which Postgres rejects with: invalid input syntax for type numeric: "null".
     if (dto.percentage_completion !== undefined)
-      entity.percentageCompletion = String(dto.percentage_completion);
+      entity.percentageCompletion =
+        dto.percentage_completion != null
+          ? String(dto.percentage_completion)
+          : '0.00';
     if (dto.planned_accomplishment !== undefined)
       entity.plannedAccomplishment =
         dto.planned_accomplishment != null
@@ -3322,20 +3431,24 @@ export class ConstructionProjectsService {
     if (dto.mov_document_id !== undefined)
       entity.movDocumentId = dto.mov_document_id;
     if (dto.mov_link !== undefined) entity.movLink = dto.mov_link;
-    // OS-D: update list fields if provided
-    if (dto.narrative_list !== undefined) {
-      const now = new Date().toISOString();
-      const stampList = (items: any[] | undefined) =>
-        (items || []).map((e) => ({
-          text: e.text || '',
-          author: e.author || user?.email || 'System',
-          createdAt: e.created_at || e.createdAt || now,
-        }));
+    // OS-D: update list fields if provided. Each list is applied on its own so a PATCH
+    // carrying only one of them does not silently wipe the other three, which the old
+    // single 'if (narrative_list)' gate did.
+    const now = new Date().toISOString();
+    const stampList = (items: any[] | null | undefined) =>
+      (items || []).map((e) => ({
+        text: e.text || '',
+        author: e.author || user?.email || 'System',
+        createdAt: e.created_at || e.createdAt || now,
+      }));
+    if (dto.narrative_list !== undefined)
       entity.narrativeList = stampList(dto.narrative_list);
+    if (dto.remarks_list !== undefined)
       entity.remarksList = stampList(dto.remarks_list);
+    if (dto.issues_encountered_list !== undefined)
       entity.issuesEncounteredList = stampList(dto.issues_encountered_list);
+    if (dto.mitigation_actions_list !== undefined)
       entity.mitigationActionsList = stampList(dto.mitigation_actions_list);
-    }
     entity.updatedBy = user?.sub;
     await this.em.flush();
     await this.mirrorLatestReportToProject(projectId);
@@ -3373,4 +3486,23 @@ export class ConstructionProjectsService {
       progressReportId: reportId,
     });
   }
+}
+
+/**
+ * Parse a DTO date field for a date/timestamp column. The DTOs carry dates as strings; an
+ * empty string or null means "no date", which has to stay undefined rather than becoming an
+ * Invalid Date.
+ */
+function toDate(value?: string | null): Date | undefined {
+  return value ? new Date(value) : undefined;
+}
+
+/**
+ * Render a numeric DTO field for a decimal column. mikro-orm maps decimal/numeric columns to
+ * string so the exact value survives the round trip — JavaScript numbers cannot hold every
+ * decimal the database accepts. The DTOs declare these fields as numbers, so the conversion
+ * happens here rather than being repeated at each assignment.
+ */
+function toDecimal(value?: number | null): string | undefined {
+  return value === null || value === undefined ? undefined : String(value);
 }

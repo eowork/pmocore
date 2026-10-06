@@ -16,10 +16,17 @@ export class UploadsService {
     private configService: ConfigService,
   ) {
     // T-JWT-EXPIRY (same string-vs-number pattern): coerce to a real number.
+    //
+    // This is the GLOBAL backstop, applied to every upload in the application. It must be
+    // at least as large as the biggest per-route multer limit, otherwise a route silently
+    // advertises a size it cannot accept: a 12 MB document passed the 20 MB route limit,
+    // was buffered in full, and was then rejected here by a 10 MB cap the user was never
+    // shown. The per-route limits stay authoritative for the differences between routes
+    // (documents 20 MB, MOV 15 MB, gallery 10 MB).
     this.maxFileSize = numberFromConfig(
       this.configService,
       'MAX_FILE_SIZE',
-      10 * 1024 * 1024,
+      20 * 1024 * 1024,
     );
     // T-HOME-CMS-12 (TH12-1): fallback matches .env.example's already-correct
     // value (webp/csv/doc/xls included) — a fresh deploy without an explicit
@@ -31,11 +38,26 @@ export class UploadsService {
     this.allowedMimeTypes = mimeTypesStr.split(',').map((t) => t.trim());
   }
 
-  private validateFile(file: Express.Multer.File): void {
-    // Check file size
+  /**
+   * Public so a caller can run the rejection checks BEFORE the storage write and report an
+   * accurate phase to the user. uploadFile() still calls it, so this is an early check, not
+   * a replacement for the one that guards the write.
+   */
+  /** Bytes as a human figure, so an error message is readable without arithmetic. */
+  private static formatBytes(bytes: number): string {
+    const mb = bytes / (1024 * 1024);
+    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  validateFile(file: Express.Multer.File): void {
+    // Check file size. The message states BOTH sizes: naming only the limit left the user
+    // comparing it against a number they did not have, and file managers report sizes in
+    // KB, which made a 10485760-byte limit look like it had rejected a tiny file.
     if (file.size > this.maxFileSize) {
       throw new BadRequestException(
-        `File size exceeds maximum allowed size of ${this.maxFileSize} bytes`,
+        `File is ${UploadsService.formatBytes(file.size)} (${file.size} bytes); ` +
+          `the maximum allowed is ${UploadsService.formatBytes(this.maxFileSize)} ` +
+          `(${this.maxFileSize} bytes)`,
       );
     }
 

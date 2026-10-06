@@ -7,7 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { LdapStrategy } from './strategies/ldap.strategy';
-import { JwtAuthGuard, RolesGuard } from './guards';
+import { JwtAuthGuard, RolesGuard, GoogleAuthGuard } from './guards';
 import { ActivityLogModule } from '../activity-logs/activity-log.module';
 import { numberFromConfig } from '../common/config.util';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
@@ -65,6 +65,9 @@ import {
     ...(process.env.LDAP_URL ? [LdapStrategy] : []),
     JwtAuthGuard,
     RolesGuard,
+    // Declared explicitly (like the guards above) so its ConfigService dependency is
+    // resolved from this module rather than relying on ambient instantiation.
+    GoogleAuthGuard,
   ],
   exports: [AuthService, JwtAuthGuard, RolesGuard, JwtModule],
 })

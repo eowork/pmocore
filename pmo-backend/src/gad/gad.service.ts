@@ -84,7 +84,7 @@ export class GadService {
   }
 
   private async reviewEntity<
-    T extends { status: string; reviewedBy?: string; reviewedAt?: Date },
+    T extends { status?: string; reviewedBy?: string; reviewedAt?: Date },
   >(
     repo: EntityRepository<T>,
     id: string,

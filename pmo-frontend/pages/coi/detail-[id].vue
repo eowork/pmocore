@@ -19,12 +19,12 @@ const router = useRouter()
 const api = useApi()
 const { public: { apiBase } } = useRuntimeConfig()
 const toast = useToast()
-const { isAdmin, isStaff, canEdit, canApprove } = usePermissions()
+const { isAdmin, canApprove } = usePermissions()
 const authStore = useAuthStore()
 
 const project = ref<UIProjectDetail | null>(null)
 // KC-E: per-record access logic delegated to composable (canEditCurrentProject, isOwnerOrAssigned)
-const { canEditCurrentProject, isOwnerOrAssigned, canEditAnyTab, effectivePermissions, myAssignment, isContractor: isContractorUser, accessResolved, canViewCoiTab } = useCoiAccess(project)
+const { canEditCurrentProject, isOwner, isOwnerOrAssigned, canEditAnyTab, effectivePermissions, myAssignment, isContractor: isContractorUser, accessResolved, canViewCoiTab } = useCoiAccess(project)
 const loading = ref(true)
 
 // JR-B: Tab navigation (read-only, freely navigable per JR-D1)
@@ -145,30 +145,54 @@ const workflowAction = ref<'submit' | 'publish' | 'reject' | 'withdraw'>('submit
 const rejectionNotes = ref('')
 const workflowProcessing = ref(false)
 
-// Check if current user is the owner, delegate, or assigned (Phase BK)
-// Show Submit/Resubmit for Review: Staff or assigned user who owns/is assigned to a DRAFT or REJECTED record
-// PHASE BBCH (Track 1, R-372): submit authority is system role Staff+ OR a contribute-capable
-// module level (canEdit('coi') is true for Contributor/Approver/Manager), AND owner/assigned.
+// Show Submit/Resubmit for Review: Admin, OR module-level 'coi' Approver/Manager
+// (Layer 3, org-wide), OR this project's own record_assignments.permissions.canApprove
+// (Layer 4 — a record-level Manager assigned to just this project). Deliberately NOT
+// owner/assigned alone: owning a project isn't itself approval authority (Contributor
+// may input/edit data but does not submit; only Approver/Manager-equivalent may).
+// effectivePermissions already bakes in the Admin bypass (adminAll), so checking it
+// alone covers Admin too — canApprove('coi') stays as the org-wide Layer 3 fallback.
 const canSubmitForReview = computed(() => {
   if (!project.value) return false
   const status = project.value.publicationStatus
   if (status !== 'DRAFT' && status !== 'REJECTED') return false
-  if (!isOwnerOrAssigned.value) return false
-  return isStaff.value || canEdit('coi')
+  return canApprove('coi') || effectivePermissions.value.canApprove
 })
 
-// Show Withdraw button: Original submitter viewing PENDING_REVIEW
+// Show Withdraw button: same approval authority as canSubmitForReview, OR the
+// original submitter.
 const canWithdraw = computed(() => {
   if (!project.value) return false
   if (project.value.publicationStatus !== 'PENDING_REVIEW') return false
+  if (canApprove('coi') || effectivePermissions.value.canApprove) return true
   return project.value.approvalMetadata?.submittedBy === authStore.user?.id
 })
 
-// Show Publish/Reject buttons: approval authority (Admin OR Approver/Manager level) + PENDING_REVIEW.
-// PHASE BBCH (Track 1, R-372): was isAdmin-only — now recognizes Layer 3 module levels.
+// Show Publish/Reject buttons: same approval authority as canSubmitForReview + PENDING_REVIEW.
+// PHASE BBCH (Track 1, R-372): was isAdmin-only — now recognizes Layer 3 module levels
+// AND Layer 4 record-level Manager grants.
 const canPublishOrReject = computed(() => {
   if (!project.value) return false
-  return canApprove('coi') && project.value.publicationStatus === 'PENDING_REVIEW'
+  if (project.value.publicationStatus !== 'PENDING_REVIEW') return false
+  return canApprove('coi') || effectivePermissions.value.canApprove
+})
+
+// Show Delete Project button: Admin, project owner, or this project's own
+// record_assignments.permissions.canDelete — mirrors coi/index.vue's canDeleteItem and
+// the backend's assertProjectPermission owner-bypass. No module-level fallback (delete
+// was never module-level-gated on the list page either; canDelete('coi') was fully
+// replaced there, kept consistent here).
+// The project list now shows the whole portfolio, so most users will open projects they have
+// no claim on. Say so once, plainly, instead of letting them hunt for action buttons that were
+// never going to render. Mirrors the backend rule exactly: assertProjectPermission() admits only
+// Admin, the owner, and an assigned user carrying the permission.
+const isReadOnlyViewer = computed(() =>
+  !isAdmin.value && !isOwnerOrAssigned.value
+)
+
+const canDeleteProject = computed(() => {
+  if (!project.value) return false
+  return isAdmin.value || isOwner.value || effectivePermissions.value.canDelete === true
 })
 
 // Show Edit button: Must be owner/assigned or Admin
@@ -236,6 +260,30 @@ async function executeWorkflowAction() {
   }
 }
 
+// Delete Project (mirrors coi/index.vue's confirmDelete/deleteProject)
+const deleteDialog = ref(false)
+const deleting = ref(false)
+
+function confirmDeleteProject() {
+  deleteDialog.value = true
+}
+
+async function deleteProject() {
+  deleting.value = true
+  try {
+    await api.del(`/api/construction-projects/${projectId}`)
+    toast.success(`Project "${project.value?.projectName}" deleted successfully`)
+    router.push('/coi')
+  } catch (err: unknown) {
+    const error = err as { message?: string }
+    toast.error(error.message || 'Failed to delete project')
+    console.error('Failed to delete project:', err)
+  } finally {
+    deleting.value = false
+    deleteDialog.value = false
+  }
+}
+
 // Gallery state (Phase JB â€” view only after KE-F)
 const gallery = ref<UIGalleryItem[]>([])
 const loadingGallery = ref(false)
@@ -296,27 +344,79 @@ interface DocumentItem {
   version?: number
   lifecycleStatus?: string
   uploadedBy?: string
+  // Joined display name of the uploader, sent by GET :id/documents.
+  uploadedByName?: string
 }
 
 const documents = ref<DocumentItem[]>([])
 const loadingDocuments = ref(false)
 
-// KC-D: Document preview type registry â€” used by Overview "Key Documents" panel
-// to surface compliance status for the four most-audited document categories.
-const DOCUMENT_PREVIEW_TYPES = [
-  { key: 'project_profile',        label: 'Project Profile',           match: ['profile', 'project profile'] },
-  { key: 'feasibility_study',      label: 'Feasibility Study',         match: ['feasibility'] },
-  { key: 'program_of_works',       label: 'Program of Works (POW)',    match: ['pow', 'program of works', 'bill of quantities', 'boq'] },
-  { key: 'certificate_completion', label: 'Certificate of Completion', match: ['certificate', 'completion'] },
+// KC-D: Key document cards for the Overview panel.
+//
+// Matching is by document type code, not by substring of the type plus file name. The
+// substring version matched 'pow' anywhere, so a file named "Power layout.pdf" counted as a
+// Program of Works, and it returned only the FIRST hit: a project holding three Project
+// Profile documents showed one and hid the rest, external links included.
+//
+// Several taxonomy codes describe the same concept (the CPES_* set duplicates GROUP_*, and
+// SD_ECO_017 is a third Certificate of Completion), so each card owns a list of codes.
+// Feasibility Study keeps its own legacy code: the active taxonomy folds feasibility into
+// PROJECT_PROFILE, and listing both codes on one card would double-count those documents.
+const KEY_DOCUMENT_CARDS = [
+  { key: 'project_profile',        label: 'Project Profile',           icon: 'mdi-file-account-outline', typeCodes: ['PROJECT_PROFILE'] },
+  { key: 'feasibility_study',      label: 'Feasibility Study',         icon: 'mdi-file-search-outline',  typeCodes: ['FEASIBILITY_STUDY'] },
+  { key: 'program_of_works',       label: 'Program of Works (POW)',    icon: 'mdi-file-table-outline',   typeCodes: ['POW', 'CPES_POW'] },
+  { key: 'certificate_completion', label: 'Certificate of Completion', icon: 'mdi-certificate-outline',  typeCodes: ['CERTIFICATE_OF_COMPLETION', 'CPES_CERT_COMPLETION', 'SD_ECO_017'] },
 ]
 
-function findDocumentPreview(docs: DocumentItem[], typeKey: string): DocumentItem | null {
-  const type = DOCUMENT_PREVIEW_TYPES.find(t => t.key === typeKey)
-  if (!type) return null
-  return docs.find(doc => {
-    const haystack = `${doc.documentType || ''} ${doc.fileName || ''}`.toLowerCase()
-    return type.match.some(m => haystack.includes(m))
-  }) || null
+interface KeyDocumentSummary {
+  key: string
+  label: string
+  icon: string
+  typeCodes: string[]
+  docs: DocumentItem[]
+  fileCount: number
+  linkCount: number
+  latest: DocumentItem | null
+}
+
+/** True for a document stored as a URL rather than bytes (Drive MOV or any external link). */
+function isExternalLinkDoc(doc: DocumentItem): boolean {
+  return doc.mimeType === 'application/x-google-drive-link' ||
+    doc.mimeType === 'application/x-external-link'
+}
+
+// Every document per card, newest first — files and links together, since a key document
+// may legitimately be one uploaded file, several revisions, a Drive link, or a mix.
+const keyDocumentSummaries = computed<KeyDocumentSummary[]>(() =>
+  KEY_DOCUMENT_CARDS.map(card => {
+    const docs = documents.value
+      .filter(d => card.typeCodes.includes(d.documentType || ''))
+      .slice()
+      .sort((a, b) => ((a.createdAt || '') > (b.createdAt || '') ? -1 : 1))
+    return {
+      key: card.key,
+      label: card.label,
+      icon: card.icon,
+      typeCodes: [...card.typeCodes],
+      docs,
+      fileCount: docs.filter(d => !isExternalLinkDoc(d)).length,
+      linkCount: docs.filter(isExternalLinkDoc).length,
+      latest: docs[0] ?? null,
+    }
+  })
+)
+
+// Key document viewer. CiRepositoryModal is reused in view mode rather than writing a
+// second list: it already separates files from links, streams a file through the
+// authenticated download endpoint and opens a link in a new tab.
+const keyDocModalOpen = ref(false)
+const keyDocModalCard = ref<KeyDocumentSummary | null>(null)
+function openKeyDocModal(summary: KeyDocumentSummary) {
+  keyDocModalCard.value = summary
+  keyDocModalOpen.value = true
+  // Resolves type codes to their human labels inside the modal; guarded by docTypesLoaded.
+  fetchDocTypes()
 }
 
 // File upload dialog state â€” removed in KE-F (Detail page is view-only; upload via Edit Project Details)
@@ -346,6 +446,36 @@ async function submitDriveLink() {
 
 function isDriveLink(doc: DocumentItem): boolean {
   return doc.mimeType === 'application/x-google-drive-link'
+}
+
+// CCC-A: authenticated download with the original filename; links open raw href.
+//
+// Linking straight to doc.filePath does not work for documents. /uploads is
+// unauthenticated, so main.ts gates it to image extensions only and answers
+// anything else with 403 "documents are served via the authenticated download
+// endpoint" — deliberate, since a raw /uploads URL would otherwise hand out
+// every stored document to anyone who guessed the key. Only the JWT-guarded
+// endpoint below may stream a document, and it also records the DOWNLOAD audit
+// entry that a direct link would skip.
+//
+// Same shape as CiAttachmentHub, CiRepositoryModal, CiSupportingDocsRepository
+// and CiComplianceRepository, which already used this endpoint; this page was
+// the last one still pointing at the raw path.
+async function downloadDoc(doc: DocumentItem | null | undefined): Promise<void> {
+  if (!doc) return
+  // External links have no stored bytes — filePath is the destination URL.
+  if (isDriveLink(doc) || !projectId) {
+    window.open(doc.filePath, '_blank', 'noopener')
+    return
+  }
+  try {
+    await api.download(
+      `/api/construction-projects/${projectId}/documents/${doc.id}/download`,
+      doc.fileName,
+    )
+  } catch (err) {
+    console.error('[COI Detail] Failed to download document:', err)
+  }
 }
 
 // JR-B: Split documents into files vs links for FILES/LINKS sections
@@ -781,8 +911,31 @@ onMounted(() => {
         >
           Reject
         </v-btn>
+        <v-chip
+          v-if="isReadOnlyViewer"
+          size="small"
+          color="grey"
+          variant="tonal"
+          prepend-icon="mdi-eye-outline"
+        >
+          View only
+          <v-tooltip activator="parent" location="bottom">
+            You are not the owner of this project and have not been assigned to it, so it is
+            read-only for you. Ask an administrator to assign you if you need to make changes.
+          </v-tooltip>
+        </v-chip>
         <v-btn v-if="canEditAnyTab" color="primary" prepend-icon="mdi-pencil" :disabled="loading" @click="editProject">
           Edit Project Details
+        </v-btn>
+        <v-btn
+          v-if="canDeleteProject"
+          color="error"
+          variant="outlined"
+          prepend-icon="mdi-delete"
+          :disabled="loading"
+          @click="confirmDeleteProject"
+        >
+          Delete
         </v-btn>
       </div>
     </div>
@@ -1564,27 +1717,31 @@ onMounted(() => {
                       <v-chip v-if="documents.length" size="x-small" variant="tonal" color="primary">{{ documents.length }}</v-chip>
                     </div>
                     <v-row dense>
-                      <v-col v-for="docType in DOCUMENT_PREVIEW_TYPES" :key="docType.key" cols="12">
+                      <v-col v-for="card in keyDocumentSummaries" :key="card.key" cols="12">
                         <v-card variant="outlined" class="pa-3 h-100">
-                          <div class="d-flex justify-space-between align-center mb-1">
-                            <span class="text-subtitle-2 font-weight-medium">{{ docType.label }}</span>
-                            <v-chip v-if="findDocumentPreview(documents, docType.key)" color="success" size="x-small" variant="tonal">Uploaded</v-chip>
+                          <div class="d-flex justify-space-between align-center ga-2 mb-1">
+                            <span class="text-subtitle-2 font-weight-medium d-flex align-center ga-1">
+                              <v-icon :icon="card.icon" size="16" color="primary" />
+                              {{ card.label }}
+                            </span>
+                            <v-chip v-if="card.docs.length" color="success" size="x-small" variant="tonal">
+                              {{ card.docs.length }} on file
+                            </v-chip>
                             <v-chip v-else color="warning" size="x-small" variant="tonal">Not Uploaded</v-chip>
                           </div>
-                          <template v-if="findDocumentPreview(documents, docType.key)">
+                          <template v-if="card.docs.length">
                             <div class="text-caption text-grey">
-                              {{ findDocumentPreview(documents, docType.key)?.fileName || '—' }}
-                              <span v-if="findDocumentPreview(documents, docType.key)?.createdAt">
-                                · {{ formatDate(findDocumentPreview(documents, docType.key)!.createdAt || '') }}
-                              </span>
+                              {{ card.fileCount }} {{ card.fileCount === 1 ? 'file' : 'files' }}
+                              · {{ card.linkCount }} {{ card.linkCount === 1 ? 'link' : 'links' }}
+                              <span v-if="card.latest?.createdAt">· latest {{ formatDate(card.latest.createdAt) }}</span>
                             </div>
+                            <div class="text-caption text-truncate">{{ card.latest?.fileName }}</div>
                             <v-btn
-                              v-if="findDocumentPreview(documents, docType.key)?.filePath"
                               variant="text" size="x-small" color="primary" class="mt-1 pa-0"
-                              :href="findDocumentPreview(documents, docType.key)?.filePath || undefined"
-                              target="_blank" rel="noopener noreferrer"
+                              prepend-icon="mdi-folder-open-outline"
+                              @click="openKeyDocModal(card)"
                             >
-                              View Document
+                              View Documents ({{ card.docs.length }})
                             </v-btn>
                           </template>
                           <div v-else class="text-caption text-grey">No matching document on file.</div>
@@ -2396,9 +2553,7 @@ onMounted(() => {
             color="primary"
             variant="flat"
             prepend-icon="mdi-download"
-            :href="selectedDoc.filePath"
-            target="_blank"
-            rel="noopener noreferrer"
+            @click="downloadDoc(selectedDoc)"
           >
             Download
           </v-btn>
@@ -2542,6 +2697,36 @@ onMounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <v-dialog v-model="deleteDialog" max-width="400" persistent>
+      <v-card>
+        <v-card-title class="text-h6">Confirm Delete</v-card-title>
+        <v-card-text>
+          Are you sure you want to delete <strong>{{ project?.projectName }}</strong>?
+          This action cannot be undone.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false" :disabled="deleting">Cancel</v-btn>
+          <v-btn color="error" variant="flat" @click="deleteProject" :loading="deleting">Delete</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Key document viewer: every file and link recorded under one key document type. -->
+    <CiRepositoryModal
+      v-if="keyDocModalCard"
+      v-model="keyDocModalOpen"
+      :title="keyDocModalCard.label"
+      :icon="keyDocModalCard.icon"
+      color="primary"
+      :type-codes="keyDocModalCard.typeCodes"
+      :doc-types="docTypes"
+      :documents="keyDocModalCard.docs"
+      :project-id="projectId"
+      mode="view"
+    />
 
     <!-- KD-B: Scroll-to-top FAB -->
     <CiScrollToTopFab />

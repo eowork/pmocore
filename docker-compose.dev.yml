@@ -1,4 +1,4 @@
-# Standalone dev stack — hot reload for backend + frontend.
+# Standalone dev stack — hot reload for the backend; the frontend runs on the host.
 # Independent from docker-compose.yml (not an override): run one or the other.
 #
 #   Switch to dev:  docker compose down && docker compose -f docker-compose.dev.yml up -d --build
@@ -18,6 +18,8 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql
+    networks:
+      - pmo-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -55,10 +57,37 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
       MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
+      STORAGE_DRIVER: minio
+      # Global upload backstop (bytes), enforced by UploadsService for every upload.
+      # Must stay >= the largest per-route multer limit (20 MB on the COI document
+      # routes); per-route limits keep gallery and MOV stricter. Set here rather than
+      # left to env_file for the same reason as the MINIO_* block: `environment:` wins,
+      # so a stale copy in pmo-backend/.env cannot silently shrink it.
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-20971520}
+      # Comma-separated allowlist of institutional e-mail domains for Google SSO.
+      # Read by google.strategy.ts (the authoritative gate, applied to the e-mail Google
+      # returns) and by google-auth.guard.ts (the `hd` consent-screen hint).
+      #
+      # Placed here rather than left to env_file for the same reason as the MINIO_* block:
+      # `environment:` wins over `env_file:`, so this is the single place the stack-wide
+      # value is set and a stale copy in pmo-backend/.env cannot silently win. Override per
+      # machine by setting OAUTH_ALLOWED_DOMAIN in the ROOT .env; the default below is what
+      # production expects, so an unset variable is still correct rather than permissive.
+      OAUTH_ALLOWED_DOMAIN: ${OAUTH_ALLOWED_DOMAIN:-carsu.edu.ph,csucc.edu.ph}
     command: ["npm", "run", "start:dev"]
     depends_on:
       postgres:
         condition: service_healthy
+      # The dependency the MINIO-0 comment below said would be added at cutover.
+      # Now that STORAGE_DRIVER is minio, MinioStorageDriver.onModuleInit aborts
+      # the whole boot if the endpoint is unreachable (MINIO_UNREACHABLE) or the
+      # bucket is absent (MINIO_BUCKET_MISSING), so waiting for minio to be
+      # healthy AND for minio-init to have created the bucket is what turns a
+      # crash-loop on `up` into a clean ordered start.
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     volumes:
@@ -66,6 +95,8 @@ services:
       - /app/node_modules
       - /app/dist
       - backend_uploads:/app/uploads
+    networks:
+      - pmo-network
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
       interval: 10s
@@ -73,27 +104,14 @@ services:
       retries: 6
       start_period: 30s
 
-  frontend:
-    build:
-      context: ./pmo-frontend
-      target: build
-    restart: unless-stopped
-    env_file:
-      - ./pmo-frontend/.env
-    environment:
-      NUXT_PUBLIC_API_BASE: http://localhost:${BACKEND_PORT:-3000}
-      NODE_ENV: development
-      NITRO_HOST: 0.0.0.0
-      NITRO_PORT: 3001
-    command: ["sh", "-c", "npm run dev -- --host 0.0.0.0"]
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-3001}:3001"
-    volumes:
-      - ./pmo-frontend:/app
-      - /app/node_modules
+  # The frontend is deliberately NOT a service here — Nuxt runs on the Windows host
+  # (`cd pmo-frontend && npm run dev`, which already binds port 3001). Reason: Nuxt
+  # DevTools' "open in editor" and the Vite overlay's file links spawn the editor
+  # binary in the same process as the dev server, so from inside a Linux container
+  # they can never reach WebStorm on the host. The host dev server reaches this
+  # stack through the published ports below (backend on ${BACKEND_PORT:-3000}), and
+  # Nitro's devProxy in nuxt.config.ts keeps browser traffic same-origin on :3001,
+  # so no CORS entry is needed. See pmo-frontend/.env for the required variables.
 
   # MINIO-0 — S3-compatible object storage for uploads.
   # Step 0 of the storage migration: INFRA ONLY. The backend still runs
@@ -106,25 +124,30 @@ services:
   # 2025-05-24 onward reduce the console to a login-only page, which makes
   # eyeballing objects while building the driver much harder.
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: 'quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z'
     restart: unless-stopped
-    command: ["server", "/data", "--console-address", ":9001"]
+    command:
+      - server
+      - /data
+      - '--console-address'
+      - ':9001'
     environment:
-      # The server's root credentials ARE the backend's client credentials: one
-      # pair of values in the root .env feeds both, so they cannot drift.
-      # MinIO refuses to start if user < 3 chars or password < 8 chars.
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
+      MINIO_ROOT_USER: '${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}'
+      MINIO_ROOT_PASSWORD: '${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}'
     ports:
-      # LEFT side is HOST-only. Do NOT wire MINIO_PORT here: the backend reads
-      # MINIO_PORT to reach minio:9000 across the compose network, so it must stay
-      # 9000. Same host-vs-container split as openldap's "1389:389" below.
-      - "${MINIO_HOST_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - '${MINIO_HOST_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
     volumes:
-      - minio_data:/data
+      - 'minio_data:/data'
+    # Must be on the same network as the backend. A service that declares
+    # `networks:` joins ONLY those networks, so once postgres/backend were moved
+    # onto pmo-network, minio staying on the implicit `default` network made the
+    # hostname "minio" unresolvable from the backend — MINIO_UNREACHABLE with
+    # getaddrinfo EAI_AGAIN at boot.
+    networks:
+      - pmo-network
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ['CMD', 'mc', 'ready', 'local']
       interval: 5s
       timeout: 5s
       retries: 12
@@ -135,18 +158,22 @@ services:
   # types only and serves documents exclusively through the JWT-guarded download
   # endpoint. An anonymous-readable bucket would hand out every stored document.
   minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
-    restart: "no"
+    image: 'quay.io/minio/mc:latest'
+    restart: 'no'
     depends_on:
       minio:
         condition: service_healthy
+    # Same reason as minio above: this container resolves "minio" by name in the
+    # mc alias command below, so it has to share the network.
+    networks:
+      - pmo-network
     environment:
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
-      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-pmo-uploads}
-    entrypoint: ["/bin/sh", "-c"]
-    # $$ escapes compose interpolation so the SHELL expands these, not compose —
-    # keeps the secrets out of the rendered `docker compose config` output.
+      MINIO_ACCESS_KEY: '${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set in .env}'
+      MINIO_SECRET_KEY: '${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}'
+      MINIO_BUCKET_NAME: '${MINIO_BUCKET_NAME:-pmo-uploads}'
+    entrypoint:
+      - /bin/sh
+      - '-c'
     command:
       - |
         set -e
@@ -175,6 +202,8 @@ services:
       - ./handover/ldap-test/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/seed.ldif:ro
     ports:
       - "1389:389"
+    networks:
+      - pmo-network
 
 volumes:
   pgdata:
@@ -183,3 +212,6 @@ volumes:
   # objects written here do NOT follow a switch to the prod stack. Add the same
   # service + volume there before the driver cutover.
   minio_data:
+networks:
+  pmo-network:
+      driver: bridge

@@ -1,7 +1,11 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { OperationOrganizationInfoRepository } from '../../university-operations/repository/operation-organization-info.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'operation_organizational_info' })
+@Entity({
+  tableName: 'operation_organizational_info',
+  repository: () => OperationOrganizationInfoRepository,
+})
 export class OperationOrganizationalInfo {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
@@ -9,17 +13,26 @@ export class OperationOrganizationalInfo {
   @Property({ columnType: 'uuid', unique: true })
   operationId!: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   department?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   agencyEntity?: string;
 
-  @Property({ nullable: true, columnType: 'text' })
+  @Property({ nullable: true, length: 255 })
   operatingUnit?: string;
 
   @Property({ nullable: true, length: 100 })
   organizationCode?: string;
+
+  @Property({ columnType: 'uuid' })
+  createdBy!: string;
+
+  @Property({ nullable: true, columnType: 'uuid' })
+  updatedBy?: string;
+
+  @Property({ nullable: true, columnType: 'jsonb' })
+  metadata?: Record<string, any>;
 
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();
@@ -33,4 +46,7 @@ export class OperationOrganizationalInfo {
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   deletedAt?: Date;
+
+  @Property({ nullable: true, columnType: 'uuid' })
+  deletedBy?: string;
 }

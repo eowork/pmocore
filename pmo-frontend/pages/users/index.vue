@@ -11,7 +11,11 @@ definePageMeta({
 const router = useRouter()
 const api = useApi()
 const toast = useToast()
-const { canAdd, canEdit, canDelete } = usePermissions()
+const { canEdit, isSuperAdmin } = usePermissions()
+// users.controller.ts: create/update/delete user, assign/remove role, and bulk-access-update
+// are all @Roles('SuperAdmin') — true SuperAdmin only, an Admin (even with Manager-level
+// 'users' grant) does not qualify. Manage Access stays on canEdit('users') since its backend
+// routes (permissions/modules/pillar-assignments) remain @Roles('Admin').
 
 const users = ref<UIUserList[]>([])
 const search = ref('')
@@ -68,6 +72,10 @@ function viewUser(user: UIUserList) {
 }
 
 function editUser(user: UIUserList) {
+  if (!isSuperAdmin.value) {
+    toast.error('You do not have permission to edit this user')
+    return
+  }
   router.push(`/users/edit-${user.id}`)
 }
 
@@ -76,17 +84,30 @@ function manageAccess(user: UIUserList) {
 }
 
 function createUser() {
+  if (!isSuperAdmin.value) {
+    toast.error('You do not have permission to create users')
+    return
+  }
   router.push('/users/new')
 }
 
 // Delete confirmation
 function confirmDelete(user: UIUserList) {
+  if (!isSuperAdmin.value) {
+    toast.error('You do not have permission to delete this user')
+    return
+  }
   userToDelete.value = user
   deleteDialog.value = true
 }
 
 async function deleteUser() {
   if (!userToDelete.value) return
+  if (!isSuperAdmin.value) {
+    toast.error('You do not have permission to delete this user')
+    deleteDialog.value = false
+    return
+  }
   deleting.value = true
   try {
     await api.del(`/api/users/${userToDelete.value.id}`)
@@ -169,6 +190,10 @@ async function fetchUsers() {
 // Phase HV: Bulk access update (Directive 225)
 async function bulkAccessUpdate(type: 'permission' | 'module' | 'pillar', action: 'grant' | 'revoke', key: string) {
   if (selectedUsers.value.length === 0) return
+  if (!isSuperAdmin.value) {
+    toast.error('You do not have permission to perform bulk access updates')
+    return
+  }
   bulkProcessing.value = true
   try {
     const result = await api.post<{ applied: number; skipped: number; errors: string[] }>(
@@ -241,7 +266,7 @@ onMounted(() => {
         </p>
       </div>
       <div class="d-flex align-center ga-3">
-        <v-btn v-if="canAdd('users')" color="primary" prepend-icon="mdi-account-plus" @click="createUser">
+        <v-btn v-if="isSuperAdmin" color="primary" prepend-icon="mdi-account-plus" @click="createUser">
           New User
         </v-btn>
       </div>
@@ -378,9 +403,10 @@ onMounted(() => {
 
       <v-divider />
 
-      <!-- Phase HV: Bulk Actions Bar (Directives 223–224) -->
+      <!-- Phase HV: Bulk Actions Bar (Directives 223–224) — SuperAdmin only, matches
+           users.controller.ts's bulk-access-update lockdown (@Roles('SuperAdmin')). -->
       <v-slide-y-transition>
-        <v-toolbar v-if="selectedUsers.length > 0" density="compact" color="primary" class="px-4">
+        <v-toolbar v-if="isSuperAdmin && selectedUsers.length > 0" density="compact" color="primary" class="px-4">
           <v-toolbar-title class="text-body-2">
             {{ selectedUsers.length }} user(s) selected
           </v-toolbar-title>
@@ -451,7 +477,7 @@ onMounted(() => {
         :search="search"
         v-model="selectedUsers"
         item-value="id"
-        show-select
+        :show-select="isSuperAdmin"
         hover
         class="elevation-0 cursor-pointer-rows"
         @click:row="(_event: any, { item }: any) => viewUser(item)"
@@ -533,16 +559,17 @@ onMounted(() => {
                 <v-list-item-title>View</v-list-item-title>
               </v-list-item>
 
-              <!-- Edit -->
+              <!-- Edit — SuperAdmin only (users.controller.ts PATCH :id is @Roles('SuperAdmin')) -->
               <v-list-item
-                v-if="canEdit('users')"
+                v-if="isSuperAdmin"
                 @click.stop="editUser(item)"
                 prepend-icon="mdi-pencil"
               >
                 <v-list-item-title>Edit Profile</v-list-item-title>
               </v-list-item>
 
-              <!-- Manage Access -->
+              <!-- Manage Access — Admin+Contributor level (backend permissions/modules/pillar
+                   routes remain @Roles('Admin'), unaffected by the SuperAdmin lockdown) -->
               <v-list-item
                 v-if="canEdit('users')"
                 @click.stop="manageAccess(item)"
@@ -552,11 +579,11 @@ onMounted(() => {
               </v-list-item>
 
               <!-- Divider before Delete -->
-              <v-divider v-if="canDelete('users')" class="my-1" />
+              <v-divider v-if="isSuperAdmin" class="my-1" />
 
-              <!-- Delete -->
+              <!-- Delete — SuperAdmin only (users.controller.ts DELETE :id is @Roles('SuperAdmin')) -->
               <v-list-item
-                v-if="canDelete('users')"
+                v-if="isSuperAdmin"
                 @click="confirmDelete(item)"
                 prepend-icon="mdi-delete"
                 class="text-error"

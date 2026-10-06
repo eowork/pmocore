@@ -1,7 +1,18 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  Entity,
+  Filter,
+  ManyToOne,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/core';
+import { UniversityOperationRepository } from '../../university-operations/repository/university-operation.repository';
+import { User } from './user.entity';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'university_operations' })
+@Entity({
+  tableName: 'university_operations',
+  repository: () => UniversityOperationRepository,
+})
 export class UniversityOperation {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
@@ -9,7 +20,7 @@ export class UniversityOperation {
   @Property({ length: 50 })
   operationType!: string;
 
-  @Property({ columnType: 'text' })
+  @Property({ length: 255 })
   title!: string;
 
   @Property({ nullable: true, columnType: 'text' })
@@ -24,10 +35,10 @@ export class UniversityOperation {
   @Property({ nullable: true, columnType: 'date' })
   endDate?: Date;
 
-  @Property({ nullable: true, length: 20 })
-  status?: string;
+  @Property({ length: 20 })
+  status!: string;
 
-  @Property({ nullable: true, columnType: 'numeric' })
+  @Property({ nullable: true, columnType: 'numeric(15,2)' })
   budget?: number;
 
   @Property({ length: 100 })
@@ -42,17 +53,49 @@ export class UniversityOperation {
   @Property({ columnType: 'uuid' })
   createdBy!: string;
 
-  @Property({ length: 20, default: 'DRAFT' })
-  publicationStatus: string = 'DRAFT';
+  // The three relations below are read-only views over the uuid columns above them, added so
+  // the display names the API returns can be eager-loaded instead of joined by hand.
+  // persist: false — the scalar column stays the writer, the relation never writes.
+  // hidden: true — excluded from serialisation, so no response gains a nested user object.
+  // createForeignKeyConstraint: false — production has no foreign keys on this table and these
+  // mappings must not start emitting DDL that would add some.
+  @ManyToOne(() => User, {
+    fieldName: 'created_by',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  creator!: User;
+
+  @Property({ length: 20, default: 'PUBLISHED' })
+  publicationStatus: string = 'PUBLISHED';
 
   @Property({ nullable: true, columnType: 'uuid' })
   submittedBy?: string;
+
+  @ManyToOne(() => User, {
+    fieldName: 'submitted_by',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  submitter?: User;
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   submittedAt?: Date;
 
   @Property({ nullable: true, columnType: 'uuid' })
   reviewedBy?: string;
+
+  @ManyToOne(() => User, {
+    fieldName: 'reviewed_by',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  reviewer?: User;
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   reviewedAt?: Date;
@@ -66,16 +109,16 @@ export class UniversityOperation {
   @Property({ nullable: true, type: 'integer' })
   fiscalYear?: number;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ1?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ2?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ3?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20, default: 'DRAFT' })
   statusQ4?: string;
 
   @Property({ nullable: true, columnType: 'uuid' })

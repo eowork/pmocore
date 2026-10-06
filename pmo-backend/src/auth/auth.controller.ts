@@ -17,14 +17,18 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from './dto';
 import { Public, CurrentUser, Roles } from './decorators';
-import { JwtAuthGuard, RolesGuard, LdapAuthGuard } from './guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  LdapAuthGuard,
+  GoogleAuthGuard,
+} from './guards';
 import { OAuthFailureFilter } from './filters/oauth-failure.filter';
 import { JwtPayload } from '../common/interfaces';
 
@@ -205,7 +209,10 @@ export class AuthController {
   // Phase HT: Google OAuth routes (Directives 204–206)
   @Public()
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  // GoogleAuthGuard instead of a bare AuthGuard('google'): it supplies the `hd` parameter that
+  // pre-filters the Google account chooser to the allowed domains. Cosmetic only — the binding
+  // check is GoogleStrategy.validate().
+  @UseGuards(GoogleAuthGuard)
   @ApiOperation({
     summary: 'Initiate Google OAuth login',
     description: 'Redirects to Google consent screen',
@@ -216,7 +223,9 @@ export class AuthController {
 
   @Public()
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  // Same guard as the initiate leg so one strategy has one guard; `hd` is inert here because
+  // the callback exchanges the code rather than building an authorisation URL.
+  @UseGuards(GoogleAuthGuard)
   // PHASE BBBD (Track 4): on rejection (e.g. non-@carsu.edu.ph), redirect to a branded page
   // instead of returning raw 401 JSON.
   @UseFilters(OAuthFailureFilter)

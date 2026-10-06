@@ -8,6 +8,49 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+/**
+ * Postgres SQLSTATE codes that mean the request carried a value the column cannot
+ * store. They are caused by client input, not by a server fault, so they are reported
+ * as 4xx instead of the opaque 500 the raw driver error would produce.
+ *
+ * The driver message is deliberately NOT forwarded to the client: it contains the full
+ * UPDATE/INSERT statement with column names and values. It is still logged server-side.
+ */
+const SQLSTATE_TO_HTTP: Record<string, { status: number; message: string }> = {
+  '22001': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A submitted value is longer than the field allows',
+  },
+  '22003': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A submitted number is outside the range the field allows',
+  },
+  '22007': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A submitted date is not in a valid format',
+  },
+  '22008': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A submitted date is outside the supported range',
+  },
+  '22P02': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A submitted value is not valid for its field type',
+  },
+  '23502': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A required field was left empty',
+  },
+  '23503': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'A referenced record does not exist',
+  },
+  '23505': {
+    status: HttpStatus.CONFLICT,
+    message: 'A record with these values already exists',
+  },
+};
+
 interface ErrorResponse {
   statusCode: number;
   message: string;
@@ -49,15 +92,35 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = exception.name;
       }
     } else if (exception instanceof Error) {
-      status = HttpStatus.INTERNAL_SERVER_ERROR;
-      message = 'Internal server error';
-      error = 'Internal Server Error';
+      // MikroORM wraps driver failures in DriverException and copies the Postgres
+      // SQLSTATE onto .code. Without this mapping a value the client sent that the
+      // column cannot store (too long, out of range, unparseable) is reported as a
+      // 500, which tells the caller nothing and hides a fixable client-side mistake.
+      const sqlState = (exception as { code?: unknown }).code;
+      const mapped =
+        typeof sqlState === 'string' ? SQLSTATE_TO_HTTP[sqlState] : undefined;
 
-      // Log the actual error for debugging (but don't expose it to the client)
-      this.logger.error(
-        `Unhandled exception: ${exception.message}`,
-        exception.stack,
-      );
+      if (mapped) {
+        status = mapped.status;
+        message = mapped.message;
+        error = status === HttpStatus.CONFLICT ? 'Conflict' : 'Bad Request';
+      } else {
+        status = HttpStatus.INTERNAL_SERVER_ERROR;
+        message = 'Internal server error';
+        error = 'Internal Server Error';
+      }
+
+      // Log the driver/runtime detail server-side either way; the client only ever
+      // sees the sanitised message above. A mapped (client-caused) failure is a warning,
+      // an unmapped one is a genuine server fault and keeps the full stack.
+      if (mapped) {
+        this.logger.warn(`Rejected request: ${exception.message}`);
+      } else {
+        this.logger.error(
+          `Unhandled exception: ${exception.message}`,
+          exception.stack,
+        );
+      }
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = 'Internal server error';

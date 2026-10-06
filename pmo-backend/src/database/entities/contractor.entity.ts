@@ -15,7 +15,7 @@ export class Contractor {
   @Property({ nullable: true, length: 255 })
   email?: string;
 
-  @Property({ nullable: true, length: 50 })
+  @Property({ nullable: true, length: 20 })
   phone?: string;
 
   @Property({ nullable: true, columnType: 'text' })

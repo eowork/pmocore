@@ -30,17 +30,23 @@ import { JwtPayload } from '../common/interfaces';
 export class FundingSourcesController {
   constructor(private readonly service: FundingSourcesService) {}
 
-  // --- Read Operations: All authenticated roles can view ---
+  // --- Read Operations: open to any authenticated user (visibility layer) ---
+  // FIX: was @Roles('Admin','Staff','Viewer'), which 403'd any user outside that
+  // exact list (e.g. a Contractor-role user, or any other role) even when they hold
+  // a valid record_assignments.permissions.canEdit grant on a COI project and simply
+  // need this reference data to populate the edit form's dropdowns. Reads are
+  // harmless — matches the same pattern already used throughout
+  // construction-projects.controller.ts.
 
   @Get()
-  @Roles('Admin', 'Staff', 'Viewer')
+  @Roles()
   @ApiOperation({ summary: 'List all funding sources' })
   findAll(@Query() query: QueryFundingSourceDto) {
     return this.service.findAll(query);
   }
 
   @Get(':id')
-  @Roles('Admin', 'Staff', 'Viewer')
+  @Roles()
   @ApiOperation({ summary: 'Get funding source details' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findOne(id);

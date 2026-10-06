@@ -15,20 +15,20 @@ export class GadFacultyParityData {
   @Property({ length: 50 })
   category!: string;
 
-  @Property({ type: 'integer', default: 0 })
-  totalFaculty: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  totalFaculty?: number;
 
-  @Property({ type: 'integer', default: 0 })
-  maleCount: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  maleCount?: number;
 
-  @Property({ type: 'integer', default: 0 })
-  femaleCount: number = 0;
+  @Property({ nullable: true, type: 'integer', default: 0 })
+  femaleCount?: number;
 
   @Property({ nullable: true, length: 50 })
   genderBalance?: string;
 
-  @Property({ length: 50, default: 'pending' })
-  status: string = 'pending';
+  @Property({ nullable: true, length: 50, default: 'pending' })
+  status?: string;
 
   @Property({ nullable: true, columnType: 'uuid' })
   submittedBy?: string;
