@@ -78,6 +78,17 @@ const TAXONOMY_ORDER_THEN = (
   { id: 'asc' },
 ];
 
+/**
+ * A comma-separated '?' list, one per value, for an IN (...) clause.
+ *
+ * IN cannot take a single bound array through this driver, so the list of placeholders is
+ * built from the array's length — never from its contents. The years themselves are still
+ * passed as bound parameters.
+ */
+function placeholders(values: unknown[]): string {
+  return values.map(() => '?').join(', ');
+}
+
 const PILLAR_TYPES = [
   'HIGHER_EDUCATION',
   'ADVANCED_EDUCATION',
@@ -449,6 +460,343 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
       { id: indicatorId, operationId, deletedAt: null },
       { deletedAt: new Date(), deletedBy: userId },
     );
+  }
+
+  // ─── Physical-indicator analytics ──────────────────────────────────────────
+  //
+  // These three stay as SQL. Each opens with DISTINCT ON inside a CTE, which neither find()
+  // nor the query builder can express, and the two-stage shape is load-bearing: stage one
+  // picks one canonical operation per taxonomy indicator, stage two MAX-aggregates that
+  // operation's rows across every reported_quarter. Rewriting them in memory would mean
+  // hydrating every indicator row of the fiscal year to recompute what Postgres groups in one
+  // pass. They live here rather than in the service so the service holds no SQL, and every
+  // value a caller supplies is still a bound parameter.
+
+  /**
+   * Per-pillar totals for one fiscal year: how many taxonomy indicators have data, the COUNT
+   * and PERCENTAGE aggregates kept apart, and the unit-type-aware accomplishment rate.
+   */
+  getPillarSummaryAggregate(
+    fiscalYear: number,
+  ): Promise<Record<string, any>[]> {
+    return this.query(
+      `
+      WITH canonical_ops AS (
+        SELECT DISTINCT ON (oi.pillar_indicator_id)
+          oi.operation_id, oi.pillar_indicator_id
+        FROM operation_indicators oi
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL AND pit.is_active = true
+        ORDER BY oi.pillar_indicator_id, oi.updated_at DESC
+      ),
+      merged AS (
+        SELECT
+          oi.pillar_indicator_id,
+          pit.pillar_type, pit.unit_type, pit.indicator_type,
+          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
+          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
+          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
+          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+        FROM operation_indicators oi
+        JOIN canonical_ops co ON oi.operation_id = co.operation_id
+          AND oi.pillar_indicator_id = co.pillar_indicator_id
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL
+        GROUP BY oi.pillar_indicator_id, pit.pillar_type, pit.unit_type, pit.indicator_type
+      )
+      SELECT
+        deduped.pillar_type,
+        COUNT(DISTINCT deduped.pillar_indicator_id) AS indicators_with_data,
+        SUM(
+          CASE WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT')
+            THEN COALESCE(deduped.target_q1,0) + COALESCE(deduped.target_q2,0) + COALESCE(deduped.target_q3,0) + COALESCE(deduped.target_q4,0)
+            ELSE 0
+          END
+        ) AS count_target,
+        SUM(
+          CASE WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT')
+            THEN COALESCE(deduped.accomplishment_q1,0) + COALESCE(deduped.accomplishment_q2,0) + COALESCE(deduped.accomplishment_q3,0) + COALESCE(deduped.accomplishment_q4,0)
+            ELSE 0
+          END
+        ) AS count_accomplishment,
+        AVG(
+          CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN
+            (COALESCE(deduped.target_q1,0) + COALESCE(deduped.target_q2,0) + COALESCE(deduped.target_q3,0) + COALESCE(deduped.target_q4,0))
+            / NULLIF(
+              (CASE WHEN deduped.target_q1 IS NOT NULL AND deduped.target_q1 != 0 THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q2 IS NOT NULL AND deduped.target_q2 != 0 THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q3 IS NOT NULL AND deduped.target_q3 != 0 THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q4 IS NOT NULL AND deduped.target_q4 != 0 THEN 1 ELSE 0 END)
+            , 0)
+          ELSE NULL END
+        ) AS pct_avg_target,
+        AVG(
+          CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN
+            (COALESCE(deduped.accomplishment_q1,0) + COALESCE(deduped.accomplishment_q2,0) + COALESCE(deduped.accomplishment_q3,0) + COALESCE(deduped.accomplishment_q4,0))
+            / NULLIF(
+              (CASE WHEN deduped.accomplishment_q1 IS NOT NULL AND deduped.accomplishment_q1 != 0 THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q2 IS NOT NULL AND deduped.accomplishment_q2 != 0 THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q3 IS NOT NULL AND deduped.accomplishment_q3 != 0 THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q4 IS NOT NULL AND deduped.accomplishment_q4 != 0 THEN 1 ELSE 0 END)
+            , 0)
+          ELSE NULL END
+        ) AS pct_avg_accomplishment,
+        COUNT(CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN 1 END) AS pct_indicator_count,
+        COUNT(CASE WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT') THEN 1 END) AS count_indicator_count,
+        -- Phase GN-2: Unit-type-aware avg accomplishment rate (formula unchanged)
+        AVG(
+          CASE
+            WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT') AND deduped._sum_target > 0
+              THEN (deduped._sum_actual / deduped._sum_target) * 100
+            WHEN deduped.unit_type = 'PERCENTAGE' AND deduped._filled_target_qs > 0 AND deduped._filled_actual_qs > 0
+              THEN (
+                (deduped._sum_actual / deduped._filled_actual_qs) /
+                NULLIF(deduped._sum_target / deduped._filled_target_qs, 0)
+              ) * 100
+            ELSE NULL
+          END
+        ) AS avg_accomplishment_rate,
+        SUM(
+          CASE WHEN deduped._sum_target > 0 THEN 1.0 ELSE 0 END
+        ) AS indicator_target_rate,
+        SUM(
+          CASE
+            WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT') AND deduped._sum_target > 0
+              THEN deduped._sum_actual / deduped._sum_target
+            WHEN deduped.unit_type = 'PERCENTAGE' AND deduped._filled_target_qs > 0 AND deduped._filled_actual_qs > 0
+              THEN (deduped._sum_actual / deduped._filled_actual_qs) /
+                   NULLIF(deduped._sum_target / deduped._filled_target_qs, 0)
+            ELSE NULL
+          END
+        ) AS indicator_actual_rate
+      FROM (
+        SELECT
+          merged.*,
+          (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
+          (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
+          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+        FROM merged
+      ) AS deduped
+      GROUP BY deduped.pillar_type
+    `,
+      [fiscalYear, fiscalYear],
+    );
+  }
+
+  /**
+   * Per-pillar, per-quarter target and actual rates for one fiscal year, optionally narrowed
+   * to a single pillar. The narrowing is applied inside canonical_ops so the deduplication
+   * happens within the chosen pillar, not across all of them.
+   */
+  getQuarterlyTrendAggregate(
+    fiscalYear: number,
+    pillarType?: string,
+  ): Promise<Record<string, any>[]> {
+    const pillarFilter = pillarType ? 'AND pit.pillar_type = ?' : '';
+    const params: any[] = [fiscalYear];
+    if (pillarType) params.push(pillarType);
+    // The second fiscal year binds the merged stage's own WHERE clause.
+    params.push(fiscalYear);
+
+    return this.query(
+      `
+      WITH canonical_ops AS (
+        SELECT DISTINCT ON (oi.pillar_indicator_id)
+          oi.operation_id, oi.pillar_indicator_id
+        FROM operation_indicators oi
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL AND pit.is_active = true
+        ${pillarFilter}
+        ORDER BY oi.pillar_indicator_id, oi.updated_at DESC
+      ),
+      deduped AS (
+        SELECT
+          oi.pillar_indicator_id,
+          pit.pillar_type, pit.unit_type,
+          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
+          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
+          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
+          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+        FROM operation_indicators oi
+        JOIN canonical_ops co ON oi.operation_id = co.operation_id
+          AND oi.pillar_indicator_id = co.pillar_indicator_id
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL
+        GROUP BY oi.pillar_indicator_id, pit.pillar_type, pit.unit_type
+      )
+      SELECT
+        -- Phase AAAG-A: per-pillar grouping (one row per pillar)
+        deduped.pillar_type,
+        SUM(CASE WHEN deduped.target_q1 > 0 THEN 1.0 ELSE 0 END) AS target_rate_q1,
+        SUM(CASE WHEN deduped.target_q2 > 0 THEN 1.0 ELSE 0 END) AS target_rate_q2,
+        SUM(CASE WHEN deduped.target_q3 > 0 THEN 1.0 ELSE 0 END) AS target_rate_q3,
+        SUM(CASE WHEN deduped.target_q4 > 0 THEN 1.0 ELSE 0 END) AS target_rate_q4,
+        SUM(CASE WHEN deduped.target_q1 > 0 THEN COALESCE(deduped.accomplishment_q1,0)/deduped.target_q1 ELSE NULL END) AS actual_rate_q1,
+        SUM(CASE WHEN deduped.target_q2 > 0 THEN COALESCE(deduped.accomplishment_q2,0)/deduped.target_q2 ELSE NULL END) AS actual_rate_q2,
+        SUM(CASE WHEN deduped.target_q3 > 0 THEN COALESCE(deduped.accomplishment_q3,0)/deduped.target_q3 ELSE NULL END) AS actual_rate_q3,
+        SUM(CASE WHEN deduped.target_q4 > 0 THEN COALESCE(deduped.accomplishment_q4,0)/deduped.target_q4 ELSE NULL END) AS actual_rate_q4
+      FROM deduped
+      GROUP BY deduped.pillar_type
+    `,
+      params,
+    );
+  }
+
+  /** Totals per fiscal year across every pillar. */
+  getYearlyTotals(years: number[]): Promise<Record<string, any>[]> {
+    if (years.length === 0) return Promise.resolve([]);
+    const yqs = placeholders(years);
+    return this.query(
+      `
+      WITH canonical_ops AS (
+        SELECT DISTINCT ON (oi.fiscal_year, oi.pillar_indicator_id)
+          oi.operation_id, oi.pillar_indicator_id, oi.fiscal_year
+        FROM operation_indicators oi
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
+        ORDER BY oi.fiscal_year, oi.pillar_indicator_id, oi.updated_at DESC
+      ),
+      merged AS (
+        SELECT
+          oi.pillar_indicator_id, oi.fiscal_year, pit.unit_type,
+          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
+          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
+          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
+          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+        FROM operation_indicators oi
+        JOIN canonical_ops co ON oi.operation_id = co.operation_id
+          AND oi.pillar_indicator_id = co.pillar_indicator_id
+          AND oi.fiscal_year = co.fiscal_year
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL
+        GROUP BY oi.pillar_indicator_id, oi.fiscal_year, pit.unit_type
+      )
+      SELECT
+        deduped.fiscal_year,
+        COUNT(*) AS total_indicators,
+        AVG(
+          CASE
+            WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT') AND deduped._sum_target > 0
+              THEN (deduped._sum_actual / deduped._sum_target) * 100
+            WHEN deduped.unit_type = 'PERCENTAGE' AND deduped._filled_target_qs > 0 AND deduped._filled_actual_qs > 0
+              THEN ((deduped._sum_actual / deduped._filled_actual_qs) /
+                    NULLIF(deduped._sum_target / deduped._filled_target_qs, 0)) * 100
+            ELSE NULL
+          END
+        ) AS avg_accomplishment_rate
+      FROM (
+        SELECT
+          merged.*,
+          (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
+          (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
+          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+        FROM merged
+      ) AS deduped
+      GROUP BY deduped.fiscal_year
+      ORDER BY deduped.fiscal_year
+    `,
+      [...years, ...years],
+    );
+  }
+
+  /** The same totals, broken down by pillar. */
+  getYearlyByPillar(years: number[]): Promise<Record<string, any>[]> {
+    if (years.length === 0) return Promise.resolve([]);
+    const yqs = placeholders(years);
+    return this.query(
+      `
+      WITH canonical_ops AS (
+        SELECT DISTINCT ON (oi.fiscal_year, oi.pillar_indicator_id)
+          oi.operation_id, oi.pillar_indicator_id, oi.fiscal_year
+        FROM operation_indicators oi
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
+        ORDER BY oi.fiscal_year, oi.pillar_indicator_id, oi.updated_at DESC
+      ),
+      merged AS (
+        SELECT
+          oi.pillar_indicator_id, oi.fiscal_year, pit.pillar_type, pit.unit_type,
+          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
+          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
+          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
+          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+        FROM operation_indicators oi
+        JOIN canonical_ops co ON oi.operation_id = co.operation_id
+          AND oi.pillar_indicator_id = co.pillar_indicator_id
+          AND oi.fiscal_year = co.fiscal_year
+        JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL
+        GROUP BY oi.pillar_indicator_id, oi.fiscal_year, pit.pillar_type, pit.unit_type
+      )
+      SELECT
+        deduped.fiscal_year,
+        deduped.pillar_type,
+        AVG(
+          CASE
+            WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT') AND deduped._sum_target > 0
+              THEN (deduped._sum_actual / deduped._sum_target) * 100
+            WHEN deduped.unit_type = 'PERCENTAGE' AND deduped._filled_target_qs > 0 AND deduped._filled_actual_qs > 0
+              THEN ((deduped._sum_actual / deduped._filled_actual_qs) /
+                    NULLIF(deduped._sum_target / deduped._filled_target_qs, 0)) * 100
+            ELSE NULL
+          END
+        ) AS avg_accomplishment_rate,
+        AVG(CASE WHEN deduped.unit_type = 'PERCENTAGE'
+          THEN deduped._sum_target / NULLIF(deduped._filled_target_qs, 0)
+          ELSE NULL END) AS pct_avg_target,
+        AVG(CASE WHEN deduped.unit_type = 'PERCENTAGE'
+          THEN deduped._sum_actual / NULLIF(deduped._filled_actual_qs, 0)
+          ELSE NULL END) AS pct_avg_accomplishment,
+        SUM(CASE WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT')
+          THEN deduped._sum_target ELSE 0 END) AS count_target,
+        SUM(CASE WHEN deduped.unit_type IN ('COUNT', 'WEIGHTED_COUNT')
+          THEN deduped._sum_actual ELSE 0 END) AS count_accomplishment
+      FROM (
+        SELECT
+          merged.*,
+          (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
+          (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
+          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+        FROM merged
+      ) AS deduped
+      GROUP BY deduped.fiscal_year, deduped.pillar_type
+      ORDER BY deduped.fiscal_year, deduped.pillar_type
+    `,
+      [...years, ...years],
+    );
+  }
+
+  /**
+   * Run one of the statements above. Every caller value arrives as a bound '?' parameter; the
+   * only text spliced into a statement is the fixed pillar filter fragment, which carries its
+   * own placeholder rather than a value.
+   */
+  private query(
+    statement: string,
+    params: any[],
+  ): Promise<Record<string, any>[]> {
+    return this.getEntityManager().getConnection().execute(statement, params);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────────
