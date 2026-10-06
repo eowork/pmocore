@@ -1,7 +1,18 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  Entity,
+  Filter,
+  ManyToOne,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/core';
+import { UniversityOperationRepository } from '../../university-operations/repository/university-operation.repository';
+import { User } from './user.entity';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
-@Entity({ tableName: 'university_operations' })
+@Entity({
+  tableName: 'university_operations',
+  repository: () => UniversityOperationRepository,
+})
 export class UniversityOperation {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;
@@ -42,17 +53,49 @@ export class UniversityOperation {
   @Property({ columnType: 'uuid' })
   createdBy!: string;
 
+  // The three relations below are read-only views over the uuid columns above them, added so
+  // the display names the API returns can be eager-loaded instead of joined by hand.
+  // persist: false — the scalar column stays the writer, the relation never writes.
+  // hidden: true — excluded from serialisation, so no response gains a nested user object.
+  // createForeignKeyConstraint: false — production has no foreign keys on this table and these
+  // mappings must not start emitting DDL that would add some.
+  @ManyToOne(() => User, {
+    fieldName: 'created_by',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  creator!: User;
+
   @Property({ length: 20, default: 'PUBLISHED' })
   publicationStatus: string = 'PUBLISHED';
 
   @Property({ nullable: true, columnType: 'uuid' })
   submittedBy?: string;
 
+  @ManyToOne(() => User, {
+    fieldName: 'submitted_by',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  submitter?: User;
+
   @Property({ nullable: true, columnType: 'timestamptz' })
   submittedAt?: Date;
 
   @Property({ nullable: true, columnType: 'uuid' })
   reviewedBy?: string;
+
+  @ManyToOne(() => User, {
+    fieldName: 'reviewed_by',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  reviewer?: User;
 
   @Property({ nullable: true, columnType: 'timestamptz' })
   reviewedAt?: Date;

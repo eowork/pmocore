@@ -2436,7 +2436,12 @@ export class ConstructionProjectsService {
           checklistItem.currentVersion =
             (checklistItem.currentVersion ?? 0) + 1;
           checklistItem.submissionStatus = 'SUBMITTED';
-          await this.em.persistAndFlush(checklistItem);
+
+          await this.docChecklistRepo
+            .getEntityManager()
+            .persist(checklistItem)
+            .flush();
+
           this.logger.log(
             wasFirstSubmission
               ? `CHECKLIST_AUTO_LINKED: project=${projectId}, checklist=${checklistItem.id}, doc=${doc.id}, typeCode=${dto.documentType}`
@@ -2638,7 +2643,7 @@ export class ConstructionProjectsService {
       createdBy: user.sub,
       updatedBy: user.sub,
     });
-    await this.em.persistAndFlush(entity);
+    await this.docFolderRepo.getEntityManager().persist(entity).flush();
     this.fireLog(user, ActivityAction.CREATE, projectId, {
       section: 'DOCUMENT_FOLDER',
       folderId: entity.id,
