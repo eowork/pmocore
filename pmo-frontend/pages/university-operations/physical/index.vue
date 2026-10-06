@@ -141,7 +141,18 @@ const quarterOptions = [
 ]
 
 // Phase DW-B: Quarter highlight helper
+import { evaluateFraction } from '~/utils/fraction'
+
 const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'] as const
+
+// The chip colour for each quarter in the entry dialog, so the four rows can be rendered by
+// one v-for instead of being written out four times.
+const QUARTER_COLOR: Record<string, string> = {
+  Q1: 'blue',
+  Q2: 'teal',
+  Q3: 'orange',
+  Q4: 'deep-purple',
+}
 function qCellClass(quarter: string): string {
   return quarter === selectedQuarter.value ? 'q-active-cell' : 'q-dimmed-cell'
 }
@@ -165,6 +176,69 @@ let isInitializing = true
 let fetchAbortController: AbortController | null = null
 
 // Quarterly entry dialog
+// PERCENTAGE indicators are reported as a fraction — 148 of 200 — so their target and actual
+// are entered as a numerator and a denominator and the percentage is computed from the pair.
+// Every other unit type keeps the plain number inputs.
+const isPctType = computed(() => selectedIndicator.value?.unit_type === 'PERCENTAGE')
+
+/** The evaluated fraction for one side of one quarter, from whatever is in the form now. */
+function fractionOf(side: 'target' | 'actual', q: string) {
+  const key = q.toLowerCase()
+  const prefix = side === 'target' ? 'target_' : ''
+  return evaluateFraction({
+    numerator: entryForm.value[`${prefix}numerator_${key}`],
+    denominator: entryForm.value[`${prefix}denominator_${key}`],
+  })
+}
+
+/**
+ * The percentage a cell should show. A complete fraction wins — the percentage is derived from
+ * it, never typed alongside it — and the plain percentage field is used when no fraction has
+ * been entered, which is how a figure above 100% is still recordable.
+ */
+function percentOf(side: 'target' | 'actual', q: string): number | null {
+  const fraction = fractionOf(side, q)
+  if (fraction.isComplete && fraction.isValid) return fraction.percent
+  const key = q.toLowerCase()
+  const field = side === 'target' ? `target_${key}` : `accomplishment_${key}`
+  const direct = entryForm.value[field]
+  return direct === null || direct === undefined || direct === '' ? null : Number(direct)
+}
+
+/** Every fraction currently in the form that is filled in but not valid. */
+const fractionErrors = computed(() => {
+  if (!isPctType.value) return [] as string[]
+  const errors: string[] = []
+  for (const q of QUARTERS) {
+    for (const side of ['target', 'actual'] as const) {
+      const result = fractionOf(side, q)
+      if (!result.isValid && result.error) {
+        errors.push(`${side === 'target' ? 'Target' : 'Actual'} ${q}: ${result.error}`)
+      }
+    }
+  }
+  return errors
+})
+
+/**
+ * The sixteen fraction columns for the request body: the actual side's numerator/denominator
+ * and the target side's. A non-PERCENTAGE indicator sends null for all of them, so switching an
+ * indicator's unit type cannot leave a stale fraction behind.
+ */
+function fractionColumns(): Record<string, number | null> {
+  const columns: Record<string, number | null> = {}
+  for (const q of QUARTERS) {
+    const key = q.toLowerCase()
+    const actual = isPctType.value ? fractionOf('actual', q) : null
+    const target = isPctType.value ? fractionOf('target', q) : null
+    columns[`numerator_${key}`] = actual?.isValid ? actual.numerator : null
+    columns[`denominator_${key}`] = actual?.isValid ? actual.denominator : null
+    columns[`target_numerator_${key}`] = target?.isValid ? target.numerator : null
+    columns[`target_denominator_${key}`] = target?.isValid ? target.denominator : null
+  }
+  return columns
+}
+
 const entryDialog = ref(false)
 const selectedIndicator = ref<any>(null)
 const entryForm = ref<any>({})
@@ -488,6 +562,40 @@ function formatNumber(val: number | null | undefined): string {
   return Number(val).toFixed(2)
 }
 
+/**
+ * The fraction caption for one quarter cell of the read-only tables, or null when there is
+ * none to show.
+ *
+ * Read from the record's own numerator/denominator columns only. A sibling record for another
+ * reported_quarter may hold a fraction this one lacks, but the two can disagree — there are
+ * indicator-years in this database with different values for the same quarter — and pairing a
+ * fraction with a percentage it does not produce would be worse than showing no fraction.
+ *
+ * For the same reason the pair is checked against the percentage beside it: a fraction that
+ * does not work out to the figure displayed is a sign the two were written at different times,
+ * so it is withheld rather than shown next to a number it contradicts.
+ */
+function quarterFraction(
+  record: any,
+  quarter: string,
+  side: 'target' | 'actual',
+  unitType: string | null | undefined,
+): string | null {
+  if (unitType !== 'PERCENTAGE' || !record) return null
+  const key = quarter.toLowerCase()
+  const prefix = side === 'target' ? 'target_' : ''
+  const numerator = record[`${prefix}numerator_${key}`]
+  const denominator = record[`${prefix}denominator_${key}`]
+  const result = evaluateFraction({ numerator, denominator })
+  if (!result.isComplete || !result.isValid || result.percent === null) return null
+
+  const shown = record[side === 'target' ? `target_${key}` : `accomplishment_${key}`]
+  if (shown !== null && shown !== undefined && Math.abs(Number(shown) - result.percent) > 0.01) {
+    return null
+  }
+  return result.text
+}
+
 // Format percentage (used in indicator table rows and entry dialog)
 function formatPercent(val: number | null | undefined): string {
   if (val === null || val === undefined) return '—'
@@ -689,6 +797,23 @@ async function openEntryDialogDirect(indicator: any) {
       score_q2: existingData.score_q2 || '',
       score_q3: existingData.score_q3 || '',
       score_q4: existingData.score_q4 || '',
+      // PERCENTAGE fraction halves, actual side then target side.
+      numerator_q1: existingData.numerator_q1 ?? null,
+      denominator_q1: existingData.denominator_q1 ?? null,
+      numerator_q2: existingData.numerator_q2 ?? null,
+      denominator_q2: existingData.denominator_q2 ?? null,
+      numerator_q3: existingData.numerator_q3 ?? null,
+      denominator_q3: existingData.denominator_q3 ?? null,
+      numerator_q4: existingData.numerator_q4 ?? null,
+      denominator_q4: existingData.denominator_q4 ?? null,
+      target_numerator_q1: existingData.target_numerator_q1 ?? null,
+      target_denominator_q1: existingData.target_denominator_q1 ?? null,
+      target_numerator_q2: existingData.target_numerator_q2 ?? null,
+      target_denominator_q2: existingData.target_denominator_q2 ?? null,
+      target_numerator_q3: existingData.target_numerator_q3 ?? null,
+      target_denominator_q3: existingData.target_denominator_q3 ?? null,
+      target_numerator_q4: existingData.target_numerator_q4 ?? null,
+      target_denominator_q4: existingData.target_denominator_q4 ?? null,
       remarks: existingData.remarks || '',
       override_rate: existingData.override_rate ?? null,
       override_variance: existingData.override_variance ?? null,
@@ -736,6 +861,23 @@ async function openEntryDialogDirect(indicator: any) {
         score_q2: priorData.score_q2 || '',
         score_q3: priorData.score_q3 || '',
         score_q4: priorData.score_q4 || '',
+        // PERCENTAGE fraction halves, actual side then target side.
+        numerator_q1: priorData.numerator_q1 ?? null,
+        denominator_q1: priorData.denominator_q1 ?? null,
+        numerator_q2: priorData.numerator_q2 ?? null,
+        denominator_q2: priorData.denominator_q2 ?? null,
+        numerator_q3: priorData.numerator_q3 ?? null,
+        denominator_q3: priorData.denominator_q3 ?? null,
+        numerator_q4: priorData.numerator_q4 ?? null,
+        denominator_q4: priorData.denominator_q4 ?? null,
+        target_numerator_q1: priorData.target_numerator_q1 ?? null,
+        target_denominator_q1: priorData.target_denominator_q1 ?? null,
+        target_numerator_q2: priorData.target_numerator_q2 ?? null,
+        target_denominator_q2: priorData.target_denominator_q2 ?? null,
+        target_numerator_q3: priorData.target_numerator_q3 ?? null,
+        target_denominator_q3: priorData.target_denominator_q3 ?? null,
+        target_numerator_q4: priorData.target_numerator_q4 ?? null,
+        target_denominator_q4: priorData.target_denominator_q4 ?? null,
         remarks: priorData.remarks || '',
         // Overrides are a judgement about one quarter's own figures, so neither the rate
         // nor the variance override is carried over from the prior quarter.
@@ -753,6 +895,12 @@ async function openEntryDialogDirect(indicator: any) {
         target_q1: null, target_q2: null, target_q3: null, target_q4: null,
         accomplishment_q1: null, accomplishment_q2: null, accomplishment_q3: null, accomplishment_q4: null,
         score_q1: '', score_q2: '', score_q3: '', score_q4: '',
+        numerator_q1: null, denominator_q1: null, numerator_q2: null, denominator_q2: null,
+        numerator_q3: null, denominator_q3: null, numerator_q4: null, denominator_q4: null,
+        target_numerator_q1: null, target_denominator_q1: null,
+        target_numerator_q2: null, target_denominator_q2: null,
+        target_numerator_q3: null, target_denominator_q3: null,
+        target_numerator_q4: null, target_denominator_q4: null,
         remarks: '',
         override_rate: null,
         override_variance: null,
@@ -843,6 +991,14 @@ async function saveQuarterlyData() {
       console.log('[Physical] Created new operation:', currentOperation.value.id);
     }
 
+    // A half-entered or out-of-range fraction cannot be stored: the percentage is derived
+    // from the pair, so saving one half would record a figure nothing can reproduce.
+    if (fractionErrors.value.length > 0) {
+      toast.error(fractionErrors.value[0])
+      saving.value = false
+      return
+    }
+
     const { _existingId } = entryForm.value
 
     // Phase FL-1: Full 12-field payload — record-level isolation via per-quarter DB records
@@ -851,18 +1007,26 @@ async function saveQuarterlyData() {
       pillar_indicator_id: entryForm.value.pillar_indicator_id,
       fiscal_year: entryForm.value.fiscal_year,
       reported_quarter: selectedQuarter.value,
-      target_q1: entryForm.value.target_q1,
-      target_q2: entryForm.value.target_q2,
-      target_q3: entryForm.value.target_q3,
-      target_q4: entryForm.value.target_q4,
-      accomplishment_q1: entryForm.value.accomplishment_q1,
-      accomplishment_q2: entryForm.value.accomplishment_q2,
-      accomplishment_q3: entryForm.value.accomplishment_q3,
-      accomplishment_q4: entryForm.value.accomplishment_q4,
-      score_q1: entryForm.value.score_q1,
-      score_q2: entryForm.value.score_q2,
-      score_q3: entryForm.value.score_q3,
-      score_q4: entryForm.value.score_q4,
+      // For a PERCENTAGE indicator the percentage is whatever the fraction works out to, and
+      // falls back to the directly-typed figure when no fraction was entered. Every other unit
+      // type sends the number as typed.
+      target_q1: percentOf('target', 'Q1'),
+      target_q2: percentOf('target', 'Q2'),
+      target_q3: percentOf('target', 'Q3'),
+      target_q4: percentOf('target', 'Q4'),
+      accomplishment_q1: percentOf('actual', 'Q1'),
+      accomplishment_q2: percentOf('actual', 'Q2'),
+      accomplishment_q3: percentOf('actual', 'Q3'),
+      accomplishment_q4: percentOf('actual', 'Q4'),
+      // The two halves of each fraction, extracted here rather than parsed from a string on
+      // the server. Null for every non-PERCENTAGE indicator and for a quarter left blank.
+      ...fractionColumns(),
+      // Score is free text and no calculation reads it. PERCENTAGE indicators no longer offer
+      // the field, so their stored value is left untouched rather than blanked.
+      score_q1: isPctType.value ? undefined : entryForm.value.score_q1,
+      score_q2: isPctType.value ? undefined : entryForm.value.score_q2,
+      score_q3: isPctType.value ? undefined : entryForm.value.score_q3,
+      score_q4: isPctType.value ? undefined : entryForm.value.score_q4,
       remarks: entryForm.value.remarks,
       // Without these two the override inputs were write-only: the dialog showed them,
       // the server never received them, and the column kept its old value (Directives 213/359).
@@ -1650,8 +1814,16 @@ onMounted(async () => {
                 <template v-if="getIndicatorData(indicator.id)">
                   <!-- Phase DW-D: Always render all 12 quarter cells with highlight -->
                   <template v-for="q in QUARTERS" :key="q + '-data'">
-                    <td class="text-center qsub-cell" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
-                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
+                    <td class="text-center qsub-cell" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type) }}</div>
+                    </td>
+                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type) }}</div>
+                    </td>
                   </template>
                   <td class="text-right">
                     <v-chip
@@ -1773,8 +1945,16 @@ onMounted(async () => {
                 <template v-if="getIndicatorData(indicator.id)">
                   <!-- Phase DW-D: Always render all 8 quarter cells with highlight -->
                   <template v-for="q in QUARTERS" :key="q + '-data'">
-                    <td class="text-center qsub-cell" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
-                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
+                    <td class="text-center qsub-cell" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type) }}</div>
+                    </td>
+                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type) }}</div>
+                    </td>
                   </template>
                   <td class="text-right">
                     <v-chip
@@ -1878,85 +2058,97 @@ onMounted(async () => {
                 <th class="q-label-cell">Quarter</th>
                 <th class="text-center">Target</th>
                 <th class="text-center">Actual</th>
-                <th class="text-center">Score (optional)</th>
+                <th v-if="!isPctType" class="text-center">Score (optional)</th>
               </tr>
             </thead>
             <tbody>
               <!-- Phase FL-1: All quarter fields are fully editable — record isolation at DB level -->
-              <!-- Q1 -->
-              <tr>
+              <tr v-for="q in QUARTERS" :key="q">
                 <td class="q-label-cell">
-                  <v-chip size="small" color="blue" variant="tonal" class="font-weight-bold">Q1</v-chip>
+                  <v-chip size="small" :color="QUARTER_COLOR[q]" variant="tonal" class="font-weight-bold">{{ q }}</v-chip>
                 </td>
+
+                <!-- Target -->
                 <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q1" type="number" step="0.01" min="0"
+                  <template v-if="isPctType">
+                    <div class="d-flex align-center ga-1">
+                      <v-text-field v-model.number="entryForm[`target_numerator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="148"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('target', q).isValid" />
+                      <span class="text-medium-emphasis font-weight-bold">/</span>
+                      <v-text-field v-model.number="entryForm[`target_denominator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="200"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('target', q).isValid" />
+                    </div>
+                    <!-- No fraction entered: the percentage can still be typed directly, which
+                         is the only way to record a figure above 100%. -->
+                    <v-text-field v-if="!fractionOf('target', q).isComplete"
+                      v-model.number="entryForm[`target_${q.toLowerCase()}`]"
+                      type="number" step="0.01" min="0" suffix="%" placeholder="or enter % directly"
+                      density="compact" variant="outlined" hide-details class="mt-1" />
+                    <div v-else class="text-caption text-medium-emphasis mt-1">
+                      = {{ percentOf('target', q) !== null ? percentOf('target', q) + '%' : '—' }}
+                    </div>
+                    <div v-if="fractionOf('target', q).error" class="text-caption text-error mt-1">
+                      {{ fractionOf('target', q).error }}
+                    </div>
+                    <div v-else-if="fractionOf('target', q).warning" class="text-caption text-warning mt-1">
+                      {{ fractionOf('target', q).warning }}
+                    </div>
+                  </template>
+                  <v-text-field v-else v-model.number="entryForm[`target_${q.toLowerCase()}`]"
+                    type="number" step="0.01" min="0"
                     density="compact" variant="outlined" hide-details />
                 </td>
+
+                <!-- Actual -->
                 <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q1" type="number" step="0.01" min="0"
+                  <template v-if="isPctType">
+                    <div class="d-flex align-center ga-1">
+                      <v-text-field v-model.number="entryForm[`numerator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="148"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('actual', q).isValid" />
+                      <span class="text-medium-emphasis font-weight-bold">/</span>
+                      <v-text-field v-model.number="entryForm[`denominator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="200"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('actual', q).isValid" />
+                    </div>
+                    <v-text-field v-if="!fractionOf('actual', q).isComplete"
+                      v-model.number="entryForm[`accomplishment_${q.toLowerCase()}`]"
+                      type="number" step="0.01" min="0" suffix="%" placeholder="or enter % directly"
+                      density="compact" variant="outlined" hide-details class="mt-1" />
+                    <div v-else class="text-caption text-medium-emphasis mt-1">
+                      = {{ percentOf('actual', q) !== null ? percentOf('actual', q) + '%' : '—' }}
+                    </div>
+                    <div v-if="fractionOf('actual', q).error" class="text-caption text-error mt-1">
+                      {{ fractionOf('actual', q).error }}
+                    </div>
+                    <div v-else-if="fractionOf('actual', q).warning" class="text-caption text-warning mt-1">
+                      {{ fractionOf('actual', q).warning }}
+                    </div>
+                  </template>
+                  <v-text-field v-else v-model.number="entryForm[`accomplishment_${q.toLowerCase()}`]"
+                    type="number" step="0.01" min="0"
                     density="compact" variant="outlined" hide-details />
                 </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q1" placeholder="e.g. 148/200"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-              </tr>
-              <!-- Q2 -->
-              <tr>
-                <td class="q-label-cell">
-                  <v-chip size="small" color="teal" variant="tonal" class="font-weight-bold">Q2</v-chip>
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q2" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q2" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q2" placeholder="e.g. 148/200"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-              </tr>
-              <!-- Q3 -->
-              <tr>
-                <td class="q-label-cell">
-                  <v-chip size="small" color="orange" variant="tonal" class="font-weight-bold">Q3</v-chip>
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q3" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q3" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q3" placeholder="e.g. 148/200"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-              </tr>
-              <!-- Q4 -->
-              <tr>
-                <td class="q-label-cell">
-                  <v-chip size="small" color="deep-purple" variant="tonal" class="font-weight-bold">Q4</v-chip>
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q4" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q4" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q4" placeholder="e.g. 148/200"
+
+                <!-- Score is free text and was never read by any calculation. It is hidden for
+                     PERCENTAGE indicators, where the fraction now has its own inputs. -->
+                <td v-if="!isPctType" class="du-input-cell">
+                  <v-text-field v-model="entryForm[`score_${q.toLowerCase()}`]"
                     density="compact" variant="outlined" hide-details />
                 </td>
               </tr>
             </tbody>
           </v-table>
+
+          <v-alert v-if="fractionErrors.length" type="error" variant="tonal" density="compact" class="mb-4">
+            <div v-for="message in fractionErrors" :key="message" class="text-caption">{{ message }}</div>
+          </v-alert>
 
           <!-- Remarks -->
           <v-textarea
@@ -2407,6 +2599,13 @@ onMounted(async () => {
 .qsub-cell {
   min-width: 68px;
   font-size: 0.8rem;
+}
+.qsub-fraction {
+  font-size: 0.68rem;
+  line-height: 1.1;
+  opacity: 0.65;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.7);
 }
 .qsub-cell-score {
   min-width: 80px;
