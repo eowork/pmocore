@@ -1829,6 +1829,9 @@ export class UniversityOperationsService {
         agencyEntity: dto.agency_entity || '',
         operatingUnit: dto.operating_unit || '',
         organizationCode: dto.organization_code || '',
+        // created_by is NOT NULL. It was never set here, so the first save of an operation's
+        // organizational info always failed on the constraint — the table holds no rows.
+        createdBy: userId,
       });
       await this.orgInfoRepo.getEntityManager().persist(info).flush();
       this.logger.log(

@@ -78,6 +78,17 @@ const TAXONOMY_ORDER_THEN = (
   { id: 'asc' },
 ];
 
+/**
+ * A comma-separated '?' list, one per value, for an IN (...) clause.
+ *
+ * IN cannot take a single bound array through this driver, so the list of placeholders is
+ * built from the array's length — never from its contents. The years themselves are still
+ * passed as bound parameters.
+ */
+function placeholders(values: unknown[]): string {
+  return values.map(() => '?').join(', ');
+}
+
 const PILLAR_TYPES = [
   'HIGHER_EDUCATION',
   'ADVANCED_EDUCATION',
@@ -641,6 +652,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
   /** Totals per fiscal year across every pillar. */
   getYearlyTotals(years: number[]): Promise<Record<string, any>[]> {
     if (years.length === 0) return Promise.resolve([]);
+    const yqs = placeholders(years);
     return this.query(
       `
       WITH canonical_ops AS (
@@ -648,7 +660,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           oi.operation_id, oi.pillar_indicator_id, oi.fiscal_year
         FROM operation_indicators oi
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-        WHERE oi.fiscal_year IN (\${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
         ORDER BY oi.fiscal_year, oi.pillar_indicator_id, oi.updated_at DESC
       ),
       merged AS (
@@ -663,7 +675,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           AND oi.pillar_indicator_id = co.pillar_indicator_id
           AND oi.fiscal_year = co.fiscal_year
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-        WHERE oi.fiscal_year IN (\${yqs}) AND oi.deleted_at IS NULL
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL
         GROUP BY oi.pillar_indicator_id, oi.fiscal_year, pit.unit_type
       )
       SELECT
@@ -704,6 +716,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
   /** The same totals, broken down by pillar. */
   getYearlyByPillar(years: number[]): Promise<Record<string, any>[]> {
     if (years.length === 0) return Promise.resolve([]);
+    const yqs = placeholders(years);
     return this.query(
       `
       WITH canonical_ops AS (
@@ -711,7 +724,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           oi.operation_id, oi.pillar_indicator_id, oi.fiscal_year
         FROM operation_indicators oi
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-        WHERE oi.fiscal_year IN (\${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
         ORDER BY oi.fiscal_year, oi.pillar_indicator_id, oi.updated_at DESC
       ),
       merged AS (
@@ -726,7 +739,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           AND oi.pillar_indicator_id = co.pillar_indicator_id
           AND oi.fiscal_year = co.fiscal_year
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
-        WHERE oi.fiscal_year IN (\${yqs}) AND oi.deleted_at IS NULL
+        WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL
         GROUP BY oi.pillar_indicator_id, oi.fiscal_year, pit.pillar_type, pit.unit_type
       )
       SELECT
