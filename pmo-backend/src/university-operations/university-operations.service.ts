@@ -37,6 +37,7 @@ import { PermissionResolverService } from '../common/services';
 import { UserModuleAssignmentRepository } from '../common/repository/user-module-assignment.repository';
 import { UserPermissionOverrideRepository } from '../common/repository/user-permission-override.repository';
 import { UniversityOperationRepository } from './repository/university-operation.repository';
+import type { FindAllOperationsOptions } from './repository/university-operation.repository';
 import { OperationIndicatorRepository } from './repository/operation-indicator.repository';
 import { OperationFinancialRepository } from './repository/operation-financial.repository';
 import { QuarterlyReportRepository } from './repository/quarterly-report.repository';
@@ -81,15 +82,6 @@ export type PublicationStatus =
 @Injectable()
 export class UniversityOperationsService {
   private readonly logger = new Logger(UniversityOperationsService.name);
-
-  // Allowlisted columns for filtering/sorting
-  private readonly ALLOWED_SORTS = [
-    'created_at',
-    'title',
-    'status',
-    'start_date',
-    'end_date',
-  ];
 
   // Phase HU: the 3 module keys sharing one approval-authority family — the parent
   // 'university_operations' key plus its 2 independent per-pillar sub-modules. Passed
@@ -276,16 +268,13 @@ export class UniversityOperationsService {
     }
 
     // Contributor: must be the record creator or an assigned user.
-    const result = await this.connection.execute(
-      `SELECT created_by FROM university_operations WHERE id = ? AND deleted_at IS NULL`,
-      [operationId],
-    );
+    const createdBy = await this.uoRepo.findCreatedBy(operationId);
 
-    if (result.length === 0) {
+    if (createdBy === null) {
       throw new NotFoundException('Operation not found');
     }
 
-    const isOwner = result[0].created_by === userId;
+    const isOwner = createdBy === userId;
     const isAssigned = await this.isUserAssigned(operationId, userId);
 
     if (!isOwner && !isAssigned) {
@@ -317,15 +306,7 @@ export class UniversityOperationsService {
       }
     }
 
-    const result = await this.connection.execute(
-      `SELECT * FROM university_operations
-       WHERE operation_type = ?
-         AND fiscal_year = ?
-         AND deleted_at IS NULL
-       LIMIT 1`,
-      [pillarType, fiscalYear],
-    );
-    return result[0] || null;
+    return this.uoRepo.findForPillarYear(pillarType, fiscalYear);
   }
 
   /**
@@ -365,22 +346,11 @@ export class UniversityOperationsService {
     quarter: string,
     user?: JwtPayload,
   ): Promise<void> {
-    const result = await this.connection.execute(
-      `SELECT uo.fiscal_year, qr.publication_status AS quarterly_status,
-              qr.unlocked_by
-       FROM university_operations uo
-       LEFT JOIN quarterly_reports qr
-         ON qr.fiscal_year = uo.fiscal_year AND qr.quarter = ?
-            AND qr.deleted_at IS NULL
-       WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-      [quarter, operationId],
-    );
+    const row = await this.uoRepo.findEditState(operationId, quarter);
 
-    if (result.length === 0) {
+    if (!row) {
       throw new NotFoundException('Operation not found');
     }
-
-    const row = result[0];
 
     // SuperAdmin bypasses all locks
     if (user && user.is_superadmin) {
@@ -416,35 +386,15 @@ export class UniversityOperationsService {
     quarter?: string,
     user?: JwtPayload,
   ): Promise<void> {
-    let result;
+    // Phase ER-B/GOV-C: when a quarter is supplied the quarterly report governing it is
+    // resolved too, so a published quarter can block the edit and an approved unlock can
+    // release it. Without a quarter only the operation's own status is read.
+    const row = await this.uoRepo.findEditState(operationId, quarter);
 
-    if (quarter) {
-      // Phase ER-B: JOIN quarterly_reports to enforce edit lock on published quarters
-      // Phase GOV-C: Also fetch unlocked_by for strict admin unlock enforcement
-      result = await this.connection.execute(
-        `SELECT uo.publication_status, qr.publication_status AS quarterly_status,
-                qr.unlocked_by
-         FROM university_operations uo
-         LEFT JOIN quarterly_reports qr
-           ON qr.fiscal_year = uo.fiscal_year AND qr.quarter = ?
-              AND qr.deleted_at IS NULL
-         WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-        [quarter, operationId],
-      );
-    } else {
-      result = await this.connection.execute(
-        `SELECT uo.publication_status
-         FROM university_operations uo
-         WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-        [operationId],
-      );
-    }
-
-    if (result.length === 0) {
+    if (!row) {
       throw new NotFoundException('Operation not found');
     }
 
-    const row = result[0];
     if (row.publication_status === 'PUBLISHED') {
       throw new ForbiddenException(
         'Cannot modify indicators/financials on published operations. Withdraw to draft status first.',
@@ -521,125 +471,43 @@ export class UniversityOperationsService {
     query: QueryOperationDto,
     user?: JwtPayload,
   ): Promise<PaginatedResponse<any>> {
-    const { page = 1, limit = 20, sort = 'created_at', order = 'desc' } = query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 20 } = query;
 
-    // Validate sort column
-    const sortColumn = this.ALLOWED_SORTS.includes(sort) ? sort : 'created_at';
-    const sortOrder = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-    // Build WHERE clause (qualified with 'uo.' to avoid JOIN ambiguity)
-    const conditions: string[] = ['uo.deleted_at IS NULL'];
-    const params: any[] = [];
-
-    // Phase X: Visibility filter by role
-    // Admin: sees all records. Non-admin: PUBLISHED + own records in any status.
+    // Phase X + Y + AM + AT: visibility is decided here and handed to the repository as a
+    // scope. The repository applies it alongside every other filter, so no filter combination
+    // can widen what this user was allowed to see.
     const queryAny = query as any;
+    const isAdmin = user ? this.permissionResolver.isAdmin(user) : true;
+    let options: FindAllOperationsOptions;
+
     if (queryAny.publication_status) {
-      if (
-        queryAny.publication_status !== 'PUBLISHED' &&
-        user &&
-        !this.permissionResolver.isAdmin(user)
-      ) {
-        conditions.push(`(uo.publication_status = ? AND uo.created_by = ?)`);
-        params.push(queryAny.publication_status, user.sub);
-      } else {
-        conditions.push(`uo.publication_status = ?`);
-        params.push(queryAny.publication_status);
-      }
-    } else if (user && !this.permissionResolver.isAdmin(user)) {
-      // Phase Y + AM + AT: Campus-scoped visibility with junction table for assignments
+      options =
+        queryAny.publication_status !== 'PUBLISHED' && user && !isAdmin
+          ? {
+              scope: 'own-status',
+              userId: user.sub,
+              publicationStatus: queryAny.publication_status,
+            }
+          : { scope: 'all', publicationStatus: queryAny.publication_status };
+    } else if (user && !isAdmin) {
       const recordCampus = this.normalizeUserCampusToRecordCampus(user.campus);
-      if (recordCampus) {
-        // Phase IH: user.sub pushed twice — binds both created_by and ra.user_id positions
-        conditions.push(
-          `(uo.campus = ? OR uo.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id AND ra.user_id = ?))`,
-        );
-        params.push(recordCampus, user.sub, user.sub);
-      } else {
-        // Phase IH: user.sub pushed twice — binds both created_by and ra.user_id positions
-        conditions.push(
-          `(uo.publication_status = 'PUBLISHED' OR uo.created_by = ? OR EXISTS (SELECT 1 FROM record_assignments ra WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id AND ra.user_id = ?))`,
-        );
-        params.push(user.sub, user.sub);
-      }
+      options = recordCampus
+        ? { scope: 'campus', userId: user.sub, recordCampus }
+        : { scope: 'published', userId: user.sub };
+    } else {
+      options = { scope: 'all' };
     }
 
-    if (query.operation_type) {
-      conditions.push(`uo.operation_type = ?`);
-      params.push(query.operation_type);
-    }
-    if (query.status) {
-      conditions.push(`uo.status = ?`);
-      params.push(query.status);
-    }
-    if (query.campus) {
-      conditions.push(`uo.campus = ?`);
-      params.push(query.campus);
-    }
-    if (query.coordinator_id) {
-      conditions.push(`uo.coordinator_id = ?`);
-      params.push(query.coordinator_id);
-    }
-    // Phase BD: fiscal_year filter on main table
-    if (query.fiscal_year) {
-      conditions.push(`uo.fiscal_year = ?`);
-      params.push(query.fiscal_year);
-    }
-
-    const whereClause = conditions.join(' AND ');
-
-    // Get total count (uses alias for consistency with data query)
-    const countResult = await this.connection.execute(
-      `SELECT COUNT(*) FROM university_operations uo LEFT JOIN users submitter ON uo.submitted_by = submitter.id WHERE ${whereClause}`,
-      params,
-    );
-    const total = parseInt(countResult[0].count, 10);
-
-    // Get paginated data
-    const dataResult = await this.connection.execute(
-      `SELECT uo.id, uo.operation_type, uo.title, uo.description, uo.code, uo.start_date, uo.end_date,
-              uo.status, uo.budget, uo.campus, uo.coordinator_id, uo.publication_status, uo.created_at, uo.updated_at,
-              uo.submitted_by, uo.submitted_at, uo.created_by,
-              uo.status_q1, uo.status_q2, uo.status_q3, uo.status_q4,
-              uo.fiscal_year,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              (SELECT COALESCE(json_agg(json_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id) as assigned_users
-       FROM university_operations uo
-       LEFT JOIN users submitter ON uo.submitted_by = submitter.id
-       WHERE ${whereClause}
-       ORDER BY ${sortColumn} ${sortOrder}
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
-    );
-
-    return createPaginatedResponse(dataResult, total, page, limit);
+    const { rows, total } = await this.uoRepo.findAllOperations(query, options);
+    return createPaginatedResponse(rows, total, page, limit);
   }
 
   async findOne(id: string, user?: JwtPayload): Promise<any> {
-    const result = await this.connection.execute(
-      `SELECT uo.*,
-              creator.first_name || ' ' || creator.last_name as created_by_name,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              reviewer.first_name || ' ' || reviewer.last_name as reviewed_by_name,
-              (SELECT COALESCE(json_agg(json_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'OPERATIONS' AND ra.record_id = uo.id) as assigned_users
-       FROM university_operations uo
-       LEFT JOIN users creator ON uo.created_by = creator.id
-       LEFT JOIN users submitter ON uo.submitted_by = submitter.id
-       LEFT JOIN users reviewer ON uo.reviewed_by = reviewer.id
-       WHERE uo.id = ? AND uo.deleted_at IS NULL`,
-      [id],
-    );
+    const operation = await this.uoRepo.findDetail(id);
 
-    if (result.length === 0) {
+    if (!operation) {
       throw new NotFoundException(`Operation with ID ${id} not found`);
     }
-
-    const operation = result[0];
 
     // Track T-SEC-IDOR: object-level read authorization (OWASP API1 BOLA). Enforced ONLY when a
     // user is supplied — internal write-path callers pass no user and run their own authz. An
@@ -681,16 +549,8 @@ export class UniversityOperationsService {
     _user?: JwtPayload,
   ): Promise<any> {
     // Check for duplicate code
-    if (dto.code) {
-      const existing = await this.connection.execute(
-        `SELECT id FROM university_operations WHERE code = ? AND deleted_at IS NULL`,
-        [dto.code],
-      );
-      if (existing.length > 0) {
-        throw new ConflictException(
-          `Operation code ${dto.code} already exists`,
-        );
-      }
+    if (dto.code && (await this.uoRepo.codeExists(dto.code))) {
+      throw new ConflictException(`Operation code ${dto.code} already exists`);
     }
 
     // Universal Draft Governance: ALL users create DRAFT
@@ -701,35 +561,16 @@ export class UniversityOperationsService {
 
     // Phase AN: Include assigned_to for inline assignment during creation
     // Phase BD: Include fiscal_year for year-based filtering2
-    const result = await this.connection.execute(
-      `INSERT INTO university_operations
-       (operation_type, title, description, code, start_date, end_date, status, budget, campus, coordinator_id, metadata, created_by,
-        publication_status, submitted_by, submitted_at, assigned_to, fiscal_year)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-      [
-        dto.operation_type,
-        dto.title,
-        dto.description,
-        dto.code,
-        dto.start_date,
-        dto.end_date,
-        dto.status,
-        dto.budget,
-        dto.campus,
-        dto.coordinator_id,
-        dto.metadata ? JSON.stringify(dto.metadata) : null,
-        userId,
-        publicationStatus,
-        submittedBy,
-        submittedAt,
-        dto.assigned_to || null,
-        dto.fiscal_year || null,
-      ],
+    const created = await this.uoRepo.createOperation(
+      dto,
+      userId,
+      publicationStatus,
+      submittedBy,
+      submittedAt,
     );
 
     // Phase AT: Handle multi-select assignments via junction table
-    const recordId = result[0].id;
+    const recordId = created.id;
     if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
       await this.updateRecordAssignments(recordId, dto.assigned_user_ids);
     } else if (dto.assigned_to) {
@@ -740,7 +581,7 @@ export class UniversityOperationsService {
     this.logger.log(
       `OPERATION_CREATED: id=${recordId}, status=${publicationStatus}, by=${userId}`,
     );
-    return result[0];
+    return created;
   }
 
   async update(
@@ -765,16 +606,10 @@ export class UniversityOperationsService {
 
     // Check for duplicate code if updating
     const dtoAny = dto as any;
-    if (dtoAny.code) {
-      const existing = await this.connection.execute(
-        `SELECT id FROM university_operations WHERE code = ? AND id != ? AND deleted_at IS NULL`,
-        [dtoAny.code, id],
+    if (dtoAny.code && (await this.uoRepo.codeExists(dtoAny.code, id))) {
+      throw new ConflictException(
+        `Operation code ${dtoAny.code} already exists`,
       );
-      if (existing.length > 0) {
-        throw new ConflictException(
-          `Operation code ${dtoAny.code} already exists`,
-        );
-      }
     }
 
     // Phase E: State Machine Lockdown
@@ -805,7 +640,6 @@ export class UniversityOperationsService {
       );
     }
 
-    // Build dynamic SET clause
     const fields = Object.keys(dto).filter(
       (k) => dto[k] !== undefined && k !== 'assigned_user_ids',
     );
@@ -813,42 +647,15 @@ export class UniversityOperationsService {
       return this.findOne(id);
     }
 
-    let setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values: any[] = fields.map((f) =>
-      f === 'metadata' ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    // Apply status reset fields based on prior status
-    if (requiresStatusReset) {
-      let resetFields: string[];
-      if (priorStatus === 'PENDING_REVIEW') {
-        resetFields = [
-          `publication_status = 'DRAFT'`,
-          `submitted_by = NULL`,
-          `submitted_at = NULL`,
-        ];
-      } else {
-        resetFields = [
-          `publication_status = 'DRAFT'`,
-          `reviewed_by = NULL`,
-          `reviewed_at = NULL`,
-          `review_notes = NULL`,
-          `submitted_by = ?`,
-          `submitted_at = NOW()`,
-        ];
-        values.push(userId);
-      }
-      setClause = setClause
-        ? `${setClause}, ${resetFields.join(', ')}`
-        : resetFields.join(', ');
-    }
-
-    await this.connection.execute(
-      `UPDATE university_operations
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [...values, userId, id],
+    await this.uoRepo.applyUpdate(
+      id,
+      dto,
+      userId,
+      requiresStatusReset
+        ? priorStatus === 'PENDING_REVIEW'
+          ? 'from-pending'
+          : 'from-reviewed'
+        : 'none',
     );
 
     // Phase AT: Handle multi-select assignments via junction table
@@ -865,10 +672,7 @@ export class UniversityOperationsService {
   async remove(id: string, userId: string): Promise<void> {
     await this.findOne(id);
 
-    await this.connection.execute(
-      `UPDATE university_operations SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
-      [userId, id],
-    );
+    await this.uoRepo.softDelete(id, userId);
 
     this.logger.log(`OPERATION_DELETED: id=${id}, by=${userId}`);
   }
@@ -896,20 +700,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET publication_status = 'PENDING_REVIEW',
-           submitted_by = ?,
-           submitted_at = NOW(),
-           review_notes = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [userId, id],
-    );
+    const updated = await this.uoRepo.markSubmittedForReview(id, userId);
 
     this.logger.log(`OPERATION_SUBMITTED_FOR_REVIEW: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   async publish(id: string, adminId: string, user: JwtPayload): Promise<any> {
@@ -946,20 +740,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET publication_status = 'PUBLISHED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, id],
-    );
+    const updated = await this.uoRepo.markPublished(id, adminId);
 
     this.logger.log(`OPERATION_PUBLISHED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   async reject(
@@ -992,20 +776,10 @@ export class UniversityOperationsService {
       throw new BadRequestException('Rejection notes are required');
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET publication_status = 'REJECTED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = ?,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, notes.trim(), id],
-    );
+    const updated = await this.uoRepo.markRejected(id, adminId, notes.trim());
 
     this.logger.log(`OPERATION_REJECTED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1029,19 +803,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET publication_status = 'DRAFT',
-           submitted_by = NULL,
-           submitted_at = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.uoRepo.markWithdrawn(id);
 
     this.logger.log(`OPERATION_WITHDRAWN: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   // ─── Phase DY-C: Per-Quarter Submission Workflow ───────────────────────────────
@@ -1065,18 +830,16 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'PENDING_REVIEW', updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
+    const updated = await this.uoRepo.setQuarterStatus(
+      id,
+      quarter,
+      'PENDING_REVIEW',
     );
 
     this.logger.log(
       `QUARTER_SUBMITTED: id=${id}, quarter=${quarter}, by=${userId}`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1114,18 +877,16 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'PUBLISHED', updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
+    const updated = await this.uoRepo.setQuarterStatus(
+      id,
+      quarter,
+      'PUBLISHED',
     );
 
     this.logger.log(
       `QUARTER_APPROVED: id=${id}, quarter=${quarter}, by=${adminId}`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1159,18 +920,17 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'REJECTED', review_notes = ?, updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id, notes || ''],
+    const updated = await this.uoRepo.setQuarterStatus(
+      id,
+      quarter,
+      'REJECTED',
+      notes || '',
     );
 
     this.logger.log(
       `QUARTER_REJECTED: id=${id}, quarter=${quarter}, by=${adminId}`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -1191,18 +951,12 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE university_operations
-       SET ${statusCol} = 'DRAFT', updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.uoRepo.setQuarterStatus(id, quarter, 'DRAFT');
 
     this.logger.log(
       `QUARTER_WITHDRAWN: id=${id}, quarter=${quarter}, by=${userId}`,
     );
-    return result[0];
+    return updated;
   }
 
   private validateQuarterParam(quarter: string): void {
@@ -1234,33 +988,11 @@ export class UniversityOperationsService {
       }
     }
 
-    const result = await this.connection.execute(
-      `SELECT uo.id, uo.code, uo.title, uo.campus, uo.publication_status,
-              uo.submitted_by, uo.submitted_at, uo.created_at,
-              u.first_name || ' ' || u.last_name as submitter_name
-       FROM university_operations uo
-       LEFT JOIN users u ON uo.submitted_by = u.id
-       WHERE uo.publication_status = 'PENDING_REVIEW'
-         AND uo.deleted_at IS NULL
-       ORDER BY uo.submitted_at ASC`,
-    );
-
-    return result;
+    return this.uoRepo.findPendingReview();
   }
 
-  async findMyDrafts(userId: string): Promise<any[]> {
-    const result = await this.connection.execute(
-      `SELECT id, code, title, campus, publication_status,
-              submitted_at, review_notes, created_at
-       FROM university_operations
-       WHERE created_by = ?
-         AND publication_status IN ('DRAFT', 'PENDING_REVIEW', 'REJECTED')
-         AND deleted_at IS NULL
-       ORDER BY created_at DESC`,
-      [userId],
-    );
-
-    return result;
+  findMyDrafts(userId: string): Promise<any[]> {
+    return this.uoRepo.findDraftsForUser(userId);
   }
 
   // --- Indicators ---
