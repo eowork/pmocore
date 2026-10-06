@@ -1,4 +1,5 @@
 import { EntityRepository, raw } from '@mikro-orm/postgresql';
+import { QueryOrder } from '@mikro-orm/core';
 import type { FilterQuery } from '@mikro-orm/core';
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
@@ -89,12 +90,16 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
     if (quarter) Object.assign(where, { quarter });
 
     const reports = await this.find(where, {
-      populate: ['submitter'],
+      populate: ['submitter'] as any,
       // filters: false — User carries a default 'notDeleted' filter, which would make the
       // populated relation resolve to null once that account is soft-deleted. The previous
       // LEFT JOIN resolved the name regardless. The report's own soft-delete is in `where`.
       filters: false,
-      orderBy: { fiscalYear: 'desc', quarter: 'asc', id: 'asc' },
+      orderBy: {
+        fiscalYear: QueryOrder.DESC,
+        quarter: QueryOrder.ASC,
+        id: QueryOrder.ASC,
+      },
     });
     return reports.map((r) => this.detailRow(r));
   }
@@ -103,7 +108,7 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
   async findDetail(id: string): Promise<QuarterlyReportDetailRow | null> {
     const report = await this.findOne(
       { id, deletedAt: null },
-      { populate: ['submitter'], filters: false },
+      { populate: ['submitter'] as any, filters: false },
     );
     return report ? this.detailRow(report) : null;
   }
@@ -143,9 +148,9 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
     const reports = await this.find(
       { publicationStatus: 'PENDING_REVIEW', deletedAt: null },
       {
-        populate: ['submitter'],
+        populate: ['submitter'] as any,
         filters: false,
-        orderBy: { submittedAt: 'asc', id: 'asc' },
+        orderBy: { submittedAt: QueryOrder.ASC, id: QueryOrder.ASC },
       },
     );
     if (reports.length === 0) return [];
@@ -174,9 +179,9 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
     const reports = await this.find(
       { unlockRequestedBy: { $ne: null }, deletedAt: null },
       {
-        populate: ['unlockRequester'],
+        populate: ['unlockRequester'] as any,
         filters: false,
-        orderBy: { unlockRequestedAt: 'asc', id: 'asc' },
+        orderBy: { unlockRequestedAt: QueryOrder.ASC, id: QueryOrder.ASC },
       },
     );
     return reports.map((r) => ({
@@ -205,12 +210,9 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
         deletedAt: null,
       },
       {
-        populate: ['reviewer', 'submitter', 'unlocker'],
+        populate: ['reviewer', 'submitter', 'unlocker'] as any,
         filters: false,
-        orderBy: [
-          { [raw('reviewed_at desc nulls last')]: '' },
-          { id: 'asc' },
-        ],
+        orderBy: { reviewedAt: QueryOrder.DESC_NULLS_LAST, id: QueryOrder.ASC },
       },
     );
     return reports.map((r) => ({
@@ -238,7 +240,10 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
   // columns — no joined names. The entity is loaded, mutated and flushed rather than updated in
   // place, because the caller needs the resulting row back.
 
-  markSubmitted(id: string, userId: string): Promise<QuarterlyReportRow | null> {
+  markSubmitted(
+    id: string,
+    userId: string,
+  ): Promise<QuarterlyReportRow | null> {
     return this.transition(id, (r) => {
       r.publicationStatus = 'PENDING_REVIEW';
       r.submittedBy = userId;
@@ -367,9 +372,7 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
   }
 
   /** Of the fiscal years asked about, the ones with at least one indicator value recorded. */
-  private async yearsWithIndicatorData(
-    years: number[],
-  ): Promise<Set<number>> {
+  private async yearsWithIndicatorData(years: number[]): Promise<Set<number>> {
     const quarterly = [1, 2, 3, 4].flatMap((q) => [
       { [`targetQ${q}`]: { $ne: null } },
       { [`accomplishmentQ${q}`]: { $ne: null } },
@@ -394,9 +397,7 @@ export class QuarterlyReportRepository extends EntityRepository<QuarterlyReport>
    * the EXISTS subquery this replaces compared `of2.fiscal_year = qr.fiscal_year`, and the two
    * columns can differ.
    */
-  private async yearsWithFinancialData(
-    years: number[],
-  ): Promise<Set<number>> {
+  private async yearsWithFinancialData(years: number[]): Promise<Set<number>> {
     const rows = await this.getEntityManager()
       .createQueryBuilder('OperationFinancial', 'of0')
       .select(raw('DISTINCT of0.fiscal_year').as('fiscal_year'))
