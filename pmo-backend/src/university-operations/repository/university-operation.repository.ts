@@ -224,8 +224,6 @@ export class UniversityOperationRepository extends EntityRepository<UniversityOp
         order.toLowerCase() === 'asc' ? 'asc' : 'desc',
       id: 'desc',
     } as QueryOrderMap<UniversityOperation>;
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-expect-error
     const [operations, total] = await this.findAndCount(where, {
       // Eager-loads the submitter name the list has always shown. The relation is a read-only
       // mapping over the existing submitted_by column — see the entity.
@@ -361,8 +359,6 @@ export class UniversityOperationRepository extends EntityRepository<UniversityOp
   /** Everything awaiting review, oldest submission first. */
 
   async findPendingReview(): Promise<PendingReviewRow[]> {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-expect-error
     const operations = await this.find(
       { publicationStatus: 'PENDING_REVIEW', deletedAt: null },
       {

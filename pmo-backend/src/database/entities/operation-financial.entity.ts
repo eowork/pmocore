@@ -3,10 +3,12 @@ import {
   Enum,
   Filter,
   Index,
+  ManyToOne,
   PrimaryKey,
   Property,
 } from '@mikro-orm/core';
 import { OperationFinancialRepository } from '../../university-operations/repository/operation-financial.repository';
+import { UniversityOperation } from './university-operation.entity';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
 @Entity({
@@ -19,6 +21,20 @@ export class OperationFinancial {
 
   @Property({ columnType: 'uuid' })
   operationId!: string;
+
+  // Read-only view over the uuid column above, so the owning operation's pillar and fiscal
+  // year can be joined by the analytics queries instead of being hand-joined.
+  // persist: false — the scalar column stays the writer, the relation never writes.
+  // hidden: true — excluded from serialisation, so no response gains a nested object.
+  // createForeignKeyConstraint: false — production has no foreign keys on this table and this
+  // mapping must not start emitting DDL that would add one.
+  @ManyToOne(() => UniversityOperation, {
+    fieldName: 'operation_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  operation!: UniversityOperation;
 
   @Property({ type: 'integer' })
   fiscalYear!: number;
