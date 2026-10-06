@@ -523,10 +523,10 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN
             (COALESCE(deduped.target_q1,0) + COALESCE(deduped.target_q2,0) + COALESCE(deduped.target_q3,0) + COALESCE(deduped.target_q4,0))
             / NULLIF(
-              (CASE WHEN deduped.target_q1 IS NOT NULL AND deduped.target_q1 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.target_q2 IS NOT NULL AND deduped.target_q2 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.target_q3 IS NOT NULL AND deduped.target_q3 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.target_q4 IS NOT NULL AND deduped.target_q4 != 0 THEN 1 ELSE 0 END)
+              (CASE WHEN deduped.target_q1 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q2 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q3 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q4 IS NOT NULL THEN 1 ELSE 0 END)
             , 0)
           ELSE NULL END
         ) AS pct_avg_target,
@@ -534,10 +534,10 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN
             (COALESCE(deduped.accomplishment_q1,0) + COALESCE(deduped.accomplishment_q2,0) + COALESCE(deduped.accomplishment_q3,0) + COALESCE(deduped.accomplishment_q4,0))
             / NULLIF(
-              (CASE WHEN deduped.accomplishment_q1 IS NOT NULL AND deduped.accomplishment_q1 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.accomplishment_q2 IS NOT NULL AND deduped.accomplishment_q2 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.accomplishment_q3 IS NOT NULL AND deduped.accomplishment_q3 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.accomplishment_q4 IS NOT NULL AND deduped.accomplishment_q4 != 0 THEN 1 ELSE 0 END)
+              (CASE WHEN deduped.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END)
             , 0)
           ELSE NULL END
         ) AS pct_avg_accomplishment,
@@ -574,14 +574,16 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           merged.*,
           (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
           (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
-          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
-          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+          -- A quarter recorded as 0 counts toward the divisor: it is reported data, not a
+          -- blank, and the numerators above already include it through COALESCE.
+          (CASE WHEN merged.target_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_actual_qs
         FROM merged
       ) AS deduped
       GROUP BY deduped.pillar_type
@@ -696,14 +698,16 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           merged.*,
           (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
           (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
-          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
-          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+          -- A quarter recorded as 0 counts toward the divisor: it is reported data, not a
+          -- blank, and the numerators above already include it through COALESCE.
+          (CASE WHEN merged.target_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_actual_qs
         FROM merged
       ) AS deduped
       GROUP BY deduped.fiscal_year
@@ -770,14 +774,16 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           merged.*,
           (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
           (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
-          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
-          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+          -- A quarter recorded as 0 counts toward the divisor: it is reported data, not a
+          -- blank, and the numerators above already include it through COALESCE.
+          (CASE WHEN merged.target_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_actual_qs
         FROM merged
       ) AS deduped
       GROUP BY deduped.fiscal_year, deduped.pillar_type
