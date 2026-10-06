@@ -1134,19 +1134,47 @@ function toNullableNumber(value: any): number | null {
 }
 
 // Phase FY-1: DBM BAR1 standard — ALL indicator types use SUM (Directive 211/212)
+/**
+ * The year's figure for one side, mirroring the server's computeIndicatorMetrics exactly so
+ * the dialog previews what will actually be stored.
+ *
+ * COUNT and WEIGHTED_COUNT are cumulative — the quarters add up. A PERCENTAGE never does:
+ * it is ΣN/ΣD when every reported quarter carries a fraction, otherwise the mean of the
+ * quarters that carry a value — a quarter reported as 0% counts toward that mean.
+ */
+function sideTotal(side: 'target' | 'actual'): number | null {
+  const values = QUARTERS.map(q => percentOf(side, q))
+  const filled = values.filter((v): v is number => v !== null)
+
+  if (!isPctType.value) {
+    return filled.length > 0 ? filled.reduce((a, b) => a + b, 0) : null
+  }
+
+  let sumNumerator = 0
+  let sumDenominator = 0
+  let everyReportedHasFraction = filled.length > 0
+  for (const q of QUARTERS) {
+    if (percentOf(side, q) === null) continue
+    const fraction = fractionOf(side, q)
+    if (!fraction.isComplete || !fraction.isValid || !fraction.denominator) {
+      everyReportedHasFraction = false
+      break
+    }
+    sumNumerator += fraction.numerator ?? 0
+    sumDenominator += fraction.denominator
+  }
+  if (everyReportedHasFraction && sumDenominator > 0) {
+    return Number(Math.min((sumNumerator / sumDenominator) * 100, 9999.99).toFixed(4))
+  }
+
+  if (filled.length === 0) return null
+  return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(4))
+}
+
 const computedPreview = computed(() => {
   const f = entryForm.value
-  const targets = [f.target_q1, f.target_q2, f.target_q3, f.target_q4]
-    .filter(v => v !== null && v !== undefined && v !== '')
-  const actuals = [f.accomplishment_q1, f.accomplishment_q2, f.accomplishment_q3, f.accomplishment_q4]
-    .filter(v => v !== null && v !== undefined && v !== '')
-
-  const totalTarget = targets.length > 0
-    ? targets.reduce((a, b) => Number(a) + Number(b), 0)
-    : null
-  const totalActual = actuals.length > 0
-    ? actuals.reduce((a, b) => Number(a) + Number(b), 0)
-    : null
+  const totalTarget = sideTotal('target')
+  const totalActual = sideTotal('actual')
 
   const computedVariance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
   const computedRate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
@@ -2160,19 +2188,19 @@ onMounted(async () => {
             class="mb-3"
           />
 
-          <!-- Annual Totals (Read-Only) -->
+          <!-- Annual figures (read-only). Cumulative for COUNT, aggregated for PERCENTAGE. -->
           <v-card variant="outlined" class="bg-grey-lighten-4">
             <v-card-text class="py-2">
               <div class="text-subtitle-2 mb-1">
                 <v-icon start size="small">mdi-calculator</v-icon>
-                Annual Totals (Read-Only)
+                {{ isPctType ? 'Annual Figures (Read-Only)' : 'Annual Totals (Read-Only)' }}
               </div>
               <div class="d-flex ga-4 flex-wrap mb-3">
                 <v-chip variant="tonal" size="small">
-                  Total Target: {{ formatNumber(computedPreview.totalTarget) }}
+                  {{ isPctType ? 'Overall Target' : 'Total Target' }}: {{ formatNumber(computedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip variant="tonal" size="small">
-                  Total Actual: {{ formatNumber(computedPreview.totalActual) }}
+                  {{ isPctType ? 'Overall Actual' : 'Total Actual' }}: {{ formatNumber(computedPreview.totalActual) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip
                   :color="getVarianceColor(computedPreview.variance)"
