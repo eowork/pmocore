@@ -1,5 +1,13 @@
-import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import {
+  Entity,
+  Filter,
+  ManyToOne,
+  PrimaryKey,
+  Property,
+} from '@mikro-orm/core';
 import { OperationIndicatorRepository } from '../../university-operations/repository/operation-indicator.repository';
+import { PillarIndicatorTaxonomy } from './pillar-indicator-taxonomy.entity';
+import { UniversityOperation } from './university-operation.entity';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
 @Entity({
@@ -13,8 +21,33 @@ export class OperationIndicator {
   @Property({ columnType: 'uuid' })
   operationId!: string;
 
+  // Read-only views over the two uuid columns, so the taxonomy metadata and the owning
+  // operation can be eager-loaded instead of hand-joined.
+  // persist: false — the scalar column stays the writer, the relation never writes.
+  // hidden: true — excluded from serialisation, so no response gains a nested object.
+  // createForeignKeyConstraint: false — production has no foreign keys on this table and these
+  // mappings must not start emitting DDL that would add some.
+  @ManyToOne(() => UniversityOperation, {
+    fieldName: 'operation_id',
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  operation!: UniversityOperation;
+
   @Property({ nullable: true, columnType: 'uuid' })
   pillarIndicatorId?: string;
+
+  // Nullable because an indicator can be orphaned — pillar_indicator_id NULL — which is why
+  // every query against it was a LEFT JOIN rather than an inner one.
+  @ManyToOne(() => PillarIndicatorTaxonomy, {
+    fieldName: 'pillar_indicator_id',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  taxonomy?: PillarIndicatorTaxonomy;
 
   @Property({ length: 500 })
   particular!: string;
