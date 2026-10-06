@@ -1,9 +1,7 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { QuarterlyReport } from './quarterly-report.entity';
 import { User } from './user.entity';
-import {
-  QuarterlyReportSubmissionRepository
-} from '../../university-operations/repository/quarterly-report-submission.repository';
+import { QuarterlyReportSubmissionRepository } from '../../university-operations/repository/quarterly-report-submission.repository';
 
 @Entity({
   tableName: 'quarterly_report_submissions',

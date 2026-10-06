@@ -1034,7 +1034,12 @@ export class UniversityOperationsService {
 
     const taxa = await this.taxonomyRepo.find(
       { pillarType, isActive: true },
-      { orderBy: { indicatorType: QueryOrder.ASC, indicatorOrder: QueryOrder.ASC } },
+      {
+        orderBy: {
+          indicatorType: QueryOrder.ASC,
+          indicatorOrder: QueryOrder.ASC,
+        },
+      },
     );
 
     return taxa.map((t) => ({
@@ -2578,7 +2583,7 @@ export class UniversityOperationsService {
   async getActiveFiscalYears(): Promise<{ year: number; label: string }[]> {
     const rows = await this.fyRepo.find(
       { isActive: true },
-      { orderBy: { year: 'DESC' }, fields: ['year', 'label'] },
+      { orderBy: { year: QueryOrder.DESC }, fields: ['year', 'label'] },
     );
     return rows.map((r) => ({
       year: r.year,
@@ -2689,38 +2694,15 @@ export class UniversityOperationsService {
     fiscalYear?: number,
     quarter?: string,
   ): Promise<any[]> {
-    let query = `SELECT qr.*, u.first_name || ' ' || u.last_name as submitter_name
-                 FROM quarterly_reports qr
-                 LEFT JOIN users u ON qr.submitted_by = u.id
-                 WHERE qr.deleted_at IS NULL`;
-    const params: any[] = [];
-
-    if (fiscalYear) {
-      query += ` AND qr.fiscal_year = ?`;
-      params.push(fiscalYear);
-    }
-    if (quarter) {
-      query += ` AND qr.quarter = ?`;
-      params.push(quarter);
-    }
-
-    query += ' ORDER BY qr.fiscal_year DESC, qr.quarter ASC';
-    const result = await this.connection.execute(query, params);
-    return result;
+    return this.qrRepo.findReports(fiscalYear, quarter);
   }
 
   async findOneQuarterlyReport(id: string): Promise<any> {
-    const result = await this.connection.execute(
-      `SELECT qr.*, u.first_name || ' ' || u.last_name as submitter_name
-       FROM quarterly_reports qr
-       LEFT JOIN users u ON qr.submitted_by = u.id
-       WHERE qr.id = ? AND qr.deleted_at IS NULL`,
-      [id],
-    );
-    if (result.length === 0) {
+    const report = await this.qrRepo.findDetail(id);
+    if (!report) {
       throw new NotFoundException(`Quarterly report ${id} not found`);
     }
-    return result[0];
+    return report;
   }
 
   async findQuarterlyReportsPendingReview(user: JwtPayload): Promise<any[]> {
@@ -2739,33 +2721,9 @@ export class UniversityOperationsService {
       }
     }
 
-    // Phase EZ-B: Enrich with has_physical/has_financial flags for dynamic submission labels
-    const result = await this.connection.execute(
-      `SELECT qr.id, qr.fiscal_year, qr.quarter, qr.title, qr.publication_status,
-              qr.submitted_by, qr.submitted_at, qr.created_at,
-              u.first_name || ' ' || u.last_name as submitter_name,
-              EXISTS(
-                SELECT 1 FROM operation_indicators oi
-                JOIN university_operations uo ON uo.id = oi.operation_id
-                WHERE uo.fiscal_year = qr.fiscal_year
-                  AND oi.deleted_at IS NULL
-                  AND (oi.target_q1 IS NOT NULL OR oi.accomplishment_q1 IS NOT NULL
-                       OR oi.target_q2 IS NOT NULL OR oi.accomplishment_q2 IS NOT NULL
-                       OR oi.target_q3 IS NOT NULL OR oi.accomplishment_q3 IS NOT NULL
-                       OR oi.target_q4 IS NOT NULL OR oi.accomplishment_q4 IS NOT NULL)
-              ) as has_physical,
-              EXISTS(
-                SELECT 1 FROM operation_financials of2
-                WHERE of2.fiscal_year = qr.fiscal_year
-                  AND of2.deleted_at IS NULL
-              ) as has_financial
-       FROM quarterly_reports qr
-       LEFT JOIN users u ON qr.submitted_by = u.id
-       WHERE qr.publication_status = 'PENDING_REVIEW'
-         AND qr.deleted_at IS NULL
-       ORDER BY qr.submitted_at ASC`,
-    );
-    return result;
+    // Phase EZ-B: has_physical / has_financial say whether the quarter's fiscal year holds
+    // any indicator or financial data, which the UI uses to label the submission.
+    return this.qrRepo.findPendingReview();
   }
 
   async submitQuarterlyReport(
@@ -2806,21 +2764,10 @@ export class UniversityOperationsService {
       userId,
     );
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'PENDING_REVIEW',
-           submitted_by = ?,
-           submitted_at = NOW(),
-           review_notes = NULL,
-           submission_count = COALESCE(submission_count, 0) + 1,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [userId, id],
-    );
+    const updated = await this.qrRepo.markSubmitted(id, userId);
 
     this.logger.log(`QUARTERLY_REPORT_SUBMITTED: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   async approveQuarterlyReport(
@@ -2861,20 +2808,10 @@ export class UniversityOperationsService {
     // Phase GOV-D: Snapshot approval event
     await this.snapshotSubmissionHistory(report, 'APPROVED', adminId);
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'PUBLISHED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, id],
-    );
+    const updated = await this.qrRepo.markApproved(id, adminId);
 
     this.logger.log(`QUARTERLY_REPORT_APPROVED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   async rejectQuarterlyReport(
@@ -2915,20 +2852,10 @@ export class UniversityOperationsService {
       notes.trim(),
     );
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'REJECTED',
-           reviewed_by = ?,
-           reviewed_at = NOW(),
-           review_notes = ?,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, notes.trim(), id],
-    );
+    const updated = await this.qrRepo.markRejected(id, adminId, notes.trim());
 
     this.logger.log(`QUARTERLY_REPORT_REJECTED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   async withdrawQuarterlyReport(
@@ -2958,19 +2885,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'DRAFT',
-           submitted_by = NULL,
-           submitted_at = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.qrRepo.markWithdrawn(id);
 
     this.logger.log(`QUARTERLY_REPORT_WITHDRAWN: id=${id}, by=${userId}`);
-    return result[0];
+    return updated;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -2988,7 +2906,7 @@ export class UniversityOperationsService {
     reason?: string,
   ): Promise<void> {
     try {
-      const submission = this.qrsRepo.create({
+      await this.qrsRepo.recordEvent({
         quarterlyReportId: report.id,
         fiscalYear: report.fiscal_year,
         quarter: report.quarter,
@@ -3002,7 +2920,6 @@ export class UniversityOperationsService {
         actionedBy: actorId,
         reason: reason ?? undefined,
       });
-      await this.qrsRepo.getEntityManager().persist(submission).flush();
     } catch (err) {
       // Non-blocking: history insert failure must not break the primary operation
       this.logger.warn(
@@ -3027,17 +2944,9 @@ export class UniversityOperationsService {
       return;
     }
 
-    const report = await this.connection.execute(
-      `SELECT id, fiscal_year, quarter, publication_status, submission_count,
-              submitted_by, submitted_at, reviewed_by, reviewed_at, review_notes
-       FROM quarterly_reports
-       WHERE fiscal_year = ? AND quarter = ? AND deleted_at IS NULL`,
-      [fiscalYear, quarter],
-    );
+    const qr = await this.qrRepo.findForPeriod(fiscalYear, quarter);
 
-    if (report.length === 0) return;
-
-    const qr = report[0];
+    if (!qr) return;
     if (qr.publication_status === 'DRAFT') return;
 
     // Phase GOV-D: Snapshot review metadata before destroying it
@@ -3048,18 +2957,7 @@ export class UniversityOperationsService {
       'indicator_update',
     );
 
-    await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'DRAFT',
-           reviewed_by = NULL,
-           reviewed_at = NULL,
-           review_notes = NULL,
-           submitted_by = NULL,
-           submitted_at = NULL,
-           updated_at = NOW()
-       WHERE id = ?`,
-      [qr.id],
-    );
+    await this.qrRepo.revertToDraft(qr.id);
 
     this.logger.log(
       `QUARTERLY_REPORT_AUTO_REVERTED: report_id=${qr.id}, was=${qr.publication_status}, by=${userId}, trigger=indicator_update`,
@@ -3099,29 +2997,12 @@ export class UniversityOperationsService {
     // Phase GOV-D: Snapshot review metadata before destroying it
     await this.snapshotSubmissionHistory(report, 'UNLOCKED', adminId, reason);
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET publication_status = 'DRAFT',
-           reviewed_by = NULL,
-           reviewed_at = NULL,
-           review_notes = NULL,
-           submitted_by = NULL,
-           submitted_at = NULL,
-           unlocked_by = ?,
-           unlocked_at = NOW(),
-           unlock_requested_by = NULL,
-           unlock_requested_at = NULL,
-           unlock_request_reason = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [adminId, id],
-    );
+    const updated = await this.qrRepo.markUnlocked(id, adminId);
 
     this.logger.log(
       `QUARTERLY_REPORT_UNLOCKED: id=${id}, by=${adminId}, reason="${reason || 'no reason'}"`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -3153,21 +3034,12 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET unlock_requested_by = ?,
-           unlock_requested_at = NOW(),
-           unlock_request_reason = ?,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [userId, reason.trim(), id],
-    );
+    const updated = await this.qrRepo.requestUnlock(id, userId, reason.trim());
 
     this.logger.log(
       `QUARTERLY_REPORT_UNLOCK_REQUESTED: id=${id}, by=${userId}, reason="${reason.trim()}"`,
     );
-    return result[0];
+    return updated;
   }
 
   /**
@@ -3199,19 +3071,10 @@ export class UniversityOperationsService {
       );
     }
 
-    const result = await this.connection.execute(
-      `UPDATE quarterly_reports
-       SET unlock_requested_by = NULL,
-           unlock_requested_at = NULL,
-           unlock_request_reason = NULL,
-           updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [id],
-    );
+    const updated = await this.qrRepo.clearUnlockRequest(id);
 
     this.logger.log(`QUARTERLY_REPORT_UNLOCK_DENIED: id=${id}, by=${adminId}`);
-    return result[0];
+    return updated;
   }
 
   /**
@@ -3234,18 +3097,7 @@ export class UniversityOperationsService {
       }
     }
 
-    const result = await this.connection.execute(
-      `SELECT qr.id, qr.fiscal_year, qr.quarter, qr.title, qr.publication_status,
-              qr.unlock_requested_by, qr.unlock_requested_at, qr.unlock_request_reason,
-              qr.created_at,
-              u.first_name || ' ' || u.last_name as requester_name
-       FROM quarterly_reports qr
-       LEFT JOIN users u ON qr.unlock_requested_by = u.id
-       WHERE qr.unlock_requested_by IS NOT NULL
-         AND qr.deleted_at IS NULL
-       ORDER BY qr.unlock_requested_at ASC`,
-    );
-    return result;
+    return this.qrRepo.findPendingUnlock();
   }
 
   /**
@@ -3266,23 +3118,7 @@ export class UniversityOperationsService {
       }
     }
 
-    const result = await this.connection.execute(
-      `SELECT qr.id, qr.fiscal_year, qr.quarter, qr.title, qr.publication_status,
-              qr.submitted_by, qr.submitted_at,
-              qr.reviewed_by, qr.reviewed_at, qr.review_notes,
-              qr.unlocked_by, qr.unlocked_at,
-              reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
-              submitter.first_name || ' ' || submitter.last_name AS submitter_name,
-              unlocker.first_name || ' ' || unlocker.last_name AS unlocked_by_name
-       FROM quarterly_reports qr
-       LEFT JOIN users reviewer ON qr.reviewed_by = reviewer.id
-       LEFT JOIN users submitter ON qr.submitted_by = submitter.id
-       LEFT JOIN users unlocker ON qr.unlocked_by = unlocker.id
-       WHERE qr.publication_status IN ('PUBLISHED', 'REJECTED')
-         AND qr.deleted_at IS NULL
-       ORDER BY qr.reviewed_at DESC NULLS LAST`,
-    );
-    return result;
+    return this.qrRepo.findReviewed();
   }
 
   /**
@@ -3308,37 +3144,7 @@ export class UniversityOperationsService {
       }
     }
 
-    let query = `
-      SELECT qrs.id, qrs.quarterly_report_id, qrs.fiscal_year, qrs.quarter,
-             qrs.version, qrs.event_type,
-             qrs.submitted_by, qrs.submitted_at,
-             qrs.reviewed_by, qrs.reviewed_at, qrs.review_notes,
-             qrs.actioned_by, qrs.actioned_at, qrs.reason,
-             qr.title, qr.publication_status AS current_status,
-             submitter.first_name || ' ' || submitter.last_name AS submitter_name,
-             reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
-             actor.first_name || ' ' || actor.last_name AS actioned_by_name
-      FROM quarterly_report_submissions qrs
-      JOIN quarterly_reports qr ON qrs.quarterly_report_id = qr.id
-      LEFT JOIN users submitter ON qrs.submitted_by = submitter.id
-      LEFT JOIN users reviewer ON qrs.reviewed_by = reviewer.id
-      LEFT JOIN users actor ON qrs.actioned_by = actor.id
-      WHERE qr.deleted_at IS NULL`;
-
-    const params: any[] = [];
-    if (fiscalYear) {
-      params.push(fiscalYear);
-      query += ` AND qrs.fiscal_year = ?`;
-    }
-    if (quarter) {
-      params.push(quarter);
-      query += ` AND qrs.quarter = ?`;
-    }
-
-    query += ` ORDER BY qrs.actioned_at DESC`;
-
-    const result = await this.connection.execute(query, params);
-    return result;
+    return this.qrsRepo.findHistory(fiscalYear, quarter);
   }
 
   /**
@@ -3355,26 +3161,7 @@ export class UniversityOperationsService {
       );
     }
 
-    return this.connection.execute(
-      `SELECT qrs.id, qrs.quarterly_report_id, qrs.fiscal_year, qrs.quarter,
-              qrs.version, qrs.event_type,
-              qrs.submitted_by, qrs.submitted_at,
-              qrs.reviewed_by, qrs.reviewed_at, qrs.review_notes,
-              qrs.actioned_by, qrs.actioned_at, qrs.reason,
-              qr.title, qr.publication_status AS current_status,
-              submitter.first_name || ' ' || submitter.last_name AS submitter_name,
-              reviewer.first_name || ' ' || reviewer.last_name AS reviewed_by_name,
-              actor.first_name || ' ' || actor.last_name AS actioned_by_name
-       FROM quarterly_report_submissions qrs
-       JOIN quarterly_reports qr ON qrs.quarterly_report_id = qr.id
-       LEFT JOIN users submitter ON qrs.submitted_by = submitter.id
-       LEFT JOIN users reviewer ON qrs.reviewed_by = reviewer.id
-       LEFT JOIN users actor ON qrs.actioned_by = actor.id
-       WHERE qrs.quarterly_report_id = ?
-         AND qr.deleted_at IS NULL
-       ORDER BY qrs.actioned_at DESC`,
-      [id],
-    );
+    return this.qrsRepo.findHistoryForReport(id);
   }
 
   // ─── Phase EZ-C: Financial Analytics ──────────────────────────────────────────
