@@ -142,6 +142,7 @@ const quarterOptions = [
 
 // Phase DW-B: Quarter highlight helper
 import { evaluateFraction } from '~/utils/fraction'
+import { CAMPUS_OPTIONS, labelForCampus } from '~/utils/campus'
 
 const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'] as const
 
@@ -237,6 +238,12 @@ function fractionColumns(): Record<string, number | null> {
     columns[`target_denominator_${key}`] = target?.isValid ? target.denominator : null
   }
   return columns
+}
+
+/** Reload the open dialog against another campus's row. */
+async function switchEntryCampus(campus: string) {
+  entryCampus.value = campus
+  if (selectedIndicator.value) await openEntryDialogDirect(selectedIndicator.value)
 }
 
 const entryDialog = ref(false)
@@ -356,9 +363,220 @@ const pillarRateSummary = computed(() => {
   return { withData, total, targetRate, actualRate, ratePct }
 })
 
-// Get indicator data by taxonomy ID
+// Each campus reports its own row for a quarter. 'BOTH' is not offered: it is a filing
+// category on an operation, not a campus that reports figures.
+const REPORTING_CAMPUSES = CAMPUS_OPTIONS.filter(o => o.value !== 'BOTH')
+
+// Which campus the entry dialog is reading and writing. The tables always show every campus
+// merged, so this only governs the form.
+const entryCampus = ref<string>('MAIN')
+
+/** Every campus's record for one taxonomy indicator, in the current quarter. */
+function getIndicatorRecords(taxonomyId: string): any[] {
+  return pillarIndicators.value.filter(i => i.pillar_indicator_id === taxonomyId)
+}
+
+/** One campus's record, or null when that campus has not reported this quarter. */
+function getIndicatorDataForCampus(taxonomyId: string, campus: string) {
+  return getIndicatorRecords(taxonomyId).find(i => i.campus === campus) || null
+}
+
+// The quarter columns that are merged, each with the fraction halves that belong to it.
+const MERGED_FIELDS = ['q1', 'q2', 'q3', 'q4'].flatMap(q => [
+  { value: `target_${q}`, numerator: `target_numerator_${q}`, denominator: `target_denominator_${q}` },
+  { value: `accomplishment_${q}`, numerator: `numerator_${q}`, denominator: `denominator_${q}` },
+])
+
+/**
+ * The figure shown for an indicator when more than one campus has reported it.
+ *
+ * Per column the larger value wins, which is what the server's pillar aggregation does — its
+ * merged stage takes MAX of each quarter column across the rows it groups. The winning row's
+ * numerator and denominator come along with its value, so the fraction underneath always
+ * belongs to the number above it rather than being a separate maximum.
+ */
+function mergeCampusRecords(records: any[]): any | null {
+  if (records.length === 0) return null
+
+  // Stage one: collapse each campus's rows to a single set of quarter figures.
+  //
+  // A campus files a cumulative snapshot per quarter — the Q4 row repeats Q1, Q2 and Q3 — so a
+  // campus can hold several rows for one indicator and year. The largest value per column wins,
+  // which is the latest snapshot, and the winning row's numerator and denominator come with it.
+  // Adding these rows up instead would count Q1 once per snapshot.
+  const byCampus = new Map<string, any>()
+  for (const record of records) {
+    const campus = record.campus ?? 'MAIN'
+    const current = byCampus.get(campus)
+    if (!current) {
+      byCampus.set(campus, { ...record })
+      continue
+    }
+    for (const field of MERGED_FIELDS) {
+      const value = record[field.value]
+      if (value === null || value === undefined) continue
+      const held = current[field.value]
+      if (held === null || held === undefined || Number(value) > Number(held)) {
+        current[field.value] = value
+        current[field.numerator] = record[field.numerator]
+        current[field.denominator] = record[field.denominator]
+      }
+    }
+  }
+
+  const campuses = [...byCampus.keys()]
+  const collapsed = [...byCampus.values()]
+  if (collapsed.length === 1) return { ...collapsed[0], _campuses: campuses }
+
+  // Stage two: add the campuses together, which is what the university reports as a whole.
+  //
+  // A count is cumulative, so the quarter's figure is the campuses added up. A percentage is
+  // not: its quarter figure is the summed numerators over the summed denominators, so 2/5 at
+  // one campus and 7/10 at another is 9/15 — 60% — rather than 110%. A percentage quarter where
+  // any reporting campus has no fraction cannot be combined that way, so it falls back to the
+  // mean of the campuses, which is the closest statement that is not simply wrong.
+  const merged: any = { ...collapsed[0], _campuses: campuses }
+  const isPercentage = merged.unit_type === 'PERCENTAGE'
+
+  for (const field of MERGED_FIELDS) {
+    const reporting = collapsed.filter(
+      (r) => r[field.value] !== null && r[field.value] !== undefined,
+    )
+    if (reporting.length === 0) {
+      merged[field.value] = null
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      continue
+    }
+
+    if (!isPercentage) {
+      merged[field.value] = Number(
+        reporting.reduce((sum, r) => sum + Number(r[field.value]), 0).toFixed(4),
+      )
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      continue
+    }
+
+    const everyoneHasFraction = reporting.every(
+      (r) =>
+        r[field.numerator] !== null &&
+        r[field.numerator] !== undefined &&
+        r[field.denominator] !== null &&
+        r[field.denominator] !== undefined &&
+        Number(r[field.denominator]) > 0,
+    )
+    if (everyoneHasFraction) {
+      const numerator = reporting.reduce((sum, r) => sum + Number(r[field.numerator]), 0)
+      const denominator = reporting.reduce((sum, r) => sum + Number(r[field.denominator]), 0)
+      merged[field.numerator] = Number(numerator.toFixed(4))
+      merged[field.denominator] = Number(denominator.toFixed(4))
+      merged[field.value] = Number(
+        Math.min((numerator / denominator) * 100, 9999.99).toFixed(4),
+      )
+    } else {
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      merged[field.value] = Number(
+        (
+          reporting.reduce((sum, r) => sum + Number(r[field.value]), 0) / reporting.length
+        ).toFixed(4),
+      )
+    }
+  }
+
+  // The server computes the annual totals, variance and rate per row, so the copy above
+  // carries the first campus's figures. They are recomputed here from the combined quarters,
+  // otherwise the quarter cells would show every campus and the totals beside them only one.
+  const unitType = merged.unit_type
+  const totalTarget = recordSideTotal(merged, 'target', unitType)
+  const totalActual = recordSideTotal(merged, 'actual', unitType)
+  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+    ? Number(((totalActual / totalTarget) * 100).toFixed(2))
+    : null
+
+  merged.total_target = totalTarget
+  merged.total_accomplishment = totalActual
+  merged.computed_total_target = totalTarget
+  merged.computed_total_accomplishment = totalActual
+  merged.average_target = totalTarget
+  merged.average_accomplishment = totalActual
+  merged.variance = variance
+  merged.computed_variance = variance
+  merged.accomplishment_rate = rate
+  merged.computed_rate = rate
+  // An override is one campus's judgement about its own figures and cannot speak for the
+  // others, so none is carried into a combined view. The same goes for the ΣN/ΣD captions,
+  // which belong to a single row's fractions.
+  merged.override_total_target = null
+  merged.override_total_actual = null
+  merged.override_variance = null
+  merged.override_rate = null
+  merged.total_target_fraction = null
+  merged.total_actual_fraction = null
+  merged.variance_source = 'computed'
+
+  return merged
+}
+
+/**
+ * A record's annual figure for one side, by the same rules the server's computeIndicatorMetrics
+ * applies: COUNT and WEIGHTED_COUNT are cumulative, a PERCENTAGE is ΣN/ΣD when every reported
+ * quarter carries a fraction and otherwise the mean of the quarters that carry a value.
+ */
+function recordSideTotal(record: any, side: 'target' | 'actual', unitType: string): number | null {
+  const values = QUARTERS.map(q => {
+    const key = q.toLowerCase()
+    const raw = record[side === 'target' ? `target_${key}` : `accomplishment_${key}`]
+    return raw === null || raw === undefined || raw === '' ? null : Number(raw)
+  })
+  const filled = values.filter((v): v is number => v !== null)
+  if (filled.length === 0) return null
+
+  if (unitType !== 'PERCENTAGE') {
+    return Number(filled.reduce((a, b) => a + b, 0).toFixed(4))
+  }
+
+  let sumNumerator = 0
+  let sumDenominator = 0
+  let everyReportedHasFraction = true
+  QUARTERS.forEach((q, i) => {
+    if (values[i] === null || !everyReportedHasFraction) return
+    const key = q.toLowerCase()
+    const numerator = record[side === 'target' ? `target_numerator_${key}` : `numerator_${key}`]
+    const denominator = record[side === 'target' ? `target_denominator_${key}` : `denominator_${key}`]
+    if (numerator === null || numerator === undefined || denominator === null ||
+        denominator === undefined || Number(denominator) <= 0) {
+      everyReportedHasFraction = false
+      return
+    }
+    sumNumerator += Number(numerator)
+    sumDenominator += Number(denominator)
+  })
+  if (everyReportedHasFraction && sumDenominator > 0) {
+    return Number(Math.min((sumNumerator / sumDenominator) * 100, 9999.99).toFixed(4))
+  }
+
+  return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(4))
+}
+
+// Get indicator data by taxonomy ID — every campus merged, for the read-only tables.
 function getIndicatorData(taxonomyId: string) {
-  return pillarIndicators.value.find(i => i.pillar_indicator_id === taxonomyId) || null
+  return mergeCampusRecords(getIndicatorRecords(taxonomyId))
+}
+
+/**
+ * How many campuses a combined cell draws on, or null when only one reported.
+ *
+ * A combined figure is every campus added together rather than one campus's, so there is no
+ * single campus to name — the cell says how many went into it instead.
+ */
+function cellCampus(record: any, quarter: string, side: 'target' | 'actual'): string | null {
+  if (!record?._campuses || record._campuses.length < 2) return null
+  const field = side === 'target' ? `target_${quarter.toLowerCase()}` : `accomplishment_${quarter.toLowerCase()}`
+  if (record[field] === null || record[field] === undefined) return null
+  return `${record._campuses.length} campuses`
 }
 
 // Phase FM-1: Check if prior-quarter prefill is available for an indicator
@@ -366,7 +584,7 @@ function getIndicatorData(taxonomyId: string) {
 function hasPrefillAvailable(taxonomyId: string): boolean {
   const priorQ = PRIOR_QUARTER_MAP[selectedQuarter.value]
   if (!priorQ) return false
-  const data = getIndicatorData(taxonomyId)
+  const data = getIndicatorDataForCampus(taxonomyId, entryCampus.value)
   return data === null || isRecordEffectivelyEmpty(data)
 }
 
@@ -761,7 +979,8 @@ function confirmPublishedEdit() {
 // Phase FL-4: Made async for per-quarter prefill (API fetch of prior quarter's record)
 async function openEntryDialogDirect(indicator: any) {
   selectedIndicator.value = indicator
-  const existingData = getIndicatorData(indicator.id)
+  // The form edits one campus's row, never the merged view the tables show.
+  const existingData = getIndicatorDataForCampus(indicator.id, entryCampus.value)
 
   // Debug logging
   console.log('[Physical] Opening entry dialog:', {
@@ -832,7 +1051,9 @@ async function openEntryDialogDirect(indicator: any) {
           `/api/university-operations/indicators?pillar_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&quarter=${priorQ}`
         )
         const priorList = Array.isArray(priorIndicators) ? priorIndicators : (priorIndicators as any)?.data || []
-        priorData = priorList.find((i: any) => i.pillar_indicator_id === indicator.id) || null
+        priorData = priorList.find(
+          (i: any) => i.pillar_indicator_id === indicator.id && i.campus === entryCampus.value,
+        ) || null
         console.log('[Physical] Prior quarter prefill lookup:', {
           priorQ,
           found: !!priorData,
@@ -1007,6 +1228,7 @@ async function saveQuarterlyData() {
       pillar_indicator_id: entryForm.value.pillar_indicator_id,
       fiscal_year: entryForm.value.fiscal_year,
       reported_quarter: selectedQuarter.value,
+      campus: entryCampus.value,
       // For a PERCENTAGE indicator the percentage is whatever the fraction works out to, and
       // falls back to the directly-typed figure when no fraction was entered. Every other unit
       // type sends the number as typed.
@@ -1170,6 +1392,61 @@ function sideTotal(side: 'target' | 'actual'): number | null {
   if (filled.length === 0) return null
   return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(4))
 }
+
+/**
+ * The campus being edited, shaped like a saved row so it can go through the same merge the
+ * tables use. Its quarter values are the live form values, so the panel still moves as the
+ * user types rather than waiting for a save.
+ */
+const formAsRecord = computed(() => {
+  const record: Record<string, any> = {
+    campus: entryCampus.value,
+    unit_type: selectedIndicator.value?.unit_type ?? null,
+    pillar_indicator_id: entryForm.value.pillar_indicator_id,
+  }
+  for (const q of QUARTERS) {
+    const key = q.toLowerCase()
+    record[`target_${key}`] = percentOf('target', q)
+    record[`accomplishment_${key}`] = percentOf('actual', q)
+    const target = fractionOf('target', q)
+    const actual = fractionOf('actual', q)
+    record[`target_numerator_${key}`] = target.isValid ? target.numerator : null
+    record[`target_denominator_${key}`] = target.isValid ? target.denominator : null
+    record[`numerator_${key}`] = actual.isValid ? actual.numerator : null
+    record[`denominator_${key}`] = actual.isValid ? actual.denominator : null
+  }
+  return record
+})
+
+/**
+ * The indicator's figures across every campus, which is what the tables show.
+ *
+ * The other campuses contribute their saved rows and this one contributes the form, so the
+ * panel previews the row the tables will show once this edit is saved. Overrides are left out
+ * for the same reason the merged tables leave them out: one campus's manual judgement cannot
+ * speak for another's figures.
+ */
+const mergedPreview = computed(() => {
+  const indicatorId = entryForm.value.pillar_indicator_id
+  const unitType = selectedIndicator.value?.unit_type ?? null
+  const others = indicatorId
+    ? getIndicatorRecords(indicatorId).filter(r => r.campus !== entryCampus.value)
+    : []
+  const merged = mergeCampusRecords([formAsRecord.value, ...others])
+  if (!merged) {
+    return { totalTarget: null, totalActual: null, variance: null, rate: null, campuses: [] as string[] }
+  }
+  const totalTarget = recordSideTotal(merged, 'target', unitType)
+  const totalActual = recordSideTotal(merged, 'actual', unitType)
+  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+    ? Number(((totalActual / totalTarget) * 100).toFixed(2))
+    : null
+  return { totalTarget, totalActual, variance, rate, campuses: merged._campuses ?? [] }
+})
+
+/** True once a second campus has figures for this indicator, so the two views can differ. */
+const hasOtherCampus = computed(() => mergedPreview.value.campuses.length > 1)
 
 const computedPreview = computed(() => {
   const f = entryForm.value
@@ -1846,11 +2123,17 @@ onMounted(async () => {
                       {{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
                       <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type)"
                         class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'target')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'target') }}
+                      </div>
                     </td>
                     <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
                       {{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
                       <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type)"
                         class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'actual')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'actual') }}
+                      </div>
                     </td>
                   </template>
                   <td class="text-right">
@@ -1977,11 +2260,17 @@ onMounted(async () => {
                       {{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
                       <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type)"
                         class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'target')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'target') }}
+                      </div>
                     </td>
                     <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
                       {{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
                       <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type)"
                         class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'actual')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'actual') }}
+                      </div>
                     </td>
                   </template>
                   <td class="text-right">
@@ -2078,6 +2367,26 @@ onMounted(async () => {
             <v-icon start size="small">mdi-content-copy</v-icon>
             All values pre-filled from <strong>{{ prefillSourceQ }}</strong> record — edit freely. This will create a new {{ selectedQuarter }} record.
           </v-alert>
+
+          <!-- Each campus files its own figures for the quarter. Switching here reloads the
+               form against that campus's row, so the two are never edited at once. -->
+          <div class="d-flex align-center ga-3 mb-4">
+            <v-select
+              :model-value="entryCampus"
+              :items="REPORTING_CAMPUSES"
+              item-title="title"
+              item-value="value"
+              label="Reporting campus"
+              density="compact"
+              variant="outlined"
+              hide-details
+              style="max-width: 280px"
+              @update:model-value="switchEntryCampus"
+            />
+            <span class="text-caption text-medium-emphasis">
+              Figures below belong to {{ labelForCampus(entryCampus) }} only.
+            </span>
+          </div>
 
           <!-- Phase DU-A: Vertical tabular data entry — rows = quarters, cols = T/A/S -->
           <v-table density="compact" class="mb-4">
@@ -2195,29 +2504,52 @@ onMounted(async () => {
                 <v-icon start size="small">mdi-calculator</v-icon>
                 {{ isPctType ? 'Annual Figures (Read-Only)' : 'Annual Totals (Read-Only)' }}
               </div>
+              <!-- These are the merged figures across every campus — the same numbers the
+                   indicator tables show. An override is deliberately not applied here: it
+                   belongs to one campus and cannot speak for the others. -->
               <div class="d-flex ga-4 flex-wrap mb-3">
                 <v-chip variant="tonal" size="small">
-                  {{ isPctType ? 'Overall Target' : 'Total Target' }}: {{ formatNumber(computedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}
+                  {{ isPctType ? 'Overall Target' : 'Total Target' }}: {{ formatNumber(mergedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip variant="tonal" size="small">
-                  {{ isPctType ? 'Overall Actual' : 'Total Actual' }}: {{ formatNumber(computedPreview.totalActual) }}{{ isPctType ? '%' : '' }}
+                  {{ isPctType ? 'Overall Actual' : 'Total Actual' }}: {{ formatNumber(mergedPreview.totalActual) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip
-                  :color="getVarianceColor(computedPreview.variance)"
+                  :color="getVarianceColor(mergedPreview.variance)"
                   variant="tonal"
                   size="small"
                 >
-                  Variance: {{ computedPreview.variance !== null ? formatNumber(computedPreview.variance) : '—' }}
+                  Variance: {{ mergedPreview.variance !== null ? formatNumber(mergedPreview.variance) : '—' }}
                 </v-chip>
                 <v-chip
-                  :color="getRateColor(computedPreview.rate)"
+                  :color="getRateColor(mergedPreview.rate)"
                   variant="tonal"
                   size="small"
                 >
-                  Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}
+                  Rate: {{ mergedPreview.rate !== null ? formatPercent(mergedPreview.rate) : '—' }}
                 </v-chip>
-                <!-- Phase FY-2: Override active badge -->
-                <v-chip v-if="computedPreview.varianceSource !== 'computed'" color="warning" variant="tonal" size="small">
+                <v-chip v-if="hasOtherCampus" variant="tonal" size="small" color="info">
+                  <v-icon start size="x-small">mdi-office-building-marker</v-icon>
+                  Combined from {{ mergedPreview.campuses.length }} campuses
+                </v-chip>
+              </div>
+
+              <!-- What this campus alone is filing, which is what the override below acts on. -->
+              <div v-if="hasOtherCampus" class="d-flex ga-4 flex-wrap mb-3 text-caption text-medium-emphasis">
+                <span>{{ labelForCampus(entryCampus) }} only —</span>
+                <span>Target: {{ formatNumber(computedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}</span>
+                <span>Actual: {{ formatNumber(computedPreview.totalActual) }}{{ isPctType ? '%' : '' }}</span>
+                <span>Variance: {{ computedPreview.variance !== null ? formatNumber(computedPreview.variance) : '—' }}</span>
+                <span>Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}</span>
+                <span v-if="computedPreview.varianceSource !== 'computed'" class="text-warning">
+                  override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
+                </span>
+              </div>
+
+              <!-- Phase FY-2: Override active badge, for the single-campus case where the
+                   merged figures above are this campus's own. -->
+              <div v-else-if="computedPreview.varianceSource !== 'computed'" class="mb-3">
+                <v-chip color="warning" variant="tonal" size="small">
                   <v-icon start size="x-small">mdi-pencil-circle</v-icon>
                   Override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
                 </v-chip>
@@ -2627,6 +2959,13 @@ onMounted(async () => {
 .qsub-cell {
   min-width: 68px;
   font-size: 0.8rem;
+}
+.qsub-campus {
+  font-size: 0.6rem;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  text-transform: uppercase;
 }
 .qsub-fraction {
   font-size: 0.68rem;
