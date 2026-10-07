@@ -3078,7 +3078,7 @@ export class ConstructionProjectsService {
     });
     if (!entity)
       throw new NotFoundException(`Revision order ${roId} not found`);
-    await this.em.removeAndFlush(entity);
+    await this.em.remove(entity).flush();
     await this.mirrorLatestApprovedRevisionToProject(projectId);
     this.fireLog(user, ActivityAction.DELETE, projectId, {
       entityType: 'revision_order',
@@ -3106,18 +3106,13 @@ export class ConstructionProjectsService {
       { projectId },
       { orderBy: { reportDate: 'desc' } },
     );
-    const conn = this.em.getConnection();
-    await conn.execute(
-      `UPDATE construction_projects
-       SET physical_progress = ?, cost_incurred_to_date = ?, as_of_date = ?, updated_at = NOW()
-       WHERE id = ?`,
-      [
-        latest?.percentageCompletion ?? 0,
-        latest?.costIncurredToDate ?? null,
-        latest?.reportDate ?? null,
-        projectId,
-      ],
-    );
+    const filter: FilterQuery<ConstructionProject> = { id: projectId };
+
+    await this.cpRepo.nativeUpdate(filter, {
+      physicalProgress: latest?.percentageCompletion ?? '0',
+      costIncurredToDate: latest?.costIncurredToDate ?? null,
+      asOfDate: latest?.reportDate ?? null,
+    });
   }
 
   async createProgressReport(
@@ -3270,7 +3265,7 @@ export class ConstructionProjectsService {
     if (dto.mitigation_actions_list !== undefined)
       entity.mitigationActionsList = stampList(dto.mitigation_actions_list);
     entity.updatedBy = user?.sub;
-    await this.em.flush();
+    await this.progressReportRepo.getEntityManager().flush();
     await this.mirrorLatestReportToProject(projectId);
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
       entityType: 'progress_report',
@@ -3299,7 +3294,7 @@ export class ConstructionProjectsService {
     });
     if (!entity)
       throw new NotFoundException(`Progress report ${reportId} not found`);
-    await this.em.removeAndFlush(entity);
+    await this.progressReportRepo.getEntityManager().remove(entity).flush();
     await this.mirrorLatestReportToProject(projectId);
     this.fireLog(user, ActivityAction.DELETE, projectId, {
       entityType: 'progress_report',
