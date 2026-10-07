@@ -3,7 +3,7 @@ import type { FilterQuery } from '@mikro-orm/core';
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
 import type { OperationFinancial } from '../../database/entities/operation-financial.entity';
-import { assignColumns, toRow } from './entity-row';
+import { assignColumns, toRow } from '../../common/repository/entity-row';
 
 const ENTITY = 'OperationFinancial';
 
