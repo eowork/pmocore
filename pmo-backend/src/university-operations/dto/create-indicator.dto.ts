@@ -6,10 +6,12 @@ import {
   IsNumber,
   IsUUID,
   IsIn,
+  IsEnum,
   Min,
   Max,
   MaxLength,
 } from 'class-validator';
+import { Campus } from '../../common/enums';
 
 export enum IndicatorStatus {
   PENDING = 'pending',
@@ -32,6 +34,15 @@ export enum IndicatorStatus {
  * - average_accomplishment (computed server-side)
  */
 export class CreateIndicatorQuarterlyDto {
+  /**
+   * Which campus is reporting. Part of the record's identity, not a value: one row per campus
+   * per quarter, enforced by the uq_oi_campus_quarter index. Defaults to MAIN so a client that
+   * predates campus reporting keeps writing the campus its rows were backfilled to.
+   */
+  @IsOptional()
+  @IsEnum(Campus)
+  campus?: Campus;
+
   @IsUUID()
   @IsNotEmpty()
   pillar_indicator_id: string; // FK to pillar_indicator_taxonomy

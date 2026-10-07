@@ -21,6 +21,7 @@ export interface IndicatorContext {
   pillar_indicator_id: string | null;
   operation_id: string;
   particular: string;
+  campus: string;
   pillar_type: string | null;
   indicator_name: string | null;
   operation_type: string;
@@ -238,6 +239,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
       pillar_indicator_id: indicator.pillarIndicatorId ?? null,
       operation_id: indicator.operationId,
       particular: indicator.particular,
+      campus: indicator.campus,
       pillar_type: indicator.taxonomy?.pillarType ?? null,
       indicator_name: indicator.taxonomy?.indicatorName ?? null,
       operation_type: indicator.operation.operationType,
@@ -265,7 +267,8 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
     pillarIndicatorId: string,
     operationId: string,
     fiscalYear: number,
-    reportedQuarter?: string,
+    reportedQuarter: string | undefined,
+    campus: string,
   ): Promise<boolean> {
     const count = await this.count(
       {
@@ -273,6 +276,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
         operationId,
         fiscalYear,
         reportedQuarter: reportedQuarter ?? null,
+        campus,
         deletedAt: null,
       },
       { filters: false },
@@ -384,21 +388,26 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
     dto: Record<string, any>,
     particular: string,
     userId: string,
+    campus: string,
   ): Promise<IndicatorRow> {
     const indicator = this.create(
       {
         operationId,
         particular,
         createdBy: userId,
+        campus,
         // reported_quarter distinguishes a quarter's row from the unpartitioned one, so an
         // empty value has to land as NULL rather than be left unset.
         reportedQuarter: dto.reported_quarter || null,
       },
       { partial: true },
     );
+    // campus, like reported_quarter, identifies the row rather than describing it, so neither
+    // is taken from the generic column copy.
     assignColumns(this.getEntityManager(), ENTITY, indicator, dto, [
       'particular',
       'reported_quarter',
+      'campus',
     ]);
     await this.getEntityManager().persist(indicator).flush();
     return this.row(indicator);
@@ -802,7 +811,14 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
     statement: string,
     params: any[],
   ): Promise<Record<string, any>[]> {
-    return this.getEntityManager().getConnection().execute(statement, params);
+    const em = this.getEntityManager();
+    // The transaction context is passed so these statements run on the same connection as the
+    // surrounding work. Without it they take their own connection and cannot see anything the
+    // open transaction has written — a caller that inserts and then aggregates would read
+    // figures that silently predate its own insert.
+    return em
+      .getConnection()
+      .execute(statement, params, 'all', em.getTransactionContext());
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────────
