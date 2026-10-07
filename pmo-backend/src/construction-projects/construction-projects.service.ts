@@ -2670,17 +2670,13 @@ export class ConstructionProjectsService {
       );
     }
 
-    const conn = this.em.getConnection();
-    const subRows = await conn.execute(
-      'SELECT COUNT(*)::int AS n FROM construction_document_submissions WHERE document_id = ?',
-      [docId],
-    );
-    const hasHistory = ((subRows[0] as any)?.n ?? 0) > 0;
+    const hasHistory =
+      (await this.docSubmissionRepo.countForDocument(docId)) > 0;
 
     // Soft-delete: set deletedAt; do NOT call uploadsService.deleteFile()
     doc.deletedAt = new Date();
     doc.deletedBy = user?.sub;
-    await this.em.flush();
+    await this.documentRepo.getEntityManager().flush();
 
     if (!hasHistory) {
       // No submission history — safe to clear the checklist pointer
@@ -2719,19 +2715,9 @@ export class ConstructionProjectsService {
     checklistItemId: string,
   ): Promise<unknown[]> {
     await this.findOne(projectId);
-    const conn = this.em.getConnection();
-    return conn.execute(
-      `SELECT s.id, s.checklist_item_id, s.project_id, s.document_id,
-              s.version, s.submitted_by, s.submitted_at, s.submission_notes, s.created_at,
-              d.file_name AS original_name, d.file_path, d.file_size,
-              (u.first_name || ' ' || u.last_name) AS submitter_name
-         FROM construction_document_submissions s
-         JOIN documents d ON d.id = s.document_id
-         JOIN users u ON u.id = s.submitted_by
-        WHERE s.checklist_item_id = ?
-          AND s.project_id = ?
-        ORDER BY s.version DESC`,
-      [checklistItemId, projectId],
+    return this.docSubmissionRepo.findForChecklistItem(
+      projectId,
+      checklistItemId,
     );
   }
 
@@ -2775,32 +2761,26 @@ export class ConstructionProjectsService {
       uploadedBy: user.sub,
       createdBy: user.sub,
     });
-    await this.em.persistAndFlush(doc);
+    await this.documentRepo.getEntityManager().persist(doc).flush();
 
-    const conn = this.em.getConnection();
-    const versionRows = await conn.execute(
-      'SELECT COALESCE(MAX(version), 0) + 1 AS next FROM construction_document_submissions WHERE checklist_item_id = ?',
-      [checklistItemId],
-    );
-    const nextVersion: number = (versionRows[0] as any)?.next ?? 1;
+    const nextVersion =
+      await this.docSubmissionRepo.nextVersion(checklistItemId);
 
-    const submission = this.docSubmissionRepo.create({
+    const submission = await this.docSubmissionRepo.recordSubmission({
       checklistItemId,
       projectId,
       documentId: doc.id,
       version: nextVersion,
       submittedBy: user.sub,
-      submittedAt: new Date(),
       submissionNotes: notes,
     });
-    await this.em.persistAndFlush(submission);
 
     checklistItem.linkedDocumentId = doc.id;
     checklistItem.currentVersion = nextVersion;
     checklistItem.submissionStatus = 'SUBMITTED';
     checklistItem.submittedBy = user.sub;
     checklistItem.submittedAt = new Date();
-    await this.em.flush();
+    await this.docChecklistRepo.getEntityManager().flush();
 
     this.fireLog(user, ActivityAction.SUBMIT, projectId, {
       section: 'CHECKLIST',
@@ -2836,18 +2816,8 @@ export class ConstructionProjectsService {
   // KD-E: Project Diary CRUD
   // ============================================================
 
-  async findDiaryEntries(projectId: string): Promise<any[]> {
-    const conn = this.em.getConnection();
-    return conn.execute(
-      `SELECT d.id, d.project_id, d.entry_date, d.title, d.content,
-              d.author_id, d.created_at, d.updated_at,
-              (u.first_name || ' ' || u.last_name) AS author_name
-         FROM construction_diary_entries d
-         LEFT JOIN users u ON u.id = d.author_id
-        WHERE d.project_id = ?
-        ORDER BY d.entry_date DESC, d.created_at DESC`,
-      [projectId],
-    );
+  findDiaryEntries(projectId: string): Promise<any[]> {
+    return this.diaryRepo.findForProject(projectId);
   }
 
   async createDiaryEntry(
