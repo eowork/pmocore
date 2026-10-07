@@ -397,25 +397,97 @@ const MERGED_FIELDS = ['q1', 'q2', 'q3', 'q4'].flatMap(q => [
  */
 function mergeCampusRecords(records: any[]): any | null {
   if (records.length === 0) return null
-  if (records.length === 1) return { ...records[0], _campuses: [records[0].campus] }
 
-  const merged: any = { ...records[0], _campuses: records.map(r => r.campus) }
-  for (const field of MERGED_FIELDS) {
-    let winner: any = null
-    for (const record of records) {
+  // Stage one: collapse each campus's rows to a single set of quarter figures.
+  //
+  // A campus files a cumulative snapshot per quarter — the Q4 row repeats Q1, Q2 and Q3 — so a
+  // campus can hold several rows for one indicator and year. The largest value per column wins,
+  // which is the latest snapshot, and the winning row's numerator and denominator come with it.
+  // Adding these rows up instead would count Q1 once per snapshot.
+  const byCampus = new Map<string, any>()
+  for (const record of records) {
+    const campus = record.campus ?? 'MAIN'
+    const current = byCampus.get(campus)
+    if (!current) {
+      byCampus.set(campus, { ...record })
+      continue
+    }
+    for (const field of MERGED_FIELDS) {
       const value = record[field.value]
       if (value === null || value === undefined) continue
-      if (winner === null || Number(value) > Number(winner[field.value])) winner = record
+      const held = current[field.value]
+      if (held === null || held === undefined || Number(value) > Number(held)) {
+        current[field.value] = value
+        current[field.numerator] = record[field.numerator]
+        current[field.denominator] = record[field.denominator]
+      }
     }
-    merged[field.value] = winner ? winner[field.value] : null
-    merged[field.numerator] = winner ? winner[field.numerator] : null
-    merged[field.denominator] = winner ? winner[field.denominator] : null
-    merged[`_${field.value}_campus`] = winner ? winner.campus : null
+  }
+
+  const campuses = [...byCampus.keys()]
+  const collapsed = [...byCampus.values()]
+  if (collapsed.length === 1) return { ...collapsed[0], _campuses: campuses }
+
+  // Stage two: add the campuses together, which is what the university reports as a whole.
+  //
+  // A count is cumulative, so the quarter's figure is the campuses added up. A percentage is
+  // not: its quarter figure is the summed numerators over the summed denominators, so 2/5 at
+  // one campus and 7/10 at another is 9/15 — 60% — rather than 110%. A percentage quarter where
+  // any reporting campus has no fraction cannot be combined that way, so it falls back to the
+  // mean of the campuses, which is the closest statement that is not simply wrong.
+  const merged: any = { ...collapsed[0], _campuses: campuses }
+  const isPercentage = merged.unit_type === 'PERCENTAGE'
+
+  for (const field of MERGED_FIELDS) {
+    const reporting = collapsed.filter(
+      (r) => r[field.value] !== null && r[field.value] !== undefined,
+    )
+    if (reporting.length === 0) {
+      merged[field.value] = null
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      continue
+    }
+
+    if (!isPercentage) {
+      merged[field.value] = Number(
+        reporting.reduce((sum, r) => sum + Number(r[field.value]), 0).toFixed(4),
+      )
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      continue
+    }
+
+    const everyoneHasFraction = reporting.every(
+      (r) =>
+        r[field.numerator] !== null &&
+        r[field.numerator] !== undefined &&
+        r[field.denominator] !== null &&
+        r[field.denominator] !== undefined &&
+        Number(r[field.denominator]) > 0,
+    )
+    if (everyoneHasFraction) {
+      const numerator = reporting.reduce((sum, r) => sum + Number(r[field.numerator]), 0)
+      const denominator = reporting.reduce((sum, r) => sum + Number(r[field.denominator]), 0)
+      merged[field.numerator] = Number(numerator.toFixed(4))
+      merged[field.denominator] = Number(denominator.toFixed(4))
+      merged[field.value] = Number(
+        Math.min((numerator / denominator) * 100, 9999.99).toFixed(4),
+      )
+    } else {
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      merged[field.value] = Number(
+        (
+          reporting.reduce((sum, r) => sum + Number(r[field.value]), 0) / reporting.length
+        ).toFixed(4),
+      )
+    }
   }
 
   // The server computes the annual totals, variance and rate per row, so the copy above
-  // carries the first campus's figures. They are recomputed here from the merged quarters,
-  // otherwise the quarter cells would show one campus and the totals beside them another.
+  // carries the first campus's figures. They are recomputed here from the combined quarters,
+  // otherwise the quarter cells would show every campus and the totals beside them only one.
   const unitType = merged.unit_type
   const totalTarget = recordSideTotal(merged, 'target', unitType)
   const totalActual = recordSideTotal(merged, 'actual', unitType)
@@ -435,7 +507,7 @@ function mergeCampusRecords(records: any[]): any | null {
   merged.accomplishment_rate = rate
   merged.computed_rate = rate
   // An override is one campus's judgement about its own figures and cannot speak for the
-  // others, so none is carried into a merged view. The same goes for the ΣN/ΣD captions,
+  // others, so none is carried into a combined view. The same goes for the ΣN/ΣD captions,
   // which belong to a single row's fractions.
   merged.override_total_target = null
   merged.override_total_actual = null
@@ -494,11 +566,17 @@ function getIndicatorData(taxonomyId: string) {
   return mergeCampusRecords(getIndicatorRecords(taxonomyId))
 }
 
-/** The campus a merged cell's figure came from, when more than one campus reported it. */
+/**
+ * How many campuses a combined cell draws on, or null when only one reported.
+ *
+ * A combined figure is every campus added together rather than one campus's, so there is no
+ * single campus to name — the cell says how many went into it instead.
+ */
 function cellCampus(record: any, quarter: string, side: 'target' | 'actual'): string | null {
   if (!record?._campuses || record._campuses.length < 2) return null
   const field = side === 'target' ? `target_${quarter.toLowerCase()}` : `accomplishment_${quarter.toLowerCase()}`
-  return record[`_${field}_campus`] ?? null
+  if (record[field] === null || record[field] === undefined) return null
+  return `${record._campuses.length} campuses`
 }
 
 // Phase FM-1: Check if prior-quarter prefill is available for an indicator
@@ -1314,6 +1392,61 @@ function sideTotal(side: 'target' | 'actual'): number | null {
   if (filled.length === 0) return null
   return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(4))
 }
+
+/**
+ * The campus being edited, shaped like a saved row so it can go through the same merge the
+ * tables use. Its quarter values are the live form values, so the panel still moves as the
+ * user types rather than waiting for a save.
+ */
+const formAsRecord = computed(() => {
+  const record: Record<string, any> = {
+    campus: entryCampus.value,
+    unit_type: selectedIndicator.value?.unit_type ?? null,
+    pillar_indicator_id: entryForm.value.pillar_indicator_id,
+  }
+  for (const q of QUARTERS) {
+    const key = q.toLowerCase()
+    record[`target_${key}`] = percentOf('target', q)
+    record[`accomplishment_${key}`] = percentOf('actual', q)
+    const target = fractionOf('target', q)
+    const actual = fractionOf('actual', q)
+    record[`target_numerator_${key}`] = target.isValid ? target.numerator : null
+    record[`target_denominator_${key}`] = target.isValid ? target.denominator : null
+    record[`numerator_${key}`] = actual.isValid ? actual.numerator : null
+    record[`denominator_${key}`] = actual.isValid ? actual.denominator : null
+  }
+  return record
+})
+
+/**
+ * The indicator's figures across every campus, which is what the tables show.
+ *
+ * The other campuses contribute their saved rows and this one contributes the form, so the
+ * panel previews the row the tables will show once this edit is saved. Overrides are left out
+ * for the same reason the merged tables leave them out: one campus's manual judgement cannot
+ * speak for another's figures.
+ */
+const mergedPreview = computed(() => {
+  const indicatorId = entryForm.value.pillar_indicator_id
+  const unitType = selectedIndicator.value?.unit_type ?? null
+  const others = indicatorId
+    ? getIndicatorRecords(indicatorId).filter(r => r.campus !== entryCampus.value)
+    : []
+  const merged = mergeCampusRecords([formAsRecord.value, ...others])
+  if (!merged) {
+    return { totalTarget: null, totalActual: null, variance: null, rate: null, campuses: [] as string[] }
+  }
+  const totalTarget = recordSideTotal(merged, 'target', unitType)
+  const totalActual = recordSideTotal(merged, 'actual', unitType)
+  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+    ? Number(((totalActual / totalTarget) * 100).toFixed(2))
+    : null
+  return { totalTarget, totalActual, variance, rate, campuses: merged._campuses ?? [] }
+})
+
+/** True once a second campus has figures for this indicator, so the two views can differ. */
+const hasOtherCampus = computed(() => mergedPreview.value.campuses.length > 1)
 
 const computedPreview = computed(() => {
   const f = entryForm.value
@@ -2371,29 +2504,52 @@ onMounted(async () => {
                 <v-icon start size="small">mdi-calculator</v-icon>
                 {{ isPctType ? 'Annual Figures (Read-Only)' : 'Annual Totals (Read-Only)' }}
               </div>
+              <!-- These are the merged figures across every campus — the same numbers the
+                   indicator tables show. An override is deliberately not applied here: it
+                   belongs to one campus and cannot speak for the others. -->
               <div class="d-flex ga-4 flex-wrap mb-3">
                 <v-chip variant="tonal" size="small">
-                  {{ isPctType ? 'Overall Target' : 'Total Target' }}: {{ formatNumber(computedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}
+                  {{ isPctType ? 'Overall Target' : 'Total Target' }}: {{ formatNumber(mergedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip variant="tonal" size="small">
-                  {{ isPctType ? 'Overall Actual' : 'Total Actual' }}: {{ formatNumber(computedPreview.totalActual) }}{{ isPctType ? '%' : '' }}
+                  {{ isPctType ? 'Overall Actual' : 'Total Actual' }}: {{ formatNumber(mergedPreview.totalActual) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip
-                  :color="getVarianceColor(computedPreview.variance)"
+                  :color="getVarianceColor(mergedPreview.variance)"
                   variant="tonal"
                   size="small"
                 >
-                  Variance: {{ computedPreview.variance !== null ? formatNumber(computedPreview.variance) : '—' }}
+                  Variance: {{ mergedPreview.variance !== null ? formatNumber(mergedPreview.variance) : '—' }}
                 </v-chip>
                 <v-chip
-                  :color="getRateColor(computedPreview.rate)"
+                  :color="getRateColor(mergedPreview.rate)"
                   variant="tonal"
                   size="small"
                 >
-                  Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}
+                  Rate: {{ mergedPreview.rate !== null ? formatPercent(mergedPreview.rate) : '—' }}
                 </v-chip>
-                <!-- Phase FY-2: Override active badge -->
-                <v-chip v-if="computedPreview.varianceSource !== 'computed'" color="warning" variant="tonal" size="small">
+                <v-chip v-if="hasOtherCampus" variant="tonal" size="small" color="info">
+                  <v-icon start size="x-small">mdi-office-building-marker</v-icon>
+                  Combined from {{ mergedPreview.campuses.length }} campuses
+                </v-chip>
+              </div>
+
+              <!-- What this campus alone is filing, which is what the override below acts on. -->
+              <div v-if="hasOtherCampus" class="d-flex ga-4 flex-wrap mb-3 text-caption text-medium-emphasis">
+                <span>{{ labelForCampus(entryCampus) }} only —</span>
+                <span>Target: {{ formatNumber(computedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}</span>
+                <span>Actual: {{ formatNumber(computedPreview.totalActual) }}{{ isPctType ? '%' : '' }}</span>
+                <span>Variance: {{ computedPreview.variance !== null ? formatNumber(computedPreview.variance) : '—' }}</span>
+                <span>Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}</span>
+                <span v-if="computedPreview.varianceSource !== 'computed'" class="text-warning">
+                  override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
+                </span>
+              </div>
+
+              <!-- Phase FY-2: Override active badge, for the single-campus case where the
+                   merged figures above are this campus's own. -->
+              <div v-else-if="computedPreview.varianceSource !== 'computed'" class="mb-3">
+                <v-chip color="warning" variant="tonal" size="small">
                   <v-icon start size="x-small">mdi-pencil-circle</v-icon>
                   Override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
                 </v-chip>
