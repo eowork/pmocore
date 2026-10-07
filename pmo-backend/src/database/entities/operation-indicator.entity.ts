@@ -67,6 +67,12 @@ export class OperationIndicator {
   @Property({ nullable: true, length: 2 })
   reportedQuarter?: string;
 
+  // Which campus reported these figures. One row per campus per quarter, enforced by the
+  // uq_oi_campus_quarter index — see Migration20261007000000. Required, so a row can never be
+  // ambiguous about whose numbers it holds.
+  @Property({ length: 100 })
+  campus!: string;
+
   @Property({ nullable: true, columnType: 'numeric(12,4)' })
   targetQ1?: number;
 
