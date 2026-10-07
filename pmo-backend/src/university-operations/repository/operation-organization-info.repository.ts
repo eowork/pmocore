@@ -2,7 +2,7 @@ import { EntityRepository } from '@mikro-orm/core';
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
 import type { OperationOrganizationalInfo } from '../../database/entities';
-import { toRow } from './entity-row';
+import { toRow } from '../../common/repository/entity-row';
 
 const ENTITY = 'OperationOrganizationalInfo';
 

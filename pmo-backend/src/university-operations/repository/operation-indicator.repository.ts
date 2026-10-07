@@ -7,7 +7,7 @@ import {
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
 import type { OperationIndicator } from '../../database/entities/operation-indicator.entity';
-import { assignColumns, toRow } from './entity-row';
+import { assignColumns, toRow } from '../../common/repository/entity-row';
 
 const ENTITY = 'OperationIndicator';
 
