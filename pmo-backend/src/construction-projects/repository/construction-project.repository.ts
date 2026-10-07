@@ -1,5 +1,6 @@
-import { EntityRepository } from '@mikro-orm/core';
+import { EntityRepository, raw } from '@mikro-orm/postgresql';
 import type { FilterQuery, QueryOrderMap } from '@mikro-orm/core';
+import { assignColumns, toRow } from '../../common/repository/entity-row';
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
 import type { ConstructionProject } from '../../database/entities/construction-project.entity';
@@ -10,6 +11,18 @@ import { Role } from '../../database/entities/role.entity';
 import { User } from '../../database/entities/user.entity';
 import { UserRole } from '../../database/entities/user-role.entity';
 import type { QueryConstructionProjectDto } from '../dto';
+
+const ENTITY = 'ConstructionProject';
+
+// Aggregates shared by the analytics below. SUM over a numeric column is NULL when no row
+// matched, which is why each is wrapped in COALESCE — the dashboard expects 0, not null.
+const COUNT = raw('COUNT(*)').as('count');
+const SUM_CONTRACT = raw('COALESCE(SUM(cp.contract_amount), 0)').as(
+  'total_contract',
+);
+const AVG_PROGRESS = raw('COALESCE(AVG(cp.physical_progress), 0)').as(
+  'avg_progress',
+);
 
 // Sortable columns, keyed by the snake_case name the query string uses and mapped to the
 // entity property the ORM orders by. Anything not on this list falls back to created_at.
@@ -179,6 +192,271 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     return { rows, total };
   }
 
+  /**
+   * One project with everything the detail endpoint has always returned: its own columns, the
+   * display names reached through its relations, and the assigned personnel.
+   *
+   * The six LEFT JOINs are populated relations — see the entity — and the json_agg subquery
+   * becomes the same batched lookup the list already uses, so the two agree on what an
+   * assigned user looks like.
+   */
+  async findDetail(id: string): Promise<Record<string, any> | null> {
+    const project = await this.findOne(
+      { id, deletedAt: null },
+      {
+        populate: [
+          'parentProject',
+          'contractorRef',
+          'fundingSourceRef',
+          'creator',
+          'submitter',
+          'reviewer',
+        ],
+        // filters: false — the related rows each carry a default 'notDeleted' filter, which
+        // would blank a name once that row is soft-deleted. The joins resolved them
+        // regardless, and a project should not lose its contractor's name because that
+        // contractor was retired. The project's own soft-delete is in the where above.
+        filters: false,
+      },
+    );
+    if (!project) return null;
+
+    const assignments = await this.loadAssignments([project]);
+    const users = await this.loadUserNames(assignments.map((a) => a.userId));
+
+    return {
+      ...toRow(this.getEntityManager(), ENTITY, project),
+      project_title: project.parentProject?.title ?? null,
+      project_type: project.parentProject?.projectType ?? null,
+      contractor_name: project.contractorRef?.name ?? null,
+      funding_source_name: project.fundingSourceRef?.name ?? null,
+      created_by_name: fullName(project.creator),
+      submitted_by_name: fullName(project.submitter),
+      reviewed_by_name: fullName(project.reviewer),
+      assigned_users: this.groupAssignedUsers(assignments, users).get(id) ?? [],
+    };
+  }
+
+  /** Who created a project, or null when there is no live row with that id. */
+  async findCreatedBy(id: string): Promise<string | null> {
+    const project = await this.findOne(
+      { id, deletedAt: null },
+      { fields: ['createdBy'], filters: false },
+    );
+    return project?.createdBy ?? null;
+  }
+
+  /**
+   * Whether a project code is already taken. `excludeId` leaves the record being updated out,
+   * so re-saving it with its own code is not a conflict.
+   */
+  async codeExists(code: string, excludeId?: string): Promise<boolean> {
+    const where: FilterQuery<ConstructionProject> = {
+      projectCode: code,
+      deletedAt: null,
+    };
+    if (excludeId) Object.assign(where, { id: { $ne: excludeId } });
+    return (await this.count(where, { filters: false })) > 0;
+  }
+
+  /** Everything awaiting review, oldest submission first. */
+  async findPendingReview(): Promise<Record<string, any>[]> {
+    const projects = await this.find(
+      { publicationStatus: 'PENDING_REVIEW', deletedAt: null },
+      {
+        populate: ['submitter'],
+        filters: false,
+        orderBy: { submittedAt: 'asc', id: 'asc' },
+      },
+    );
+    return projects.map((p) => ({
+      id: p.id,
+      project_code: p.projectCode,
+      title: p.title,
+      campus: p.campus,
+      publication_status: p.publicationStatus,
+      submitted_by: p.submittedBy ?? null,
+      submitted_at: p.submittedAt ?? null,
+      created_at: p.createdAt,
+      submitter_name: fullName(p.submitter),
+    }));
+  }
+
+  /**
+   * Write the supplied columns onto a project. Only real columns of the entity can be written,
+   * so a key that slipped past validation cannot reach the SET clause the way a string-built
+   * one allowed. Returns the column names actually written.
+   */
+  async applyUpdate(
+    id: string,
+    dto: Record<string, any>,
+    userId: string,
+    statusReset: 'none' | 'from-pending' | 'from-reviewed',
+  ): Promise<string[] | null> {
+    const project = await this.findOne(
+      { id, deletedAt: null },
+      { filters: false },
+    );
+    if (!project) return null;
+
+    const { applied } = assignColumns(
+      this.getEntityManager(),
+      ENTITY,
+      project,
+      dto,
+      // assigned_user_ids and assignments are personnel, written through
+      // RecordAssignmentRepository rather than as columns on this row.
+      ['assigned_user_ids', 'assignments', 'publication_status'],
+    );
+
+    if (statusReset === 'from-pending') {
+      project.publicationStatus = 'DRAFT';
+      project.submittedBy = undefined;
+      project.submittedAt = undefined;
+    } else if (statusReset === 'from-reviewed') {
+      project.publicationStatus = 'DRAFT';
+      project.reviewedBy = undefined;
+      project.reviewedAt = undefined;
+      project.reviewNotes = undefined;
+      project.submittedBy = userId;
+      project.submittedAt = new Date();
+    }
+
+    project.updatedBy = userId;
+    await this.getEntityManager().flush();
+    return applied;
+  }
+
+  /** Soft-delete. Returns the number of rows affected (0 when the id does not exist). */
+  softDelete(id: string, userId: string): Promise<number> {
+    return this.nativeUpdate(
+      { id },
+      { deletedAt: new Date(), deletedBy: userId },
+    );
+  }
+
+  // ─── Analytics ─────────────────────────────────────────────────────────────
+  //
+  // GROUP BY aggregations that find() cannot express, built with the query builder. The only
+  // inline SQL is the fixed aggregate expressions; nothing a caller supplies reaches them.
+
+  /** Project counts and contract totals, grouped every way the dashboard shows them. */
+  async getAnalytics(): Promise<{
+    byStatus: Record<string, any>[];
+    byCampus: Record<string, any>[];
+    byPublication: Record<string, any>[];
+    totals: Record<string, any>;
+    byFundingSource: Record<string, any>[];
+    byContractor: Record<string, any>[];
+  }> {
+    const live = () => this.createQueryBuilder('cp').where({ deletedAt: null });
+
+    const [
+      byStatus,
+      byCampus,
+      byPublication,
+      totalsRows,
+      byFundingSource,
+      byContractor,
+    ] = await Promise.all([
+      live()
+        .select([raw('cp.status').as('status'), COUNT, SUM_CONTRACT])
+        .groupBy('cp.status')
+        .orderBy({ [raw('count')]: 'desc' })
+        .execute('all', false),
+      live()
+        .select([
+          raw('cp.campus').as('campus'),
+          COUNT,
+          SUM_CONTRACT,
+          AVG_PROGRESS,
+        ])
+        .groupBy('cp.campus')
+        .orderBy({ [raw('count')]: 'desc' })
+        .execute('all', false),
+      live()
+        .select([raw('cp.publication_status').as('publication_status'), COUNT])
+        .groupBy('cp.publicationStatus')
+        .execute('all', false),
+      live()
+        .select([
+          raw('COUNT(*)').as('total'),
+          raw('COALESCE(SUM(cp.contract_amount), 0)').as(
+            'total_contract_value',
+          ),
+          AVG_PROGRESS,
+          raw(`COUNT(*) FILTER (
+              WHERE cp.status = 'ONGOING'
+                AND cp.physical_progress::numeric < cp.target_physical_progress::numeric
+            )`).as('delayed_count'),
+        ])
+        .execute('all', false),
+      // AAAK: grouped by the controlled Level-1 category so descriptive Level-2 variants
+      // ("GAA FY2025", "GAA Savings") all roll up under their category.
+      live()
+        .select([
+          raw(`COALESCE(cp.primary_funding_source, 'OTHER')`).as(
+            'primary_funding_source',
+          ),
+          COUNT,
+          SUM_CONTRACT,
+        ])
+        .groupBy(raw(`COALESCE(cp.primary_funding_source, 'OTHER')`) as any)
+        .orderBy({ [raw('count')]: 'desc' })
+        .execute('all', false),
+      // MMM-A: the column is `contractor` (free text), not contractor_name.
+      live()
+        .andWhere({ contractor: { $ne: null } })
+        .select([
+          raw('cp.contractor').as('contractor_name'),
+          COUNT,
+          SUM_CONTRACT,
+        ])
+        .groupBy('cp.contractor')
+        .orderBy({ [raw('count')]: 'desc' })
+        .limit(10)
+        .execute('all', false),
+    ]);
+
+    return {
+      byStatus,
+      byCampus,
+      byPublication,
+      totals: totalsRows[0],
+      byFundingSource,
+      byContractor,
+    };
+  }
+
+  /**
+   * Contract value against cost actually incurred, across every live project.
+   *
+   * This stays SQL. It opens with DISTINCT ON to take each project's most recent progress
+   * report before summing, which neither find() nor the query builder can express, and
+   * rewriting it in memory would mean loading every report to pick one per project. It lives
+   * here rather than in the service so the service holds no SQL.
+   */
+  async getFinancialTotals(): Promise<Record<string, any>> {
+    const em = this.getEntityManager();
+    const rows = await em.getConnection().execute(
+      `WITH latest_reports AS (
+           SELECT DISTINCT ON (project_id) project_id, cost_incurred_to_date
+           FROM construction_progress_reports
+           ORDER BY project_id, report_date DESC
+         )
+         SELECT COALESCE(SUM(cp.contract_amount::numeric), 0) as total_contract_amount,
+                COALESCE(SUM(lr.cost_incurred_to_date::numeric), 0) as total_cost_incurred,
+                COUNT(DISTINCT lr.project_id) as projects_with_reports
+         FROM construction_projects cp
+         LEFT JOIN latest_reports lr ON lr.project_id = cp.id
+         WHERE cp.deleted_at IS NULL`,
+      [],
+      'all',
+      em.getTransactionContext(),
+    );
+    return rows[0];
+  }
+
   private loadAssignments(
     projects: ConstructionProject[],
   ): Promise<RecordAssignment[]> {
@@ -274,6 +552,12 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     }
     return byProject;
   }
+}
+
+function fullName(
+  user?: { firstName: string; lastName: string } | null,
+): string | null {
+  return user ? `${user.firstName} ${user.lastName}` : null;
 }
 
 function unique(values: (string | undefined | null)[]): string[] {
