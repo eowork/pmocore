@@ -1,6 +1,7 @@
 import {
   Entity,
   Filter,
+  Index,
   ManyToOne,
   PrimaryKey,
   Property,
@@ -10,6 +11,13 @@ import { PillarIndicatorTaxonomy } from './pillar-indicator-taxonomy.entity';
 import { UniversityOperation } from './university-operation.entity';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null } })
+@Index({
+  name: 'uq_oi_campus_quarter',
+  expression:
+    'create unique index "uq_oi_campus_quarter" on "operation_indicators" ' +
+    '("operation_id", "pillar_indicator_id", "fiscal_year", "reported_quarter", "campus") ' +
+    'where "deleted_at" is null',
+})
 @Entity({
   tableName: 'operation_indicators',
   repository: () => OperationIndicatorRepository,
@@ -70,6 +78,7 @@ export class OperationIndicator {
   // Which campus reported these figures. One row per campus per quarter, enforced by the
   // uq_oi_campus_quarter index — see Migration20261007000000. Required, so a row can never be
   // ambiguous about whose numbers it holds.
+  @Index({ name: 'idx_oi_campus' })
   @Property({ length: 100 })
   campus!: string;
 

@@ -32,7 +32,7 @@ import {
   UpdateOperationDto,
 } from './dto';
 import { JwtPayload } from '../common/interfaces';
-import { ModuleType } from '../common/enums';
+import { Campus, ModuleType } from '../common/enums';
 import { PermissionResolverService } from '../common/services';
 import { UserModuleAssignmentRepository } from '../common/repository/user-module-assignment.repository';
 import { UserPermissionOverrideRepository } from '../common/repository/user-permission-override.repository';
@@ -1384,16 +1384,20 @@ export class UniversityOperationsService {
     // Check if quarterly data already exists for this indicator + fiscal year + quarter
     // Phase DY-C: a missing reported_quarter is its own slot, distinct from any quarter's,
     // so it is matched as NULL rather than left out of the lookup.
+    // Campus is part of the slot: MAIN and CABADBARAN each get their own row for the same
+    // indicator, quarter and year, so the check is per campus rather than across them.
+    const campus = dto.campus ?? Campus.MAIN;
     const duplicate = await this.indicatorRepo.quarterlyDataExists(
       dto.pillar_indicator_id,
       operationId,
       dto.fiscal_year,
       dto.reported_quarter,
+      campus,
     );
 
     if (duplicate) {
       throw new ConflictException(
-        `Quarterly data already exists for indicator "${taxonomy.indicator_name}" in fiscal year ${dto.fiscal_year}. Use PATCH to update.`,
+        `Quarterly data already exists for indicator "${taxonomy.indicator_name}" at ${campus} in fiscal year ${dto.fiscal_year}. Use PATCH to update.`,
       );
     }
 
@@ -1411,6 +1415,7 @@ export class UniversityOperationsService {
       dto,
       taxonomy.indicator_name,
       userId,
+      campus,
     );
 
     this.logger.log(
@@ -1567,6 +1572,9 @@ export class UniversityOperationsService {
     await this.indicatorRepo.applyUpdate(indicatorId, dto, userId, [
       'pillar_indicator_id',
       'reported_quarter',
+      // Moving a row to another campus would make it a different record and could collide with
+      // that campus's own row, so campus is set once at creation and never rewritten.
+      'campus',
     ]);
 
     this.logger.log(

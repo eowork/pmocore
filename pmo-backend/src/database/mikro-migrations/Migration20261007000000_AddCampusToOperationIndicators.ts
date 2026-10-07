@@ -60,6 +60,8 @@ export class Migration20261007000000_AddCampusToOperationIndicators extends Migr
   async down(): Promise<void> {
     this.addSql(`DROP INDEX IF EXISTS uq_oi_campus_quarter`);
     this.addSql(`DROP INDEX IF EXISTS idx_oi_campus`);
-    this.addSql(`ALTER TABLE operation_indicators DROP COLUMN IF EXISTS campus`);
+    this.addSql(
+      `ALTER TABLE operation_indicators DROP COLUMN IF EXISTS campus`,
+    );
   }
 }
