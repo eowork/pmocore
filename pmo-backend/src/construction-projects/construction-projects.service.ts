@@ -615,6 +615,12 @@ export class ConstructionProjectsService {
 
     return await this.em.transactional(async (em) => {
       const conn = em.getConnection();
+      // Every statement below carries the transaction context. Without it each one takes its
+      // own connection from the pool, so it neither joins this transaction nor sees what the
+      // transaction has already written — the read-back at the end returned no row and the
+      // endpoint answered 201 with an empty body.
+      const run = (sql: string, params?: unknown[]) =>
+        conn.execute(sql, params as any[], 'all', em.getTransactionContext());
 
       if (!dto.project_id) {
         // JP-A: Deployment-resilient duplicate detection.
@@ -624,7 +630,7 @@ export class ConstructionProjectsService {
         // code works regardless of whether the partial index, a plain UNIQUE,
         // or a future renamed index is in place. PG SQLSTATE 23505 = unique_violation.
         try {
-          await conn.execute(
+          await run(
             `INSERT INTO projects (id, project_code, title, description, project_type, start_date, end_date, status, budget, campus, created_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id`,
@@ -767,7 +773,7 @@ export class ConstructionProjectsService {
       // over legacy `assigned_user_ids[]` when both are present.
       if (dto.assignments && dto.assignments.length > 0) {
         for (const a of dto.assignments) {
-          await conn.execute(
+          await run(
             `INSERT INTO record_assignments (module, record_id, user_id, role, department, phone, personnel_category, project_role, permissions)
              VALUES ('CONSTRUCTION', ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (module, record_id, user_id)
@@ -788,14 +794,14 @@ export class ConstructionProjectsService {
         }
       } else if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
         for (const uid of dto.assigned_user_ids) {
-          await conn.execute(
+          await run(
             `INSERT INTO record_assignments (module, record_id, user_id) VALUES ('CONSTRUCTION', ?, ?)
              ON CONFLICT (module, record_id, user_id) DO NOTHING`,
             [recordId, uid],
           );
         }
       } else if (dto.assigned_to) {
-        await conn.execute(
+        await run(
           `INSERT INTO record_assignments (module, record_id, user_id) VALUES ('CONSTRUCTION', ?, ?)
            ON CONFLICT (module, record_id, user_id) DO NOTHING`,
           [recordId, dto.assigned_to],
@@ -813,7 +819,7 @@ export class ConstructionProjectsService {
       // it — snake_case keys, every column, including the ones the database filled in.
       // Reading it back keeps that response identical; serialising the entity instead would
       // hand callers camelCase keys and a different set of fields.
-      const [created] = await conn.execute(
+      const [created] = await run(
         `SELECT * FROM construction_projects WHERE id = ?`,
         [recordId],
       );
@@ -1029,13 +1035,20 @@ export class ConstructionProjectsService {
 
     await this.em.transactional(async (em) => {
       const conn = em.getConnection();
+      // Both statements carry the transaction context so the two soft-deletes commit or roll
+      // back together; without it each takes its own connection and commits on its own.
+      const ctx = em.getTransactionContext();
       await conn.execute(
         `UPDATE construction_projects SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
         [userId, id],
+        'all',
+        ctx,
       );
       await conn.execute(
         `UPDATE projects SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
         [userId, project.project_id],
+        'all',
+        ctx,
       );
     });
 
