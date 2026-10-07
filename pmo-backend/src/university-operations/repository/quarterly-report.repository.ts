@@ -5,7 +5,7 @@ import type { FilterQuery } from '@mikro-orm/core';
 // value here would close a runtime require cycle. As a type it is erased at compile time.
 import type { QuarterlyReport } from '../../database/entities/quarterly-report.entity';
 import type { User } from '../../database/entities/user.entity';
-import { toRow } from './entity-row';
+import { toRow } from '../../common/repository/entity-row';
 
 const ENTITY = 'QuarterlyReport';
 

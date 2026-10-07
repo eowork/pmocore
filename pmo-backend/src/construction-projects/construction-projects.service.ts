@@ -38,7 +38,7 @@ import {
 } from './dto';
 import { UploadsService } from '../uploads';
 import { UploadProgressService } from '../uploads/upload-progress.service';
-import { PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
+import { ModuleType, PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
 import { JwtPayload } from '../common/interfaces';
 import { PermissionResolverService } from '../common/services';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
@@ -59,6 +59,7 @@ import {
   Document,
   Project,
   RecordAssignment,
+  UserModuleAssignment,
 } from '../database/entities';
 import { ConstructionProjectRepository } from './repository/construction-project.repository';
 import { ConstructionMilestoneRepository } from './repository/construction-milestone.repository';
@@ -71,6 +72,7 @@ import { ConstructionDiaryEntryRepository } from './repository/construction-diar
 import { ConstructionGalleryRepository } from './repository/construction-gallery.repository';
 import { ConstructionMovEntryRepository } from './repository/construction-mov-entry.repository';
 import { RecordAssignmentRepository } from './repository/record-assignment.repository';
+import { UserModuleAssignmentRepository } from '../common/repository/user-module-assignment.repository';
 import { ConstructionDocumentSubmissionRepository } from './repository/construction-document-submission.repository';
 import { ConstructionDocumentFolderRepository } from './repository/construction-document-folder.repository';
 import { ProjectRepository } from '../projects/repository/project.repository';
@@ -111,6 +113,8 @@ export class ConstructionProjectsService {
     private readonly movEntryRepo: ConstructionMovEntryRepository,
     @InjectRepository(RecordAssignment)
     private readonly assignmentRepo: RecordAssignmentRepository,
+    @InjectRepository(UserModuleAssignment)
+    private readonly moduleAssignmentRepo: UserModuleAssignmentRepository,
     @InjectRepository(Project)
     private readonly projectRepo: ProjectRepository,
     @InjectRepository(Document)
@@ -258,22 +262,19 @@ export class ConstructionProjectsService {
     permission: 'canCreate' | 'canEdit' | 'canDelete' | 'canUpload',
   ): Promise<void> {
     if (user && this.permissionResolver.isAdmin(user)) return; // Admin bypass
-    const conn = this.em.getConnection();
     // Owner bypass
-    const proj = await conn.execute(
-      `SELECT created_by FROM construction_projects WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
-      [projectId],
-    );
-    if (proj.length > 0 && proj[0].created_by === userId) return;
+    const createdBy = await this.cpRepo.findCreatedBy(projectId);
+    if (createdBy === userId) return;
     // Check assignment permissions
-    const rows = await conn.execute(
-      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
-      [projectId, userId],
+    const assignment = await this.assignmentRepo.findUserAssignment(
+      ModuleType.CONSTRUCTION,
+      projectId,
+      userId,
     );
-    if (rows.length === 0) {
+    if (!assignment) {
       throw new ForbiddenException('You are not assigned to this project');
     }
-    const perms = rows[0]?.permissions as Record<string, unknown> | null;
+    const perms = assignment.permissions as Record<string, unknown> | null;
     if (!perms || !perms[permission]) {
       throw new ForbiddenException(
         `Permission denied: ${permission} is not granted for this project`,
@@ -295,12 +296,11 @@ export class ConstructionProjectsService {
   ): Promise<boolean> {
     if (await this.permissionResolver.canApproveModule(user, 'coi'))
       return true;
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
-      [projectId, userId],
+    const perms = await this.assignmentRepo.findPermissions(
+      ModuleType.CONSTRUCTION,
+      projectId,
+      userId,
     );
-    const perms = rows[0]?.permissions as Record<string, unknown> | null;
     return !!perms?.canApprove;
   }
 
@@ -347,59 +347,25 @@ export class ConstructionProjectsService {
   async findOne(id: string, user?: JwtPayload): Promise<any> {
     // QD-C: Contractors may only access records they are explicitly assigned to
     if (user && this.permissionResolver.isContractor(user)) {
-      const conn = this.em.getConnection();
-      const assignment = await conn.execute(
-        `SELECT 1 FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
-        [id, user.sub],
+      const assigned = await this.assignmentRepo.isUserAssigned(
+        ModuleType.CONSTRUCTION,
+        id,
+        user.sub,
       );
-      if (assignment.length === 0) {
+      if (!assigned) {
         throw new ForbiddenException('You do not have access to this project');
       }
     }
-    const conn = this.em.getConnection();
-    const result = await conn.execute(
-      `SELECT cp.*,
-              p.title as project_title, p.project_type,
-              c.name as contractor_name,
-              fs.name as funding_source_name,
-              creator.first_name || ' ' || creator.last_name as created_by_name,
-              submitter.first_name || ' ' || submitter.last_name as submitted_by_name,
-              reviewer.first_name || ' ' || reviewer.last_name as reviewed_by_name,
-              (SELECT COALESCE(json_agg(json_build_object(
-                  'id', u.id,
-                  'name', u.first_name || ' ' || u.last_name,
-                  'email', u.email,
-                  'role', ra.role,
-                  'department', ra.department,
-                  'phone', ra.phone,
-                  'personnel_category', ra.personnel_category,
-                  'project_role', ra.project_role,
-                  'permissions', ra.permissions,
-                  'user_role', (SELECT r.name FROM user_roles ur
-                                JOIN roles r ON ur.role_id = r.id
-                                WHERE ur.user_id = u.id LIMIT 1)
-                )), '[]'::json)
-               FROM record_assignments ra JOIN users u ON ra.user_id = u.id
-               WHERE ra.module = 'CONSTRUCTION' AND ra.record_id = cp.id) as assigned_users
-       FROM construction_projects cp
-       LEFT JOIN projects p ON cp.project_id = p.id
-       LEFT JOIN contractors c ON cp.contractor_id = c.id
-       LEFT JOIN funding_sources fs ON cp.funding_source_id = fs.id
-       LEFT JOIN users creator ON cp.created_by = creator.id
-       LEFT JOIN users submitter ON cp.submitted_by = submitter.id
-       LEFT JOIN users reviewer ON cp.reviewed_by = reviewer.id
-       WHERE cp.id = ? AND cp.deleted_at IS NULL`,
-      [id],
-    );
+    const detail = await this.cpRepo.findDetail(id);
 
-    if (result.length === 0) {
+    if (!detail) {
       throw new NotFoundException(
         `Construction project with ID ${id} not found`,
       );
     }
 
     // VD-A: deny-by-default for contractor assignments with null permissions
-    const project = this.applyContractorDenyDefault(result[0]);
+    const project = this.applyContractorDenyDefault(detail);
 
     const milestones = await this.milestoneRepo.find(
       { projectId: id },
@@ -421,14 +387,23 @@ export class ConstructionProjectsService {
   // permissions stateless at render time (parity with institutional role gates).
   // Null permissions resolve to deny-by-default.
   async getMyProjectPermissions(userId: string): Promise<Record<string, any>> {
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `SELECT ra.record_id as project_id, ra.permissions
-       FROM record_assignments ra
-       JOIN construction_projects cp ON cp.id = ra.record_id
-       WHERE ra.module = 'CONSTRUCTION' AND ra.user_id = ? AND cp.deleted_at IS NULL`,
-      [userId],
+    // The join to construction_projects only existed to drop assignments whose project has
+    // been deleted. record_assignments is polymorphic, so there is no relation to traverse;
+    // the live project ids are fetched once and the assignments filtered against them.
+    const assignments = await this.assignmentRepo.findAssignmentsForUser(
+      ModuleType.CONSTRUCTION,
+      userId,
     );
+    const liveProjects = assignments.length
+      ? await this.cpRepo.find(
+          { id: { $in: assignments.map((a) => a.recordId) }, deletedAt: null },
+          { fields: ['id'], filters: false },
+        )
+      : [];
+    const liveIds = new Set(liveProjects.map((p) => p.id));
+    const rows = assignments
+      .filter((a) => liveIds.has(a.recordId))
+      .map((a) => ({ project_id: a.recordId, permissions: a.permissions }));
     const denyAll = {
       tabProjectProfile: false,
       tabDatesDuration: false,
@@ -455,7 +430,6 @@ export class ConstructionProjectsService {
   // --- Analytics ---
 
   async getAnalyticsSummary(): Promise<any> {
-    const conn = this.em.getConnection();
     const [
       statusRows,
       campusRows,
@@ -463,51 +437,17 @@ export class ConstructionProjectsService {
       aggRow,
       fundingSourceRows,
       contractorRows,
-    ] = await Promise.all([
-      conn.execute(
-        `SELECT status, COUNT(*) as count, COALESCE(SUM(contract_amount),0) as total_contract
-         FROM construction_projects WHERE deleted_at IS NULL GROUP BY status ORDER BY count DESC`,
-      ),
-      conn.execute(
-        `SELECT campus, COUNT(*) as count, COALESCE(SUM(contract_amount),0) as total_contract,
-                COALESCE(AVG(physical_progress),0) as avg_progress
-         FROM construction_projects WHERE deleted_at IS NULL GROUP BY campus ORDER BY count DESC`,
-      ),
-      conn.execute(
-        `SELECT publication_status, COUNT(*) as count
-         FROM construction_projects WHERE deleted_at IS NULL GROUP BY publication_status`,
-      ),
-      conn.execute(
-        `SELECT COUNT(*) as total, COALESCE(SUM(contract_amount),0) as total_contract_value,
-                COALESCE(AVG(physical_progress),0) as avg_progress,
-                COUNT(*) FILTER (
-                  WHERE status = 'ONGOING'
-                    AND physical_progress::numeric < target_physical_progress::numeric
-                ) as delayed_count
-         FROM construction_projects WHERE deleted_at IS NULL`,
-      ),
-      conn.execute(
-        // AAAK: Two-Level Funding — aggregate by the controlled Level-1 category
-        // (primary_funding_source) directly on construction_projects. No JOIN to
-        // funding_sources, so descriptive Level-2 variants (e.g. "GAA FY2025", "GAA Savings")
-        // no longer fragment the analytics — they all roll up under their Level-1 category.
-        `SELECT COALESCE(primary_funding_source, 'OTHER') as primary_funding_source,
-                COUNT(*) as count,
-                COALESCE(SUM(contract_amount),0) as total_contract
-         FROM construction_projects
-         WHERE deleted_at IS NULL
-         GROUP BY COALESCE(primary_funding_source, 'OTHER')
-         ORDER BY count DESC`,
-      ),
-      conn.execute(
-        // MMM-A: column is `contractor` (varchar), not `contractor_name`.
-        `SELECT contractor as contractor_name, COUNT(*) as count,
-                COALESCE(SUM(contract_amount),0) as total_contract
-         FROM construction_projects
-         WHERE deleted_at IS NULL AND contractor IS NOT NULL
-         GROUP BY contractor ORDER BY count DESC LIMIT 10`,
-      ),
-    ]);
+    ] = await (async () => {
+      const a = await this.cpRepo.getAnalytics();
+      return [
+        a.byStatus,
+        a.byCampus,
+        a.byPublication,
+        [a.totals],
+        a.byFundingSource,
+        a.byContractor,
+      ];
+    })();
     return {
       total: parseInt(aggRow[0].total, 10),
       total_contract_value: parseFloat(aggRow[0].total_contract_value),
@@ -553,21 +493,7 @@ export class ConstructionProjectsService {
    * as a stand-in for appropriation context. Endpoint kept for KPI continuity.
    */
   async getFinancialSummary(): Promise<any> {
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `WITH latest_reports AS (
-         SELECT DISTINCT ON (project_id) project_id, cost_incurred_to_date
-         FROM construction_progress_reports
-         ORDER BY project_id, report_date DESC
-       )
-       SELECT COALESCE(SUM(cp.contract_amount::numeric), 0) as total_contract_amount,
-              COALESCE(SUM(lr.cost_incurred_to_date::numeric), 0) as total_cost_incurred,
-              COUNT(DISTINCT lr.project_id) as projects_with_reports
-       FROM construction_projects cp
-       LEFT JOIN latest_reports lr ON lr.project_id = cp.id
-       WHERE cp.deleted_at IS NULL`,
-    );
-    const r = rows[0];
+    const r = await this.cpRepo.getFinancialTotals();
     const contractAmount = parseFloat(r.total_contract_amount);
     const costIncurred = parseFloat(r.total_cost_incurred);
     return {
@@ -615,6 +541,12 @@ export class ConstructionProjectsService {
 
     return await this.em.transactional(async (em) => {
       const conn = em.getConnection();
+      // Every statement below carries the transaction context. Without it each one takes its
+      // own connection from the pool, so it neither joins this transaction nor sees what the
+      // transaction has already written — the read-back at the end returned no row and the
+      // endpoint answered 201 with an empty body.
+      const run = (sql: string, params?: unknown[]) =>
+        conn.execute(sql, params as any[], 'all', em.getTransactionContext());
 
       if (!dto.project_id) {
         // JP-A: Deployment-resilient duplicate detection.
@@ -624,24 +556,18 @@ export class ConstructionProjectsService {
         // code works regardless of whether the partial index, a plain UNIQUE,
         // or a future renamed index is in place. PG SQLSTATE 23505 = unique_violation.
         try {
-          await conn.execute(
-            `INSERT INTO projects (id, project_code, title, description, project_type, start_date, end_date, status, budget, campus, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             RETURNING id`,
-            [
-              projectId,
-              dto.project_code,
-              dto.title,
-              dto.description || null,
-              'CONSTRUCTION',
-              dto.start_date || null,
-              dto.target_completion_date || null,
-              dto.status,
-              dto.contract_amount || null,
-              dto.campus,
-              userId,
-            ],
-          );
+          await this.projectRepo.createForConstruction({
+            id: projectId,
+            projectCode: dto.project_code,
+            title: dto.title,
+            description: dto.description,
+            startDate: dto.start_date,
+            endDate: dto.target_completion_date,
+            status: dto.status,
+            budget: dto.contract_amount,
+            campus: dto.campus,
+            createdBy: userId,
+          });
         } catch (err: any) {
           if (err?.code === '23505') {
             throw new ConflictException(
@@ -767,38 +693,35 @@ export class ConstructionProjectsService {
       // over legacy `assigned_user_ids[]` when both are present.
       if (dto.assignments && dto.assignments.length > 0) {
         for (const a of dto.assignments) {
-          await conn.execute(
-            `INSERT INTO record_assignments (module, record_id, user_id, role, department, phone, personnel_category, project_role, permissions)
-             VALUES ('CONSTRUCTION', ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT (module, record_id, user_id)
-             DO UPDATE SET role = EXCLUDED.role, department = EXCLUDED.department, phone = EXCLUDED.phone,
-               personnel_category = EXCLUDED.personnel_category, project_role = EXCLUDED.project_role,
-               permissions = EXCLUDED.permissions`,
-            [
-              recordId,
-              a.user_id,
-              a.role ?? null,
-              a.department ?? null,
-              a.phone ?? null,
-              a.personnel_category ?? null,
-              a.project_role ?? null,
-              a.permissions ? JSON.stringify(a.permissions) : null,
-            ],
+          // permissions is jsonb: the value goes in as it stands. The statement this replaces
+          // had to JSON.stringify it, which would store a quoted string here.
+          await this.assignmentRepo.upsertAssignment(
+            ModuleType.CONSTRUCTION,
+            recordId,
+            a.user_id,
+            {
+              role: a.role,
+              department: a.department,
+              phone: a.phone,
+              personnelCategory: a.personnel_category,
+              projectRole: a.project_role,
+              permissions: a.permissions ?? null,
+            },
           );
         }
       } else if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
         for (const uid of dto.assigned_user_ids) {
-          await conn.execute(
-            `INSERT INTO record_assignments (module, record_id, user_id) VALUES ('CONSTRUCTION', ?, ?)
-             ON CONFLICT (module, record_id, user_id) DO NOTHING`,
-            [recordId, uid],
+          await this.assignmentRepo.ensureAssignment(
+            ModuleType.CONSTRUCTION,
+            recordId,
+            uid,
           );
         }
       } else if (dto.assigned_to) {
-        await conn.execute(
-          `INSERT INTO record_assignments (module, record_id, user_id) VALUES ('CONSTRUCTION', ?, ?)
-           ON CONFLICT (module, record_id, user_id) DO NOTHING`,
-          [recordId, dto.assigned_to],
+        await this.assignmentRepo.ensureAssignment(
+          ModuleType.CONSTRUCTION,
+          recordId,
+          dto.assigned_to,
         );
       }
 
@@ -813,7 +736,7 @@ export class ConstructionProjectsService {
       // it — snake_case keys, every column, including the ones the database filled in.
       // Reading it back keeps that response identical; serialising the entity instead would
       // hand callers camelCase keys and a different set of fields.
-      const [created] = await conn.execute(
+      const [created] = await run(
         `SELECT * FROM construction_projects WHERE id = ?`,
         [recordId],
       );
@@ -843,19 +766,15 @@ export class ConstructionProjectsService {
       }
     }
 
-    const conn = this.em.getConnection();
     const dtoAny = dto as any;
 
-    if (dtoAny.project_code) {
-      const existing = await conn.execute(
-        `SELECT id FROM construction_projects WHERE project_code = ? AND id != ? AND deleted_at IS NULL`,
-        [dtoAny.project_code, id],
+    if (
+      dtoAny.project_code &&
+      (await this.cpRepo.codeExists(dtoAny.project_code, id))
+    ) {
+      throw new ConflictException(
+        `Project code ${dtoAny.project_code} already exists`,
       );
-      if (existing.length > 0) {
-        throw new ConflictException(
-          `Project code ${dtoAny.project_code} already exists`,
-        );
-      }
     }
 
     if (dtoAny.publication_status) {
@@ -945,66 +864,20 @@ export class ConstructionProjectsService {
       return this.findOne(id);
     }
 
-    const jsonFields = [
-      'objectives',
-      'key_features',
-      'metadata',
-      'output_indicators',
-      'outcome_indicators',
-      'status_updates',
-      'readiness_documents',
-      'signatories',
-      'incident_log',
-      'document_checklist_remarks',
-      // MC: new JSONB fields
-      'rdp_alignment',
-      'socioeconomic_agenda',
-      'csu_likha_goals',
-      'sdg_goals',
-      // XXX-K: Historical Planning Frameworks (2017-2022)
-      'rdp2017_alignment',
-      'point_agenda_10',
-      'beneficiary_list',
-      'additional_funding_sources',
-      'remarks_log',
-      'personnel_groups',
-      'project_notes_banking', // GGG-E
-    ];
-    let setClause = fields.map((f) => `${f} = ?`).join(', ');
-    const values = fields.map((f) =>
-      jsonFields.includes(f) ? JSON.stringify(dto[f]) : dto[f],
-    );
-
-    if (requiresStatusReset) {
-      let resetFields: string[];
-      if (priorStatus === 'PENDING_REVIEW') {
-        resetFields = [
-          `publication_status = 'DRAFT'`,
-          `submitted_by = NULL`,
-          `submitted_at = NULL`,
-        ];
-      } else {
-        resetFields = [
-          `publication_status = 'DRAFT'`,
-          `reviewed_by = NULL`,
-          `reviewed_at = NULL`,
-          `review_notes = NULL`,
-          `submitted_by = ?`,
-          `submitted_at = NOW()`,
-        ];
-        values.push(userId);
-      }
-      setClause = setClause
-        ? `${setClause}, ${resetFields.join(', ')}`
-        : resetFields.join(', ');
-    }
-
-    await conn.execute(
-      `UPDATE construction_projects
-       SET ${setClause}, updated_by = ?, updated_at = NOW()
-       WHERE id = ? AND deleted_at IS NULL
-       RETURNING *`,
-      [...values, userId, id],
+    // Only real columns of the entity can be written, so a key that slipped past validation
+    // has nowhere to go instead of being interpolated into a SET clause. jsonb columns take
+    // the value itself — the statement this replaces had to JSON.stringify each one, which
+    // would store a quoted string.
+    const payload = Object.fromEntries(fields.map((f) => [f, dto[f]]));
+    await this.cpRepo.applyUpdate(
+      id,
+      payload,
+      userId,
+      requiresStatusReset
+        ? priorStatus === 'PENDING_REVIEW'
+          ? 'from-pending'
+          : 'from-reviewed'
+        : 'none',
     );
 
     // Phase JW-E: prefer rich `assignments[]` over legacy `assigned_user_ids[]`.
@@ -1028,15 +901,10 @@ export class ConstructionProjectsService {
     await this.assertProjectPermission(id, userId, user, 'canDelete');
 
     await this.em.transactional(async (em) => {
-      const conn = em.getConnection();
-      await conn.execute(
-        `UPDATE construction_projects SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
-        [userId, id],
-      );
-      await conn.execute(
-        `UPDATE projects SET deleted_at = NOW(), deleted_by = ? WHERE id = ?`,
-        [userId, project.project_id],
-      );
+      // Both repositories are bound to this fork, so the two soft-deletes commit or roll back
+      // together.
+      await this.cpRepo.softDelete(id, userId);
+      await this.projectRepo.softDelete(project.project_id, userId);
     });
 
     this.logger.log(`CONSTRUCTION_PROJECT_DELETED: id=${id}, by=${userId}`);
@@ -1218,33 +1086,15 @@ export class ConstructionProjectsService {
       throw new ForbiddenException('Only Admin can view pending reviews');
     }
 
-    const conn = this.em.getConnection();
-
     if (!user.is_superadmin) {
-      const accessCheck = await conn.execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ? AND (module = 'CONSTRUCTION' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.CONSTRUCTION,
       );
-      if (accessCheck.length === 0) return [];
+      if (!hasAccess) return [];
     }
 
-    return await conn.execute(
-      `SELECT cp.id,
-              cp.project_code,
-              cp.title,
-              cp.campus,
-              cp.publication_status,
-              cp.submitted_by,
-              cp.submitted_at,
-              cp.created_at,
-              u.first_name || ' ' || u.last_name as submitter_name
-       FROM construction_projects cp
-              LEFT JOIN users u ON cp.submitted_by = u.id
-       WHERE cp.publication_status = 'PENDING_REVIEW'
-         AND cp.deleted_at IS NULL
-       ORDER BY cp.submitted_at `,
-    );
+    return this.cpRepo.findPendingReview();
   }
 
   async findMyDrafts(userId: string): Promise<ConstructionProject[]> {
@@ -2820,17 +2670,13 @@ export class ConstructionProjectsService {
       );
     }
 
-    const conn = this.em.getConnection();
-    const subRows = await conn.execute(
-      'SELECT COUNT(*)::int AS n FROM construction_document_submissions WHERE document_id = ?',
-      [docId],
-    );
-    const hasHistory = ((subRows[0] as any)?.n ?? 0) > 0;
+    const hasHistory =
+      (await this.docSubmissionRepo.countForDocument(docId)) > 0;
 
     // Soft-delete: set deletedAt; do NOT call uploadsService.deleteFile()
     doc.deletedAt = new Date();
     doc.deletedBy = user?.sub;
-    await this.em.flush();
+    await this.documentRepo.getEntityManager().flush();
 
     if (!hasHistory) {
       // No submission history — safe to clear the checklist pointer
@@ -2869,19 +2715,9 @@ export class ConstructionProjectsService {
     checklistItemId: string,
   ): Promise<unknown[]> {
     await this.findOne(projectId);
-    const conn = this.em.getConnection();
-    return conn.execute(
-      `SELECT s.id, s.checklist_item_id, s.project_id, s.document_id,
-              s.version, s.submitted_by, s.submitted_at, s.submission_notes, s.created_at,
-              d.file_name AS original_name, d.file_path, d.file_size,
-              (u.first_name || ' ' || u.last_name) AS submitter_name
-         FROM construction_document_submissions s
-         JOIN documents d ON d.id = s.document_id
-         JOIN users u ON u.id = s.submitted_by
-        WHERE s.checklist_item_id = ?
-          AND s.project_id = ?
-        ORDER BY s.version DESC`,
-      [checklistItemId, projectId],
+    return this.docSubmissionRepo.findForChecklistItem(
+      projectId,
+      checklistItemId,
     );
   }
 
@@ -2925,32 +2761,26 @@ export class ConstructionProjectsService {
       uploadedBy: user.sub,
       createdBy: user.sub,
     });
-    await this.em.persistAndFlush(doc);
+    await this.documentRepo.getEntityManager().persist(doc).flush();
 
-    const conn = this.em.getConnection();
-    const versionRows = await conn.execute(
-      'SELECT COALESCE(MAX(version), 0) + 1 AS next FROM construction_document_submissions WHERE checklist_item_id = ?',
-      [checklistItemId],
-    );
-    const nextVersion: number = (versionRows[0] as any)?.next ?? 1;
+    const nextVersion =
+      await this.docSubmissionRepo.nextVersion(checklistItemId);
 
-    const submission = this.docSubmissionRepo.create({
+    const submission = await this.docSubmissionRepo.recordSubmission({
       checklistItemId,
       projectId,
       documentId: doc.id,
       version: nextVersion,
       submittedBy: user.sub,
-      submittedAt: new Date(),
       submissionNotes: notes,
     });
-    await this.em.persistAndFlush(submission);
 
     checklistItem.linkedDocumentId = doc.id;
     checklistItem.currentVersion = nextVersion;
     checklistItem.submissionStatus = 'SUBMITTED';
     checklistItem.submittedBy = user.sub;
     checklistItem.submittedAt = new Date();
-    await this.em.flush();
+    await this.docChecklistRepo.getEntityManager().flush();
 
     this.fireLog(user, ActivityAction.SUBMIT, projectId, {
       section: 'CHECKLIST',
@@ -2986,18 +2816,8 @@ export class ConstructionProjectsService {
   // KD-E: Project Diary CRUD
   // ============================================================
 
-  async findDiaryEntries(projectId: string): Promise<any[]> {
-    const conn = this.em.getConnection();
-    return conn.execute(
-      `SELECT d.id, d.project_id, d.entry_date, d.title, d.content,
-              d.author_id, d.created_at, d.updated_at,
-              (u.first_name || ' ' || u.last_name) AS author_name
-         FROM construction_diary_entries d
-         LEFT JOIN users u ON u.id = d.author_id
-        WHERE d.project_id = ?
-        ORDER BY d.entry_date DESC, d.created_at DESC`,
-      [projectId],
-    );
+  findDiaryEntries(projectId: string): Promise<any[]> {
+    return this.diaryRepo.findForProject(projectId);
   }
 
   async createDiaryEntry(
@@ -3258,7 +3078,7 @@ export class ConstructionProjectsService {
     });
     if (!entity)
       throw new NotFoundException(`Revision order ${roId} not found`);
-    await this.em.removeAndFlush(entity);
+    await this.em.remove(entity).flush();
     await this.mirrorLatestApprovedRevisionToProject(projectId);
     this.fireLog(user, ActivityAction.DELETE, projectId, {
       entityType: 'revision_order',
@@ -3286,18 +3106,13 @@ export class ConstructionProjectsService {
       { projectId },
       { orderBy: { reportDate: 'desc' } },
     );
-    const conn = this.em.getConnection();
-    await conn.execute(
-      `UPDATE construction_projects
-       SET physical_progress = ?, cost_incurred_to_date = ?, as_of_date = ?, updated_at = NOW()
-       WHERE id = ?`,
-      [
-        latest?.percentageCompletion ?? 0,
-        latest?.costIncurredToDate ?? null,
-        latest?.reportDate ?? null,
-        projectId,
-      ],
-    );
+    const filter: FilterQuery<ConstructionProject> = { id: projectId };
+
+    await this.cpRepo.nativeUpdate(filter, {
+      physicalProgress: latest?.percentageCompletion ?? '0',
+      costIncurredToDate: latest?.costIncurredToDate ?? null,
+      asOfDate: latest?.reportDate ?? null,
+    });
   }
 
   async createProgressReport(
@@ -3450,7 +3265,7 @@ export class ConstructionProjectsService {
     if (dto.mitigation_actions_list !== undefined)
       entity.mitigationActionsList = stampList(dto.mitigation_actions_list);
     entity.updatedBy = user?.sub;
-    await this.em.flush();
+    await this.progressReportRepo.getEntityManager().flush();
     await this.mirrorLatestReportToProject(projectId);
     this.fireLog(user, ActivityAction.UPDATE, projectId, {
       entityType: 'progress_report',
@@ -3479,7 +3294,7 @@ export class ConstructionProjectsService {
     });
     if (!entity)
       throw new NotFoundException(`Progress report ${reportId} not found`);
-    await this.em.removeAndFlush(entity);
+    await this.progressReportRepo.getEntityManager().remove(entity).flush();
     await this.mirrorLatestReportToProject(projectId);
     this.fireLog(user, ActivityAction.DELETE, projectId, {
       entityType: 'progress_report',
