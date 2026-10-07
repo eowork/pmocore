@@ -68,6 +68,91 @@ export class RecordAssignmentRepository extends EntityRepository<RecordAssignmen
     return assignment;
   }
 
+  /**
+   * The permission map a user holds on one record, or null when they hold no assignment.
+   *
+   * A null permissions column is returned as null rather than an empty object, so a caller can
+   * tell "assigned with nothing granted" apart from "not assigned" — the two have different
+   * meanings in the deny-by-default checks.
+   */
+  async findPermissions(
+    module: string,
+    recordId: string,
+    userId: string,
+  ): Promise<Record<string, any> | null> {
+    const assignment = await this.findOne({ module, recordId, userId });
+    return assignment?.permissions ?? null;
+  }
+
+  /** Every record a user is assigned to within one module, with the permissions on each. */
+  async findAssignmentsForUser(
+    module: string,
+    userId: string,
+  ): Promise<{ recordId: string; permissions: Record<string, any> | null }[]> {
+    const rows = await this.find({ module, userId });
+    return rows.map((r) => ({
+      recordId: r.recordId,
+      permissions: r.permissions ?? null,
+    }));
+  }
+
+  /**
+   * Create a user's assignment or update the one that exists, metadata and all.
+   *
+   * This replaces an INSERT ... ON CONFLICT (module, record_id, user_id) DO UPDATE, which the
+   * database cannot run: record_assignments carries only a primary key on id, so Postgres
+   * rejects that statement with 42P10 and creating a project with any assignment failed. The
+   * lookup here does the same job without needing the index.
+   */
+  async upsertAssignment(
+    module: string,
+    recordId: string,
+    userId: string,
+    metadata: {
+      role?: string | null;
+      department?: string | null;
+      phone?: string | null;
+      personnelCategory?: string | null;
+      projectRole?: string | null;
+      permissions?: Record<string, any> | null;
+    } = {},
+  ): Promise<RecordAssignment> {
+    const existing = await this.findUserAssignment(module, recordId, userId);
+    const assignment =
+      existing ??
+      this.create({ module, recordId, userId, assignedAt: new Date() });
+
+    assignment.role = metadata.role ?? undefined;
+    assignment.department = metadata.department ?? undefined;
+    assignment.phone = metadata.phone ?? undefined;
+    assignment.personnelCategory = metadata.personnelCategory ?? undefined;
+    assignment.projectRole = metadata.projectRole ?? undefined;
+    assignment.permissions = metadata.permissions ?? null;
+
+    if (!existing) this.getEntityManager().persist(assignment);
+    await this.getEntityManager().flush();
+    return assignment;
+  }
+
+  /**
+   * Assign a user if they are not assigned already, leaving an existing row untouched.
+   *
+   * This replaces an INSERT ... DO NOTHING, which fails for the same reason as above. Unlike
+   * assignUser it records no assignedBy, matching the statement it replaces.
+   */
+  async ensureAssignment(
+    module: string,
+    recordId: string,
+    userId: string,
+  ): Promise<RecordAssignment> {
+    const existing = await this.findUserAssignment(module, recordId, userId);
+    if (existing) return existing;
+
+    const assignment = this.create({ module, recordId, userId });
+    await this.getEntityManager().persist(assignment).flush();
+    return assignment;
+  }
+
   /** Remove one user's assignment. Returns the number of rows deleted (0 or 1). */
   removeAssignment(
     module: string,

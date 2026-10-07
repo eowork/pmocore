@@ -38,7 +38,7 @@ import {
 } from './dto';
 import { UploadsService } from '../uploads';
 import { UploadProgressService } from '../uploads/upload-progress.service';
-import { PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
+import { ModuleType, PRIMARY_FUNDING_SOURCE_LABELS } from '../common/enums';
 import { JwtPayload } from '../common/interfaces';
 import { PermissionResolverService } from '../common/services';
 import { ActivityLogService } from '../activity-logs/activity-log.service';
@@ -59,6 +59,7 @@ import {
   Document,
   Project,
   RecordAssignment,
+  UserModuleAssignment,
 } from '../database/entities';
 import { ConstructionProjectRepository } from './repository/construction-project.repository';
 import { ConstructionMilestoneRepository } from './repository/construction-milestone.repository';
@@ -71,6 +72,7 @@ import { ConstructionDiaryEntryRepository } from './repository/construction-diar
 import { ConstructionGalleryRepository } from './repository/construction-gallery.repository';
 import { ConstructionMovEntryRepository } from './repository/construction-mov-entry.repository';
 import { RecordAssignmentRepository } from './repository/record-assignment.repository';
+import { UserModuleAssignmentRepository } from '../common/repository/user-module-assignment.repository';
 import { ConstructionDocumentSubmissionRepository } from './repository/construction-document-submission.repository';
 import { ConstructionDocumentFolderRepository } from './repository/construction-document-folder.repository';
 import { ProjectRepository } from '../projects/repository/project.repository';
@@ -111,6 +113,8 @@ export class ConstructionProjectsService {
     private readonly movEntryRepo: ConstructionMovEntryRepository,
     @InjectRepository(RecordAssignment)
     private readonly assignmentRepo: RecordAssignmentRepository,
+    @InjectRepository(UserModuleAssignment)
+    private readonly moduleAssignmentRepo: UserModuleAssignmentRepository,
     @InjectRepository(Project)
     private readonly projectRepo: ProjectRepository,
     @InjectRepository(Document)
@@ -266,14 +270,15 @@ export class ConstructionProjectsService {
     );
     if (proj.length > 0 && proj[0].created_by === userId) return;
     // Check assignment permissions
-    const rows = await conn.execute(
-      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
-      [projectId, userId],
+    const assignment = await this.assignmentRepo.findUserAssignment(
+      ModuleType.CONSTRUCTION,
+      projectId,
+      userId,
     );
-    if (rows.length === 0) {
+    if (!assignment) {
       throw new ForbiddenException('You are not assigned to this project');
     }
-    const perms = rows[0]?.permissions as Record<string, unknown> | null;
+    const perms = assignment.permissions as Record<string, unknown> | null;
     if (!perms || !perms[permission]) {
       throw new ForbiddenException(
         `Permission denied: ${permission} is not granted for this project`,
@@ -295,12 +300,11 @@ export class ConstructionProjectsService {
   ): Promise<boolean> {
     if (await this.permissionResolver.canApproveModule(user, 'coi'))
       return true;
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `SELECT permissions FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
-      [projectId, userId],
+    const perms = await this.assignmentRepo.findPermissions(
+      ModuleType.CONSTRUCTION,
+      projectId,
+      userId,
     );
-    const perms = rows[0]?.permissions as Record<string, unknown> | null;
     return !!perms?.canApprove;
   }
 
@@ -347,12 +351,12 @@ export class ConstructionProjectsService {
   async findOne(id: string, user?: JwtPayload): Promise<any> {
     // QD-C: Contractors may only access records they are explicitly assigned to
     if (user && this.permissionResolver.isContractor(user)) {
-      const conn = this.em.getConnection();
-      const assignment = await conn.execute(
-        `SELECT 1 FROM record_assignments WHERE module = 'CONSTRUCTION' AND record_id = ? AND user_id = ? LIMIT 1`,
-        [id, user.sub],
+      const assigned = await this.assignmentRepo.isUserAssigned(
+        ModuleType.CONSTRUCTION,
+        id,
+        user.sub,
       );
-      if (assignment.length === 0) {
+      if (!assigned) {
         throw new ForbiddenException('You do not have access to this project');
       }
     }
@@ -421,14 +425,23 @@ export class ConstructionProjectsService {
   // permissions stateless at render time (parity with institutional role gates).
   // Null permissions resolve to deny-by-default.
   async getMyProjectPermissions(userId: string): Promise<Record<string, any>> {
-    const conn = this.em.getConnection();
-    const rows = await conn.execute(
-      `SELECT ra.record_id as project_id, ra.permissions
-       FROM record_assignments ra
-       JOIN construction_projects cp ON cp.id = ra.record_id
-       WHERE ra.module = 'CONSTRUCTION' AND ra.user_id = ? AND cp.deleted_at IS NULL`,
-      [userId],
+    // The join to construction_projects only existed to drop assignments whose project has
+    // been deleted. record_assignments is polymorphic, so there is no relation to traverse;
+    // the live project ids are fetched once and the assignments filtered against them.
+    const assignments = await this.assignmentRepo.findAssignmentsForUser(
+      ModuleType.CONSTRUCTION,
+      userId,
     );
+    const liveProjects = assignments.length
+      ? await this.cpRepo.find(
+          { id: { $in: assignments.map((a) => a.recordId) }, deletedAt: null },
+          { fields: ['id'], filters: false },
+        )
+      : [];
+    const liveIds = new Set(liveProjects.map((p) => p.id));
+    const rows = assignments
+      .filter((a) => liveIds.has(a.recordId))
+      .map((a) => ({ project_id: a.recordId, permissions: a.permissions }));
     const denyAll = {
       tabProjectProfile: false,
       tabDatesDuration: false,
@@ -773,38 +786,35 @@ export class ConstructionProjectsService {
       // over legacy `assigned_user_ids[]` when both are present.
       if (dto.assignments && dto.assignments.length > 0) {
         for (const a of dto.assignments) {
-          await run(
-            `INSERT INTO record_assignments (module, record_id, user_id, role, department, phone, personnel_category, project_role, permissions)
-             VALUES ('CONSTRUCTION', ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT (module, record_id, user_id)
-             DO UPDATE SET role = EXCLUDED.role, department = EXCLUDED.department, phone = EXCLUDED.phone,
-               personnel_category = EXCLUDED.personnel_category, project_role = EXCLUDED.project_role,
-               permissions = EXCLUDED.permissions`,
-            [
-              recordId,
-              a.user_id,
-              a.role ?? null,
-              a.department ?? null,
-              a.phone ?? null,
-              a.personnel_category ?? null,
-              a.project_role ?? null,
-              a.permissions ? JSON.stringify(a.permissions) : null,
-            ],
+          // permissions is jsonb: the value goes in as it stands. The statement this replaces
+          // had to JSON.stringify it, which would store a quoted string here.
+          await this.assignmentRepo.upsertAssignment(
+            ModuleType.CONSTRUCTION,
+            recordId,
+            a.user_id,
+            {
+              role: a.role,
+              department: a.department,
+              phone: a.phone,
+              personnelCategory: a.personnel_category,
+              projectRole: a.project_role,
+              permissions: a.permissions ?? null,
+            },
           );
         }
       } else if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
         for (const uid of dto.assigned_user_ids) {
-          await run(
-            `INSERT INTO record_assignments (module, record_id, user_id) VALUES ('CONSTRUCTION', ?, ?)
-             ON CONFLICT (module, record_id, user_id) DO NOTHING`,
-            [recordId, uid],
+          await this.assignmentRepo.ensureAssignment(
+            ModuleType.CONSTRUCTION,
+            recordId,
+            uid,
           );
         }
       } else if (dto.assigned_to) {
-        await run(
-          `INSERT INTO record_assignments (module, record_id, user_id) VALUES ('CONSTRUCTION', ?, ?)
-           ON CONFLICT (module, record_id, user_id) DO NOTHING`,
-          [recordId, dto.assigned_to],
+        await this.assignmentRepo.ensureAssignment(
+          ModuleType.CONSTRUCTION,
+          recordId,
+          dto.assigned_to,
         );
       }
 
@@ -1234,12 +1244,11 @@ export class ConstructionProjectsService {
     const conn = this.em.getConnection();
 
     if (!user.is_superadmin) {
-      const accessCheck = await conn.execute(
-        `SELECT 1 FROM user_module_assignments
-         WHERE user_id = ? AND (module = 'CONSTRUCTION' OR module = 'ALL')`,
-        [user.sub],
+      const hasAccess = await this.moduleAssignmentRepo.hasModuleAccess(
+        user.sub,
+        ModuleType.CONSTRUCTION,
       );
-      if (accessCheck.length === 0) return [];
+      if (!hasAccess) return [];
     }
 
     return await conn.execute(
