@@ -11547,7 +11547,7 @@
           "autoincrement": false,
           "primary": false,
           "nullable": false,
-          "unique": false,
+          "unique": true,
           "length": null,
           "precision": null,
           "scale": null,
@@ -12691,11 +12691,37 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "text"
+        },
+        "campus": {
+          "name": "campus",
+          "type": "varchar(100)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 100,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
         }
       },
       "name": "operation_indicators",
       "schema": "public",
       "indexes": [
+        {
+          "columnNames": [
+            "campus"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "idx_oi_campus",
+          "unique": false,
+          "primary": false
+        },
         {
           "columnNames": [
             "id"
@@ -12705,6 +12731,21 @@
           "keyName": "operation_indicators_pkey",
           "unique": true,
           "primary": true
+        },
+        {
+          "columnNames": [
+            "operation_id",
+            "pillar_indicator_id",
+            "fiscal_year",
+            "reported_quarter",
+            "campus"
+          ],
+          "composite": true,
+          "constraint": false,
+          "keyName": "uq_oi_campus_quarter",
+          "unique": true,
+          "primary": false,
+          "expression": "CREATE UNIQUE INDEX uq_oi_campus_quarter ON public.operation_indicators USING btree (operation_id, pillar_indicator_id, fiscal_year, reported_quarter, campus) WHERE (deleted_at IS NULL)"
         }
       ],
       "checks": [],
