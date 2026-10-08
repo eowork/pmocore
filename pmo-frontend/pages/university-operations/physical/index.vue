@@ -141,7 +141,19 @@ const quarterOptions = [
 ]
 
 // Phase DW-B: Quarter highlight helper
+import { evaluateFraction } from '~/utils/fraction'
+import { CAMPUS_OPTIONS, labelForCampus } from '~/utils/campus'
+
 const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'] as const
+
+// The chip colour for each quarter in the entry dialog, so the four rows can be rendered by
+// one v-for instead of being written out four times.
+const QUARTER_COLOR: Record<string, string> = {
+  Q1: 'blue',
+  Q2: 'teal',
+  Q3: 'orange',
+  Q4: 'deep-purple',
+}
 function qCellClass(quarter: string): string {
   return quarter === selectedQuarter.value ? 'q-active-cell' : 'q-dimmed-cell'
 }
@@ -165,6 +177,75 @@ let isInitializing = true
 let fetchAbortController: AbortController | null = null
 
 // Quarterly entry dialog
+// PERCENTAGE indicators are reported as a fraction — 148 of 200 — so their target and actual
+// are entered as a numerator and a denominator and the percentage is computed from the pair.
+// Every other unit type keeps the plain number inputs.
+const isPctType = computed(() => selectedIndicator.value?.unit_type === 'PERCENTAGE')
+
+/** The evaluated fraction for one side of one quarter, from whatever is in the form now. */
+function fractionOf(side: 'target' | 'actual', q: string) {
+  const key = q.toLowerCase()
+  const prefix = side === 'target' ? 'target_' : ''
+  return evaluateFraction({
+    numerator: entryForm.value[`${prefix}numerator_${key}`],
+    denominator: entryForm.value[`${prefix}denominator_${key}`],
+  })
+}
+
+/**
+ * The percentage a cell should show. A complete fraction wins — the percentage is derived from
+ * it, never typed alongside it — and the plain percentage field is used when no fraction has
+ * been entered, which is how a figure above 100% is still recordable.
+ */
+function percentOf(side: 'target' | 'actual', q: string): number | null {
+  const fraction = fractionOf(side, q)
+  if (fraction.isComplete && fraction.isValid) return fraction.percent
+  const key = q.toLowerCase()
+  const field = side === 'target' ? `target_${key}` : `accomplishment_${key}`
+  const direct = entryForm.value[field]
+  return direct === null || direct === undefined || direct === '' ? null : Number(direct)
+}
+
+/** Every fraction currently in the form that is filled in but not valid. */
+const fractionErrors = computed(() => {
+  if (!isPctType.value) return [] as string[]
+  const errors: string[] = []
+  for (const q of QUARTERS) {
+    for (const side of ['target', 'actual'] as const) {
+      const result = fractionOf(side, q)
+      if (!result.isValid && result.error) {
+        errors.push(`${side === 'target' ? 'Target' : 'Actual'} ${q}: ${result.error}`)
+      }
+    }
+  }
+  return errors
+})
+
+/**
+ * The sixteen fraction columns for the request body: the actual side's numerator/denominator
+ * and the target side's. A non-PERCENTAGE indicator sends null for all of them, so switching an
+ * indicator's unit type cannot leave a stale fraction behind.
+ */
+function fractionColumns(): Record<string, number | null> {
+  const columns: Record<string, number | null> = {}
+  for (const q of QUARTERS) {
+    const key = q.toLowerCase()
+    const actual = isPctType.value ? fractionOf('actual', q) : null
+    const target = isPctType.value ? fractionOf('target', q) : null
+    columns[`numerator_${key}`] = actual?.isValid ? actual.numerator : null
+    columns[`denominator_${key}`] = actual?.isValid ? actual.denominator : null
+    columns[`target_numerator_${key}`] = target?.isValid ? target.numerator : null
+    columns[`target_denominator_${key}`] = target?.isValid ? target.denominator : null
+  }
+  return columns
+}
+
+/** Reload the open dialog against another campus's row. */
+async function switchEntryCampus(campus: string) {
+  entryCampus.value = campus
+  if (selectedIndicator.value) await openEntryDialogDirect(selectedIndicator.value)
+}
+
 const entryDialog = ref(false)
 const selectedIndicator = ref<any>(null)
 const entryForm = ref<any>({})
@@ -282,9 +363,220 @@ const pillarRateSummary = computed(() => {
   return { withData, total, targetRate, actualRate, ratePct }
 })
 
-// Get indicator data by taxonomy ID
+// Each campus reports its own row for a quarter. 'BOTH' is not offered: it is a filing
+// category on an operation, not a campus that reports figures.
+const REPORTING_CAMPUSES = CAMPUS_OPTIONS.filter(o => o.value !== 'BOTH')
+
+// Which campus the entry dialog is reading and writing. The tables always show every campus
+// merged, so this only governs the form.
+const entryCampus = ref<string>('MAIN')
+
+/** Every campus's record for one taxonomy indicator, in the current quarter. */
+function getIndicatorRecords(taxonomyId: string): any[] {
+  return pillarIndicators.value.filter(i => i.pillar_indicator_id === taxonomyId)
+}
+
+/** One campus's record, or null when that campus has not reported this quarter. */
+function getIndicatorDataForCampus(taxonomyId: string, campus: string) {
+  return getIndicatorRecords(taxonomyId).find(i => i.campus === campus) || null
+}
+
+// The quarter columns that are merged, each with the fraction halves that belong to it.
+const MERGED_FIELDS = ['q1', 'q2', 'q3', 'q4'].flatMap(q => [
+  { value: `target_${q}`, numerator: `target_numerator_${q}`, denominator: `target_denominator_${q}` },
+  { value: `accomplishment_${q}`, numerator: `numerator_${q}`, denominator: `denominator_${q}` },
+])
+
+/**
+ * The figure shown for an indicator when more than one campus has reported it.
+ *
+ * Per column the larger value wins, which is what the server's pillar aggregation does — its
+ * merged stage takes MAX of each quarter column across the rows it groups. The winning row's
+ * numerator and denominator come along with its value, so the fraction underneath always
+ * belongs to the number above it rather than being a separate maximum.
+ */
+function mergeCampusRecords(records: any[]): any | null {
+  if (records.length === 0) return null
+
+  // Stage one: collapse each campus's rows to a single set of quarter figures.
+  //
+  // A campus files a cumulative snapshot per quarter — the Q4 row repeats Q1, Q2 and Q3 — so a
+  // campus can hold several rows for one indicator and year. The largest value per column wins,
+  // which is the latest snapshot, and the winning row's numerator and denominator come with it.
+  // Adding these rows up instead would count Q1 once per snapshot.
+  const byCampus = new Map<string, any>()
+  for (const record of records) {
+    const campus = record.campus ?? 'MAIN'
+    const current = byCampus.get(campus)
+    if (!current) {
+      byCampus.set(campus, { ...record })
+      continue
+    }
+    for (const field of MERGED_FIELDS) {
+      const value = record[field.value]
+      if (value === null || value === undefined) continue
+      const held = current[field.value]
+      if (held === null || held === undefined || Number(value) > Number(held)) {
+        current[field.value] = value
+        current[field.numerator] = record[field.numerator]
+        current[field.denominator] = record[field.denominator]
+      }
+    }
+  }
+
+  const campuses = [...byCampus.keys()]
+  const collapsed = [...byCampus.values()]
+  if (collapsed.length === 1) return { ...collapsed[0], _campuses: campuses }
+
+  // Stage two: add the campuses together, which is what the university reports as a whole.
+  //
+  // A count is cumulative, so the quarter's figure is the campuses added up. A percentage is
+  // not: its quarter figure is the summed numerators over the summed denominators, so 2/5 at
+  // one campus and 7/10 at another is 9/15 — 60% — rather than 110%. A percentage quarter where
+  // any reporting campus has no fraction cannot be combined that way, so it falls back to the
+  // mean of the campuses, which is the closest statement that is not simply wrong.
+  const merged: any = { ...collapsed[0], _campuses: campuses }
+  const isPercentage = merged.unit_type === 'PERCENTAGE'
+
+  for (const field of MERGED_FIELDS) {
+    const reporting = collapsed.filter(
+      (r) => r[field.value] !== null && r[field.value] !== undefined,
+    )
+    if (reporting.length === 0) {
+      merged[field.value] = null
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      continue
+    }
+
+    if (!isPercentage) {
+      merged[field.value] = Number(
+        reporting.reduce((sum, r) => sum + Number(r[field.value]), 0).toFixed(4),
+      )
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      continue
+    }
+
+    const everyoneHasFraction = reporting.every(
+      (r) =>
+        r[field.numerator] !== null &&
+        r[field.numerator] !== undefined &&
+        r[field.denominator] !== null &&
+        r[field.denominator] !== undefined &&
+        Number(r[field.denominator]) > 0,
+    )
+    if (everyoneHasFraction) {
+      const numerator = reporting.reduce((sum, r) => sum + Number(r[field.numerator]), 0)
+      const denominator = reporting.reduce((sum, r) => sum + Number(r[field.denominator]), 0)
+      merged[field.numerator] = Number(numerator.toFixed(4))
+      merged[field.denominator] = Number(denominator.toFixed(4))
+      merged[field.value] = Number(
+        Math.min((numerator / denominator) * 100, 9999.99).toFixed(4),
+      )
+    } else {
+      merged[field.numerator] = null
+      merged[field.denominator] = null
+      merged[field.value] = Number(
+        (
+          reporting.reduce((sum, r) => sum + Number(r[field.value]), 0) / reporting.length
+        ).toFixed(4),
+      )
+    }
+  }
+
+  // The server computes the annual totals, variance and rate per row, so the copy above
+  // carries the first campus's figures. They are recomputed here from the combined quarters,
+  // otherwise the quarter cells would show every campus and the totals beside them only one.
+  const unitType = merged.unit_type
+  const totalTarget = recordSideTotal(merged, 'target', unitType)
+  const totalActual = recordSideTotal(merged, 'actual', unitType)
+  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+    ? Number(((totalActual / totalTarget) * 100).toFixed(2))
+    : null
+
+  merged.total_target = totalTarget
+  merged.total_accomplishment = totalActual
+  merged.computed_total_target = totalTarget
+  merged.computed_total_accomplishment = totalActual
+  merged.average_target = totalTarget
+  merged.average_accomplishment = totalActual
+  merged.variance = variance
+  merged.computed_variance = variance
+  merged.accomplishment_rate = rate
+  merged.computed_rate = rate
+  // An override is one campus's judgement about its own figures and cannot speak for the
+  // others, so none is carried into a combined view. The same goes for the ΣN/ΣD captions,
+  // which belong to a single row's fractions.
+  merged.override_total_target = null
+  merged.override_total_actual = null
+  merged.override_variance = null
+  merged.override_rate = null
+  merged.total_target_fraction = null
+  merged.total_actual_fraction = null
+  merged.variance_source = 'computed'
+
+  return merged
+}
+
+/**
+ * A record's annual figure for one side, by the same rules the server's computeIndicatorMetrics
+ * applies: COUNT and WEIGHTED_COUNT are cumulative, a PERCENTAGE is ΣN/ΣD when every reported
+ * quarter carries a fraction and otherwise the mean of the quarters that carry a value.
+ */
+function recordSideTotal(record: any, side: 'target' | 'actual', unitType: string): number | null {
+  const values = QUARTERS.map(q => {
+    const key = q.toLowerCase()
+    const raw = record[side === 'target' ? `target_${key}` : `accomplishment_${key}`]
+    return raw === null || raw === undefined || raw === '' ? null : Number(raw)
+  })
+  const filled = values.filter((v): v is number => v !== null)
+  if (filled.length === 0) return null
+
+  if (unitType !== 'PERCENTAGE') {
+    return Number(filled.reduce((a, b) => a + b, 0).toFixed(4))
+  }
+
+  let sumNumerator = 0
+  let sumDenominator = 0
+  let everyReportedHasFraction = true
+  QUARTERS.forEach((q, i) => {
+    if (values[i] === null || !everyReportedHasFraction) return
+    const key = q.toLowerCase()
+    const numerator = record[side === 'target' ? `target_numerator_${key}` : `numerator_${key}`]
+    const denominator = record[side === 'target' ? `target_denominator_${key}` : `denominator_${key}`]
+    if (numerator === null || numerator === undefined || denominator === null ||
+        denominator === undefined || Number(denominator) <= 0) {
+      everyReportedHasFraction = false
+      return
+    }
+    sumNumerator += Number(numerator)
+    sumDenominator += Number(denominator)
+  })
+  if (everyReportedHasFraction && sumDenominator > 0) {
+    return Number(Math.min((sumNumerator / sumDenominator) * 100, 9999.99).toFixed(4))
+  }
+
+  return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(4))
+}
+
+// Get indicator data by taxonomy ID — every campus merged, for the read-only tables.
 function getIndicatorData(taxonomyId: string) {
-  return pillarIndicators.value.find(i => i.pillar_indicator_id === taxonomyId) || null
+  return mergeCampusRecords(getIndicatorRecords(taxonomyId))
+}
+
+/**
+ * How many campuses a combined cell draws on, or null when only one reported.
+ *
+ * A combined figure is every campus added together rather than one campus's, so there is no
+ * single campus to name — the cell says how many went into it instead.
+ */
+function cellCampus(record: any, quarter: string, side: 'target' | 'actual'): string | null {
+  if (!record?._campuses || record._campuses.length < 2) return null
+  const field = side === 'target' ? `target_${quarter.toLowerCase()}` : `accomplishment_${quarter.toLowerCase()}`
+  if (record[field] === null || record[field] === undefined) return null
+  return `${record._campuses.length} campuses`
 }
 
 // Phase FM-1: Check if prior-quarter prefill is available for an indicator
@@ -292,7 +584,7 @@ function getIndicatorData(taxonomyId: string) {
 function hasPrefillAvailable(taxonomyId: string): boolean {
   const priorQ = PRIOR_QUARTER_MAP[selectedQuarter.value]
   if (!priorQ) return false
-  const data = getIndicatorData(taxonomyId)
+  const data = getIndicatorDataForCampus(taxonomyId, entryCampus.value)
   return data === null || isRecordEffectivelyEmpty(data)
 }
 
@@ -488,6 +780,40 @@ function formatNumber(val: number | null | undefined): string {
   return Number(val).toFixed(2)
 }
 
+/**
+ * The fraction caption for one quarter cell of the read-only tables, or null when there is
+ * none to show.
+ *
+ * Read from the record's own numerator/denominator columns only. A sibling record for another
+ * reported_quarter may hold a fraction this one lacks, but the two can disagree — there are
+ * indicator-years in this database with different values for the same quarter — and pairing a
+ * fraction with a percentage it does not produce would be worse than showing no fraction.
+ *
+ * For the same reason the pair is checked against the percentage beside it: a fraction that
+ * does not work out to the figure displayed is a sign the two were written at different times,
+ * so it is withheld rather than shown next to a number it contradicts.
+ */
+function quarterFraction(
+  record: any,
+  quarter: string,
+  side: 'target' | 'actual',
+  unitType: string | null | undefined,
+): string | null {
+  if (unitType !== 'PERCENTAGE' || !record) return null
+  const key = quarter.toLowerCase()
+  const prefix = side === 'target' ? 'target_' : ''
+  const numerator = record[`${prefix}numerator_${key}`]
+  const denominator = record[`${prefix}denominator_${key}`]
+  const result = evaluateFraction({ numerator, denominator })
+  if (!result.isComplete || !result.isValid || result.percent === null) return null
+
+  const shown = record[side === 'target' ? `target_${key}` : `accomplishment_${key}`]
+  if (shown !== null && shown !== undefined && Math.abs(Number(shown) - result.percent) > 0.01) {
+    return null
+  }
+  return result.text
+}
+
 // Format percentage (used in indicator table rows and entry dialog)
 function formatPercent(val: number | null | undefined): string {
   if (val === null || val === undefined) return '—'
@@ -653,7 +979,8 @@ function confirmPublishedEdit() {
 // Phase FL-4: Made async for per-quarter prefill (API fetch of prior quarter's record)
 async function openEntryDialogDirect(indicator: any) {
   selectedIndicator.value = indicator
-  const existingData = getIndicatorData(indicator.id)
+  // The form edits one campus's row, never the merged view the tables show.
+  const existingData = getIndicatorDataForCampus(indicator.id, entryCampus.value)
 
   // Debug logging
   console.log('[Physical] Opening entry dialog:', {
@@ -689,6 +1016,23 @@ async function openEntryDialogDirect(indicator: any) {
       score_q2: existingData.score_q2 || '',
       score_q3: existingData.score_q3 || '',
       score_q4: existingData.score_q4 || '',
+      // PERCENTAGE fraction halves, actual side then target side.
+      numerator_q1: existingData.numerator_q1 ?? null,
+      denominator_q1: existingData.denominator_q1 ?? null,
+      numerator_q2: existingData.numerator_q2 ?? null,
+      denominator_q2: existingData.denominator_q2 ?? null,
+      numerator_q3: existingData.numerator_q3 ?? null,
+      denominator_q3: existingData.denominator_q3 ?? null,
+      numerator_q4: existingData.numerator_q4 ?? null,
+      denominator_q4: existingData.denominator_q4 ?? null,
+      target_numerator_q1: existingData.target_numerator_q1 ?? null,
+      target_denominator_q1: existingData.target_denominator_q1 ?? null,
+      target_numerator_q2: existingData.target_numerator_q2 ?? null,
+      target_denominator_q2: existingData.target_denominator_q2 ?? null,
+      target_numerator_q3: existingData.target_numerator_q3 ?? null,
+      target_denominator_q3: existingData.target_denominator_q3 ?? null,
+      target_numerator_q4: existingData.target_numerator_q4 ?? null,
+      target_denominator_q4: existingData.target_denominator_q4 ?? null,
       remarks: existingData.remarks || '',
       override_rate: existingData.override_rate ?? null,
       override_variance: existingData.override_variance ?? null,
@@ -707,7 +1051,9 @@ async function openEntryDialogDirect(indicator: any) {
           `/api/university-operations/indicators?pillar_type=${activePillar.value}&fiscal_year=${selectedFiscalYear.value}&quarter=${priorQ}`
         )
         const priorList = Array.isArray(priorIndicators) ? priorIndicators : (priorIndicators as any)?.data || []
-        priorData = priorList.find((i: any) => i.pillar_indicator_id === indicator.id) || null
+        priorData = priorList.find(
+          (i: any) => i.pillar_indicator_id === indicator.id && i.campus === entryCampus.value,
+        ) || null
         console.log('[Physical] Prior quarter prefill lookup:', {
           priorQ,
           found: !!priorData,
@@ -736,6 +1082,23 @@ async function openEntryDialogDirect(indicator: any) {
         score_q2: priorData.score_q2 || '',
         score_q3: priorData.score_q3 || '',
         score_q4: priorData.score_q4 || '',
+        // PERCENTAGE fraction halves, actual side then target side.
+        numerator_q1: priorData.numerator_q1 ?? null,
+        denominator_q1: priorData.denominator_q1 ?? null,
+        numerator_q2: priorData.numerator_q2 ?? null,
+        denominator_q2: priorData.denominator_q2 ?? null,
+        numerator_q3: priorData.numerator_q3 ?? null,
+        denominator_q3: priorData.denominator_q3 ?? null,
+        numerator_q4: priorData.numerator_q4 ?? null,
+        denominator_q4: priorData.denominator_q4 ?? null,
+        target_numerator_q1: priorData.target_numerator_q1 ?? null,
+        target_denominator_q1: priorData.target_denominator_q1 ?? null,
+        target_numerator_q2: priorData.target_numerator_q2 ?? null,
+        target_denominator_q2: priorData.target_denominator_q2 ?? null,
+        target_numerator_q3: priorData.target_numerator_q3 ?? null,
+        target_denominator_q3: priorData.target_denominator_q3 ?? null,
+        target_numerator_q4: priorData.target_numerator_q4 ?? null,
+        target_denominator_q4: priorData.target_denominator_q4 ?? null,
         remarks: priorData.remarks || '',
         // Overrides are a judgement about one quarter's own figures, so neither the rate
         // nor the variance override is carried over from the prior quarter.
@@ -753,6 +1116,12 @@ async function openEntryDialogDirect(indicator: any) {
         target_q1: null, target_q2: null, target_q3: null, target_q4: null,
         accomplishment_q1: null, accomplishment_q2: null, accomplishment_q3: null, accomplishment_q4: null,
         score_q1: '', score_q2: '', score_q3: '', score_q4: '',
+        numerator_q1: null, denominator_q1: null, numerator_q2: null, denominator_q2: null,
+        numerator_q3: null, denominator_q3: null, numerator_q4: null, denominator_q4: null,
+        target_numerator_q1: null, target_denominator_q1: null,
+        target_numerator_q2: null, target_denominator_q2: null,
+        target_numerator_q3: null, target_denominator_q3: null,
+        target_numerator_q4: null, target_denominator_q4: null,
         remarks: '',
         override_rate: null,
         override_variance: null,
@@ -843,6 +1212,14 @@ async function saveQuarterlyData() {
       console.log('[Physical] Created new operation:', currentOperation.value.id);
     }
 
+    // A half-entered or out-of-range fraction cannot be stored: the percentage is derived
+    // from the pair, so saving one half would record a figure nothing can reproduce.
+    if (fractionErrors.value.length > 0) {
+      toast.error(fractionErrors.value[0])
+      saving.value = false
+      return
+    }
+
     const { _existingId } = entryForm.value
 
     // Phase FL-1: Full 12-field payload — record-level isolation via per-quarter DB records
@@ -851,18 +1228,27 @@ async function saveQuarterlyData() {
       pillar_indicator_id: entryForm.value.pillar_indicator_id,
       fiscal_year: entryForm.value.fiscal_year,
       reported_quarter: selectedQuarter.value,
-      target_q1: entryForm.value.target_q1,
-      target_q2: entryForm.value.target_q2,
-      target_q3: entryForm.value.target_q3,
-      target_q4: entryForm.value.target_q4,
-      accomplishment_q1: entryForm.value.accomplishment_q1,
-      accomplishment_q2: entryForm.value.accomplishment_q2,
-      accomplishment_q3: entryForm.value.accomplishment_q3,
-      accomplishment_q4: entryForm.value.accomplishment_q4,
-      score_q1: entryForm.value.score_q1,
-      score_q2: entryForm.value.score_q2,
-      score_q3: entryForm.value.score_q3,
-      score_q4: entryForm.value.score_q4,
+      campus: entryCampus.value,
+      // For a PERCENTAGE indicator the percentage is whatever the fraction works out to, and
+      // falls back to the directly-typed figure when no fraction was entered. Every other unit
+      // type sends the number as typed.
+      target_q1: percentOf('target', 'Q1'),
+      target_q2: percentOf('target', 'Q2'),
+      target_q3: percentOf('target', 'Q3'),
+      target_q4: percentOf('target', 'Q4'),
+      accomplishment_q1: percentOf('actual', 'Q1'),
+      accomplishment_q2: percentOf('actual', 'Q2'),
+      accomplishment_q3: percentOf('actual', 'Q3'),
+      accomplishment_q4: percentOf('actual', 'Q4'),
+      // The two halves of each fraction, extracted here rather than parsed from a string on
+      // the server. Null for every non-PERCENTAGE indicator and for a quarter left blank.
+      ...fractionColumns(),
+      // Score is free text and no calculation reads it. PERCENTAGE indicators no longer offer
+      // the field, so their stored value is left untouched rather than blanked.
+      score_q1: isPctType.value ? undefined : entryForm.value.score_q1,
+      score_q2: isPctType.value ? undefined : entryForm.value.score_q2,
+      score_q3: isPctType.value ? undefined : entryForm.value.score_q3,
+      score_q4: isPctType.value ? undefined : entryForm.value.score_q4,
       remarks: entryForm.value.remarks,
       // Without these two the override inputs were write-only: the dialog showed them,
       // the server never received them, and the column kept its old value (Directives 213/359).
@@ -970,19 +1356,102 @@ function toNullableNumber(value: any): number | null {
 }
 
 // Phase FY-1: DBM BAR1 standard — ALL indicator types use SUM (Directive 211/212)
+/**
+ * The year's figure for one side, mirroring the server's computeIndicatorMetrics exactly so
+ * the dialog previews what will actually be stored.
+ *
+ * COUNT and WEIGHTED_COUNT are cumulative — the quarters add up. A PERCENTAGE never does:
+ * it is ΣN/ΣD when every reported quarter carries a fraction, otherwise the mean of the
+ * quarters that carry a value — a quarter reported as 0% counts toward that mean.
+ */
+function sideTotal(side: 'target' | 'actual'): number | null {
+  const values = QUARTERS.map(q => percentOf(side, q))
+  const filled = values.filter((v): v is number => v !== null)
+
+  if (!isPctType.value) {
+    return filled.length > 0 ? filled.reduce((a, b) => a + b, 0) : null
+  }
+
+  let sumNumerator = 0
+  let sumDenominator = 0
+  let everyReportedHasFraction = filled.length > 0
+  for (const q of QUARTERS) {
+    if (percentOf(side, q) === null) continue
+    const fraction = fractionOf(side, q)
+    if (!fraction.isComplete || !fraction.isValid || !fraction.denominator) {
+      everyReportedHasFraction = false
+      break
+    }
+    sumNumerator += fraction.numerator ?? 0
+    sumDenominator += fraction.denominator
+  }
+  if (everyReportedHasFraction && sumDenominator > 0) {
+    return Number(Math.min((sumNumerator / sumDenominator) * 100, 9999.99).toFixed(4))
+  }
+
+  if (filled.length === 0) return null
+  return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(4))
+}
+
+/**
+ * The campus being edited, shaped like a saved row so it can go through the same merge the
+ * tables use. Its quarter values are the live form values, so the panel still moves as the
+ * user types rather than waiting for a save.
+ */
+const formAsRecord = computed(() => {
+  const record: Record<string, any> = {
+    campus: entryCampus.value,
+    unit_type: selectedIndicator.value?.unit_type ?? null,
+    pillar_indicator_id: entryForm.value.pillar_indicator_id,
+  }
+  for (const q of QUARTERS) {
+    const key = q.toLowerCase()
+    record[`target_${key}`] = percentOf('target', q)
+    record[`accomplishment_${key}`] = percentOf('actual', q)
+    const target = fractionOf('target', q)
+    const actual = fractionOf('actual', q)
+    record[`target_numerator_${key}`] = target.isValid ? target.numerator : null
+    record[`target_denominator_${key}`] = target.isValid ? target.denominator : null
+    record[`numerator_${key}`] = actual.isValid ? actual.numerator : null
+    record[`denominator_${key}`] = actual.isValid ? actual.denominator : null
+  }
+  return record
+})
+
+/**
+ * The indicator's figures across every campus, which is what the tables show.
+ *
+ * The other campuses contribute their saved rows and this one contributes the form, so the
+ * panel previews the row the tables will show once this edit is saved. Overrides are left out
+ * for the same reason the merged tables leave them out: one campus's manual judgement cannot
+ * speak for another's figures.
+ */
+const mergedPreview = computed(() => {
+  const indicatorId = entryForm.value.pillar_indicator_id
+  const unitType = selectedIndicator.value?.unit_type ?? null
+  const others = indicatorId
+    ? getIndicatorRecords(indicatorId).filter(r => r.campus !== entryCampus.value)
+    : []
+  const merged = mergeCampusRecords([formAsRecord.value, ...others])
+  if (!merged) {
+    return { totalTarget: null, totalActual: null, variance: null, rate: null, campuses: [] as string[] }
+  }
+  const totalTarget = recordSideTotal(merged, 'target', unitType)
+  const totalActual = recordSideTotal(merged, 'actual', unitType)
+  const variance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
+  const rate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
+    ? Number(((totalActual / totalTarget) * 100).toFixed(2))
+    : null
+  return { totalTarget, totalActual, variance, rate, campuses: merged._campuses ?? [] }
+})
+
+/** True once a second campus has figures for this indicator, so the two views can differ. */
+const hasOtherCampus = computed(() => mergedPreview.value.campuses.length > 1)
+
 const computedPreview = computed(() => {
   const f = entryForm.value
-  const targets = [f.target_q1, f.target_q2, f.target_q3, f.target_q4]
-    .filter(v => v !== null && v !== undefined && v !== '')
-  const actuals = [f.accomplishment_q1, f.accomplishment_q2, f.accomplishment_q3, f.accomplishment_q4]
-    .filter(v => v !== null && v !== undefined && v !== '')
-
-  const totalTarget = targets.length > 0
-    ? targets.reduce((a, b) => Number(a) + Number(b), 0)
-    : null
-  const totalActual = actuals.length > 0
-    ? actuals.reduce((a, b) => Number(a) + Number(b), 0)
-    : null
+  const totalTarget = sideTotal('target')
+  const totalActual = sideTotal('actual')
 
   const computedVariance = totalTarget !== null && totalActual !== null ? totalActual - totalTarget : null
   const computedRate = totalTarget !== null && totalTarget !== 0 && totalActual !== null
@@ -1650,8 +2119,22 @@ onMounted(async () => {
                 <template v-if="getIndicatorData(indicator.id)">
                   <!-- Phase DW-D: Always render all 12 quarter cells with highlight -->
                   <template v-for="q in QUARTERS" :key="q + '-data'">
-                    <td class="text-center qsub-cell" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
-                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
+                    <td class="text-center qsub-cell" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'target')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'target') }}
+                      </div>
+                    </td>
+                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'actual')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'actual') }}
+                      </div>
+                    </td>
                   </template>
                   <td class="text-right">
                     <v-chip
@@ -1773,8 +2256,22 @@ onMounted(async () => {
                 <template v-if="getIndicatorData(indicator.id)">
                   <!-- Phase DW-D: Always render all 8 quarter cells with highlight -->
                   <template v-for="q in QUARTERS" :key="q + '-data'">
-                    <td class="text-center qsub-cell" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
-                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">{{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}</td>
+                    <td class="text-center qsub-cell" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`target_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'target', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'target')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'target') }}
+                      </div>
+                    </td>
+                    <td class="text-center qsub-cell text-success border-right-q" :class="qCellClass(q)">
+                      {{ formatNumber(getIndicatorData(indicator.id)?.[`accomplishment_${q.toLowerCase()}`]) }}{{ getUnitConfig(indicator.unit_type).suffix }}
+                      <div v-if="quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type)"
+                        class="qsub-fraction">{{ quarterFraction(getIndicatorData(indicator.id), q, 'actual', indicator.unit_type) }}</div>
+                      <div v-if="cellCampus(getIndicatorData(indicator.id), q, 'actual')" class="qsub-campus">
+                        {{ cellCampus(getIndicatorData(indicator.id), q, 'actual') }}
+                      </div>
+                    </td>
                   </template>
                   <td class="text-right">
                     <v-chip
@@ -1871,6 +2368,26 @@ onMounted(async () => {
             All values pre-filled from <strong>{{ prefillSourceQ }}</strong> record — edit freely. This will create a new {{ selectedQuarter }} record.
           </v-alert>
 
+          <!-- Each campus files its own figures for the quarter. Switching here reloads the
+               form against that campus's row, so the two are never edited at once. -->
+          <div class="d-flex align-center ga-3 mb-4">
+            <v-select
+              :model-value="entryCampus"
+              :items="REPORTING_CAMPUSES"
+              item-title="title"
+              item-value="value"
+              label="Reporting campus"
+              density="compact"
+              variant="outlined"
+              hide-details
+              style="max-width: 280px"
+              @update:model-value="switchEntryCampus"
+            />
+            <span class="text-caption text-medium-emphasis">
+              Figures below belong to {{ labelForCampus(entryCampus) }} only.
+            </span>
+          </div>
+
           <!-- Phase DU-A: Vertical tabular data entry — rows = quarters, cols = T/A/S -->
           <v-table density="compact" class="mb-4">
             <thead>
@@ -1878,85 +2395,97 @@ onMounted(async () => {
                 <th class="q-label-cell">Quarter</th>
                 <th class="text-center">Target</th>
                 <th class="text-center">Actual</th>
-                <th class="text-center">Score (optional)</th>
+                <th v-if="!isPctType" class="text-center">Score (optional)</th>
               </tr>
             </thead>
             <tbody>
               <!-- Phase FL-1: All quarter fields are fully editable — record isolation at DB level -->
-              <!-- Q1 -->
-              <tr>
+              <tr v-for="q in QUARTERS" :key="q">
                 <td class="q-label-cell">
-                  <v-chip size="small" color="blue" variant="tonal" class="font-weight-bold">Q1</v-chip>
+                  <v-chip size="small" :color="QUARTER_COLOR[q]" variant="tonal" class="font-weight-bold">{{ q }}</v-chip>
                 </td>
+
+                <!-- Target -->
                 <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q1" type="number" step="0.01" min="0"
+                  <template v-if="isPctType">
+                    <div class="d-flex align-center ga-1">
+                      <v-text-field v-model.number="entryForm[`target_numerator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="148"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('target', q).isValid" />
+                      <span class="text-medium-emphasis font-weight-bold">/</span>
+                      <v-text-field v-model.number="entryForm[`target_denominator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="200"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('target', q).isValid" />
+                    </div>
+                    <!-- No fraction entered: the percentage can still be typed directly, which
+                         is the only way to record a figure above 100%. -->
+                    <v-text-field v-if="!fractionOf('target', q).isComplete"
+                      v-model.number="entryForm[`target_${q.toLowerCase()}`]"
+                      type="number" step="0.01" min="0" suffix="%" placeholder="or enter % directly"
+                      density="compact" variant="outlined" hide-details class="mt-1" />
+                    <div v-else class="text-caption text-medium-emphasis mt-1">
+                      = {{ percentOf('target', q) !== null ? percentOf('target', q) + '%' : '—' }}
+                    </div>
+                    <div v-if="fractionOf('target', q).error" class="text-caption text-error mt-1">
+                      {{ fractionOf('target', q).error }}
+                    </div>
+                    <div v-else-if="fractionOf('target', q).warning" class="text-caption text-warning mt-1">
+                      {{ fractionOf('target', q).warning }}
+                    </div>
+                  </template>
+                  <v-text-field v-else v-model.number="entryForm[`target_${q.toLowerCase()}`]"
+                    type="number" step="0.01" min="0"
                     density="compact" variant="outlined" hide-details />
                 </td>
+
+                <!-- Actual -->
                 <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q1" type="number" step="0.01" min="0"
+                  <template v-if="isPctType">
+                    <div class="d-flex align-center ga-1">
+                      <v-text-field v-model.number="entryForm[`numerator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="148"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('actual', q).isValid" />
+                      <span class="text-medium-emphasis font-weight-bold">/</span>
+                      <v-text-field v-model.number="entryForm[`denominator_${q.toLowerCase()}`]"
+                        type="number" step="0.01" min="0" placeholder="200"
+                        density="compact" variant="outlined" hide-details
+                        :error="!fractionOf('actual', q).isValid" />
+                    </div>
+                    <v-text-field v-if="!fractionOf('actual', q).isComplete"
+                      v-model.number="entryForm[`accomplishment_${q.toLowerCase()}`]"
+                      type="number" step="0.01" min="0" suffix="%" placeholder="or enter % directly"
+                      density="compact" variant="outlined" hide-details class="mt-1" />
+                    <div v-else class="text-caption text-medium-emphasis mt-1">
+                      = {{ percentOf('actual', q) !== null ? percentOf('actual', q) + '%' : '—' }}
+                    </div>
+                    <div v-if="fractionOf('actual', q).error" class="text-caption text-error mt-1">
+                      {{ fractionOf('actual', q).error }}
+                    </div>
+                    <div v-else-if="fractionOf('actual', q).warning" class="text-caption text-warning mt-1">
+                      {{ fractionOf('actual', q).warning }}
+                    </div>
+                  </template>
+                  <v-text-field v-else v-model.number="entryForm[`accomplishment_${q.toLowerCase()}`]"
+                    type="number" step="0.01" min="0"
                     density="compact" variant="outlined" hide-details />
                 </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q1" placeholder="e.g. 148/200"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-              </tr>
-              <!-- Q2 -->
-              <tr>
-                <td class="q-label-cell">
-                  <v-chip size="small" color="teal" variant="tonal" class="font-weight-bold">Q2</v-chip>
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q2" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q2" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q2" placeholder="e.g. 148/200"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-              </tr>
-              <!-- Q3 -->
-              <tr>
-                <td class="q-label-cell">
-                  <v-chip size="small" color="orange" variant="tonal" class="font-weight-bold">Q3</v-chip>
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q3" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q3" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q3" placeholder="e.g. 148/200"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-              </tr>
-              <!-- Q4 -->
-              <tr>
-                <td class="q-label-cell">
-                  <v-chip size="small" color="deep-purple" variant="tonal" class="font-weight-bold">Q4</v-chip>
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.target_q4" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model.number="entryForm.accomplishment_q4" type="number" step="0.01" min="0"
-                    density="compact" variant="outlined" hide-details />
-                </td>
-                <td class="du-input-cell">
-                  <v-text-field v-model="entryForm.score_q4" placeholder="e.g. 148/200"
+
+                <!-- Score is free text and was never read by any calculation. It is hidden for
+                     PERCENTAGE indicators, where the fraction now has its own inputs. -->
+                <td v-if="!isPctType" class="du-input-cell">
+                  <v-text-field v-model="entryForm[`score_${q.toLowerCase()}`]"
                     density="compact" variant="outlined" hide-details />
                 </td>
               </tr>
             </tbody>
           </v-table>
+
+          <v-alert v-if="fractionErrors.length" type="error" variant="tonal" density="compact" class="mb-4">
+            <div v-for="message in fractionErrors" :key="message" class="text-caption">{{ message }}</div>
+          </v-alert>
 
           <!-- Remarks -->
           <v-textarea
@@ -1968,36 +2497,59 @@ onMounted(async () => {
             class="mb-3"
           />
 
-          <!-- Annual Totals (Read-Only) -->
+          <!-- Annual figures (read-only). Cumulative for COUNT, aggregated for PERCENTAGE. -->
           <v-card variant="outlined" class="bg-grey-lighten-4">
             <v-card-text class="py-2">
               <div class="text-subtitle-2 mb-1">
                 <v-icon start size="small">mdi-calculator</v-icon>
-                Annual Totals (Read-Only)
+                {{ isPctType ? 'Annual Figures (Read-Only)' : 'Annual Totals (Read-Only)' }}
               </div>
+              <!-- These are the merged figures across every campus — the same numbers the
+                   indicator tables show. An override is deliberately not applied here: it
+                   belongs to one campus and cannot speak for the others. -->
               <div class="d-flex ga-4 flex-wrap mb-3">
                 <v-chip variant="tonal" size="small">
-                  Total Target: {{ formatNumber(computedPreview.totalTarget) }}
+                  {{ isPctType ? 'Overall Target' : 'Total Target' }}: {{ formatNumber(mergedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip variant="tonal" size="small">
-                  Total Actual: {{ formatNumber(computedPreview.totalActual) }}
+                  {{ isPctType ? 'Overall Actual' : 'Total Actual' }}: {{ formatNumber(mergedPreview.totalActual) }}{{ isPctType ? '%' : '' }}
                 </v-chip>
                 <v-chip
-                  :color="getVarianceColor(computedPreview.variance)"
+                  :color="getVarianceColor(mergedPreview.variance)"
                   variant="tonal"
                   size="small"
                 >
-                  Variance: {{ computedPreview.variance !== null ? formatNumber(computedPreview.variance) : '—' }}
+                  Variance: {{ mergedPreview.variance !== null ? formatNumber(mergedPreview.variance) : '—' }}
                 </v-chip>
                 <v-chip
-                  :color="getRateColor(computedPreview.rate)"
+                  :color="getRateColor(mergedPreview.rate)"
                   variant="tonal"
                   size="small"
                 >
-                  Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}
+                  Rate: {{ mergedPreview.rate !== null ? formatPercent(mergedPreview.rate) : '—' }}
                 </v-chip>
-                <!-- Phase FY-2: Override active badge -->
-                <v-chip v-if="computedPreview.varianceSource !== 'computed'" color="warning" variant="tonal" size="small">
+                <v-chip v-if="hasOtherCampus" variant="tonal" size="small" color="info">
+                  <v-icon start size="x-small">mdi-office-building-marker</v-icon>
+                  Combined from {{ mergedPreview.campuses.length }} campuses
+                </v-chip>
+              </div>
+
+              <!-- What this campus alone is filing, which is what the override below acts on. -->
+              <div v-if="hasOtherCampus" class="d-flex ga-4 flex-wrap mb-3 text-caption text-medium-emphasis">
+                <span>{{ labelForCampus(entryCampus) }} only —</span>
+                <span>Target: {{ formatNumber(computedPreview.totalTarget) }}{{ isPctType ? '%' : '' }}</span>
+                <span>Actual: {{ formatNumber(computedPreview.totalActual) }}{{ isPctType ? '%' : '' }}</span>
+                <span>Variance: {{ computedPreview.variance !== null ? formatNumber(computedPreview.variance) : '—' }}</span>
+                <span>Rate: {{ computedPreview.rate !== null ? formatPercent(computedPreview.rate) : '—' }}</span>
+                <span v-if="computedPreview.varianceSource !== 'computed'" class="text-warning">
+                  override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
+                </span>
+              </div>
+
+              <!-- Phase FY-2: Override active badge, for the single-campus case where the
+                   merged figures above are this campus's own. -->
+              <div v-else-if="computedPreview.varianceSource !== 'computed'" class="mb-3">
+                <v-chip color="warning" variant="tonal" size="small">
                   <v-icon start size="x-small">mdi-pencil-circle</v-icon>
                   Override applied ({{ computedPreview.varianceSource === 'override_variance' ? 'variance' : 'rate' }})
                 </v-chip>
@@ -2407,6 +2959,20 @@ onMounted(async () => {
 .qsub-cell {
   min-width: 68px;
   font-size: 0.8rem;
+}
+.qsub-campus {
+  font-size: 0.6rem;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  text-transform: uppercase;
+}
+.qsub-fraction {
+  font-size: 0.68rem;
+  line-height: 1.1;
+  opacity: 0.65;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.7);
 }
 .qsub-cell-score {
   min-width: 80px;

@@ -1,4 +1,5 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
+import { User } from './user.entity';
 import { ConstructionProject } from './construction-project.entity';
 import {
   ConstructionDiaryEntryRepository
@@ -42,6 +43,19 @@ export class ConstructionDiaryEntry {
 
   @Property({ nullable: true, columnType: 'uuid' })
   authorId?: string;
+
+  // Read-only view over author_id so the author's name can be eager-loaded.
+  // persist: false — the scalar column stays the writer, the relation never writes.
+  // hidden: true — excluded from serialisation, so no response gains a nested user object.
+  // createForeignKeyConstraint: false — production has no foreign keys on this table.
+  @ManyToOne(() => User, {
+    fieldName: 'author_id',
+    nullable: true,
+    persist: false,
+    hidden: true,
+    createForeignKeyConstraint: false,
+  })
+  author?: User;
 
   @Property({ defaultRaw: 'NOW()', columnType: 'timestamptz' })
   createdAt: Date = new Date();

@@ -3,7 +3,7 @@ import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { ConstructionProjectsController } from './construction-projects.controller';
 import { PublicConstructionController } from './public-construction.controller';
 import { ConstructionProjectsService } from './construction-projects.service';
-import { UploadsModule } from '../uploads/uploads.module';
+import { UploadsModule } from '../uploads';
 import { ActivityLogModule } from '../activity-logs/activity-log.module';
 import {
   ConstructionProject,
@@ -20,7 +20,9 @@ import {
   ConstructionMovEntry,
   RecordAssignment,
   Project,
-  Document, UserModuleAssignment, UserPermissionOverride,
+  Document,
+  UserModuleAssignment,
+  UserPermissionOverride,
 } from '../database/entities';
 
 @Module({

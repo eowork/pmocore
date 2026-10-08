@@ -7,7 +7,7 @@ import {
 // The entity binds this repository back through its @Entity() options, so importing it as a
 // value here would close a runtime require cycle. As a type it is erased at compile time.
 import type { OperationIndicator } from '../../database/entities/operation-indicator.entity';
-import { assignColumns, toRow } from './entity-row';
+import { assignColumns, toRow } from '../../common/repository/entity-row';
 
 const ENTITY = 'OperationIndicator';
 
@@ -21,6 +21,7 @@ export interface IndicatorContext {
   pillar_indicator_id: string | null;
   operation_id: string;
   particular: string;
+  campus: string;
   pillar_type: string | null;
   indicator_name: string | null;
   operation_type: string;
@@ -77,6 +78,69 @@ const TAXONOMY_ORDER_THEN = (
   then,
   { id: 'asc' },
 ];
+
+const QUARTER_SIDES = [
+  {
+    value: 'target',
+    numerator: 'target_numerator',
+    denominator: 'target_denominator',
+  },
+  {
+    value: 'accomplishment',
+    numerator: 'numerator',
+    denominator: 'denominator',
+  },
+] as const;
+
+/**
+ * One campus's figures for a quarter column, picked out of that campus's rows.
+ *
+ * A campus files a cumulative snapshot per quarter — its Q4 row repeats Q1, Q2 and Q3 — so the
+ * largest value is the latest statement of that quarter. The numerator and denominator are
+ * taken from the row that supplied the value rather than maximised on their own, which could
+ * otherwise pair one snapshot's numerator with another's denominator.
+ */
+function campusQuarterColumns(): string {
+  return QUARTER_SIDES.flatMap(({ value, numerator, denominator }) =>
+    [1, 2, 3, 4].flatMap((q) => [
+      `MAX(oi.${value}_q${q}) AS ${value}_q${q}`,
+      `(array_agg(oi.${numerator}_q${q} ORDER BY oi.${value}_q${q} DESC NULLS LAST, oi.updated_at DESC))[1] AS ${numerator}_q${q}`,
+      `(array_agg(oi.${denominator}_q${q} ORDER BY oi.${value}_q${q} DESC NULLS LAST, oi.updated_at DESC))[1] AS ${denominator}_q${q}`,
+    ]),
+  ).join(',\n          ');
+}
+
+/**
+ * A quarter column combined across the campuses that reported it.
+ *
+ * A count is cumulative, so the campuses add up. A percentage is not: its figure is the summed
+ * numerators over the summed denominators, so 2/5 at one campus and 7/10 at another is 9/15 —
+ * 60% — rather than 110%. When any reporting campus lacks a fraction that cannot be done, and
+ * the mean of the campuses is used instead, which is the closest statement that is not wrong.
+ *
+ * A quarter only one campus reported passes that campus's figure through untouched. Combining
+ * a single campus would otherwise recompute a percentage from its fraction and shift the value
+ * in the last decimal places, changing published figures for no reason.
+ */
+function combinedQuarterColumns(): string {
+  return QUARTER_SIDES.flatMap(({ value, numerator, denominator }) =>
+    [1, 2, 3, 4].map((q) => {
+      const v = `c.${value}_q${q}`;
+      const n = `c.${numerator}_q${q}`;
+      const d = `c.${denominator}_q${q}`;
+      return `CASE
+            WHEN COUNT(${v}) <= 1 THEN MAX(${v})
+            WHEN c.unit_type = 'PERCENTAGE' THEN
+              CASE WHEN COUNT(${v}) = COUNT(CASE WHEN ${v} IS NOT NULL AND ${n} IS NOT NULL AND ${d} > 0 THEN 1 END)
+                THEN LEAST(SUM(CASE WHEN ${v} IS NOT NULL THEN ${n} END)
+                     / NULLIF(SUM(CASE WHEN ${v} IS NOT NULL THEN ${d} END), 0) * 100, 9999.99)
+                ELSE AVG(${v})
+              END
+            ELSE SUM(${v})
+          END AS ${value}_q${q}`;
+    }),
+  ).join(',\n          ');
+}
 
 /**
  * A comma-separated '?' list, one per value, for an IN (...) clause.
@@ -238,6 +302,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
       pillar_indicator_id: indicator.pillarIndicatorId ?? null,
       operation_id: indicator.operationId,
       particular: indicator.particular,
+      campus: indicator.campus,
       pillar_type: indicator.taxonomy?.pillarType ?? null,
       indicator_name: indicator.taxonomy?.indicatorName ?? null,
       operation_type: indicator.operation.operationType,
@@ -265,7 +330,8 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
     pillarIndicatorId: string,
     operationId: string,
     fiscalYear: number,
-    reportedQuarter?: string,
+    reportedQuarter: string | undefined,
+    campus: string,
   ): Promise<boolean> {
     const count = await this.count(
       {
@@ -273,6 +339,7 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
         operationId,
         fiscalYear,
         reportedQuarter: reportedQuarter ?? null,
+        campus,
         deletedAt: null,
       },
       { filters: false },
@@ -384,21 +451,26 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
     dto: Record<string, any>,
     particular: string,
     userId: string,
+    campus: string,
   ): Promise<IndicatorRow> {
     const indicator = this.create(
       {
         operationId,
         particular,
         createdBy: userId,
+        campus,
         // reported_quarter distinguishes a quarter's row from the unpartitioned one, so an
         // empty value has to land as NULL rather than be left unset.
         reportedQuarter: dto.reported_quarter || null,
       },
       { partial: true },
     );
+    // campus, like reported_quarter, identifies the row rather than describing it, so neither
+    // is taken from the generic column copy.
     assignColumns(this.getEntityManager(), ENTITY, indicator, dto, [
       'particular',
       'reported_quarter',
+      'campus',
     ]);
     await this.getEntityManager().persist(indicator).flush();
     return this.row(indicator);
@@ -489,20 +561,25 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
         WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL AND pit.is_active = true
         ORDER BY oi.pillar_indicator_id, oi.updated_at DESC
       ),
-      merged AS (
+      per_campus AS (
         SELECT
-          oi.pillar_indicator_id,
+          oi.pillar_indicator_id, oi.campus,
           pit.pillar_type, pit.unit_type, pit.indicator_type,
-          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
-          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
-          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
-          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+          ${campusQuarterColumns()}
         FROM operation_indicators oi
         JOIN canonical_ops co ON oi.operation_id = co.operation_id
           AND oi.pillar_indicator_id = co.pillar_indicator_id
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
         WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL
-        GROUP BY oi.pillar_indicator_id, pit.pillar_type, pit.unit_type, pit.indicator_type
+        GROUP BY oi.pillar_indicator_id, oi.campus, pit.pillar_type, pit.unit_type, pit.indicator_type
+      ),
+      merged AS (
+        SELECT
+          c.pillar_indicator_id,
+          c.pillar_type, c.unit_type, c.indicator_type,
+          ${combinedQuarterColumns()}
+        FROM per_campus c
+        GROUP BY c.pillar_indicator_id, c.pillar_type, c.unit_type, c.indicator_type
       )
       SELECT
         deduped.pillar_type,
@@ -523,10 +600,10 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN
             (COALESCE(deduped.target_q1,0) + COALESCE(deduped.target_q2,0) + COALESCE(deduped.target_q3,0) + COALESCE(deduped.target_q4,0))
             / NULLIF(
-              (CASE WHEN deduped.target_q1 IS NOT NULL AND deduped.target_q1 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.target_q2 IS NOT NULL AND deduped.target_q2 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.target_q3 IS NOT NULL AND deduped.target_q3 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.target_q4 IS NOT NULL AND deduped.target_q4 != 0 THEN 1 ELSE 0 END)
+              (CASE WHEN deduped.target_q1 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q2 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q3 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.target_q4 IS NOT NULL THEN 1 ELSE 0 END)
             , 0)
           ELSE NULL END
         ) AS pct_avg_target,
@@ -534,10 +611,10 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           CASE WHEN deduped.unit_type = 'PERCENTAGE' THEN
             (COALESCE(deduped.accomplishment_q1,0) + COALESCE(deduped.accomplishment_q2,0) + COALESCE(deduped.accomplishment_q3,0) + COALESCE(deduped.accomplishment_q4,0))
             / NULLIF(
-              (CASE WHEN deduped.accomplishment_q1 IS NOT NULL AND deduped.accomplishment_q1 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.accomplishment_q2 IS NOT NULL AND deduped.accomplishment_q2 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.accomplishment_q3 IS NOT NULL AND deduped.accomplishment_q3 != 0 THEN 1 ELSE 0 END) +
-              (CASE WHEN deduped.accomplishment_q4 IS NOT NULL AND deduped.accomplishment_q4 != 0 THEN 1 ELSE 0 END)
+              (CASE WHEN deduped.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END) +
+              (CASE WHEN deduped.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END)
             , 0)
           ELSE NULL END
         ) AS pct_avg_accomplishment,
@@ -574,14 +651,16 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           merged.*,
           (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
           (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
-          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
-          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+          -- A quarter recorded as 0 counts toward the divisor: it is reported data, not a
+          -- blank, and the numerators above already include it through COALESCE.
+          (CASE WHEN merged.target_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_actual_qs
         FROM merged
       ) AS deduped
       GROUP BY deduped.pillar_type
@@ -616,20 +695,25 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
         ${pillarFilter}
         ORDER BY oi.pillar_indicator_id, oi.updated_at DESC
       ),
-      deduped AS (
+      per_campus AS (
         SELECT
-          oi.pillar_indicator_id,
+          oi.pillar_indicator_id, oi.campus,
           pit.pillar_type, pit.unit_type,
-          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
-          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
-          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
-          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+          ${campusQuarterColumns()}
         FROM operation_indicators oi
         JOIN canonical_ops co ON oi.operation_id = co.operation_id
           AND oi.pillar_indicator_id = co.pillar_indicator_id
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
         WHERE oi.fiscal_year = ? AND oi.deleted_at IS NULL
-        GROUP BY oi.pillar_indicator_id, pit.pillar_type, pit.unit_type
+        GROUP BY oi.pillar_indicator_id, oi.campus, pit.pillar_type, pit.unit_type
+      ),
+      deduped AS (
+        SELECT
+          c.pillar_indicator_id,
+          c.pillar_type, c.unit_type,
+          ${combinedQuarterColumns()}
+        FROM per_campus c
+        GROUP BY c.pillar_indicator_id, c.pillar_type, c.unit_type
       )
       SELECT
         -- Phase AAAG-A: per-pillar grouping (one row per pillar)
@@ -663,20 +747,24 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
         WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
         ORDER BY oi.fiscal_year, oi.pillar_indicator_id, oi.updated_at DESC
       ),
-      merged AS (
+      per_campus AS (
         SELECT
-          oi.pillar_indicator_id, oi.fiscal_year, pit.unit_type,
-          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
-          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
-          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
-          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+          oi.pillar_indicator_id, oi.campus, oi.fiscal_year, pit.unit_type,
+          ${campusQuarterColumns()}
         FROM operation_indicators oi
         JOIN canonical_ops co ON oi.operation_id = co.operation_id
           AND oi.pillar_indicator_id = co.pillar_indicator_id
           AND oi.fiscal_year = co.fiscal_year
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
         WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL
-        GROUP BY oi.pillar_indicator_id, oi.fiscal_year, pit.unit_type
+        GROUP BY oi.pillar_indicator_id, oi.campus, oi.fiscal_year, pit.unit_type
+      ),
+      merged AS (
+        SELECT
+          c.pillar_indicator_id, c.fiscal_year, c.unit_type,
+          ${combinedQuarterColumns()}
+        FROM per_campus c
+        GROUP BY c.pillar_indicator_id, c.fiscal_year, c.unit_type
       )
       SELECT
         deduped.fiscal_year,
@@ -696,14 +784,16 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           merged.*,
           (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
           (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
-          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
-          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+          -- A quarter recorded as 0 counts toward the divisor: it is reported data, not a
+          -- blank, and the numerators above already include it through COALESCE.
+          (CASE WHEN merged.target_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_actual_qs
         FROM merged
       ) AS deduped
       GROUP BY deduped.fiscal_year
@@ -727,20 +817,24 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
         WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL AND pit.is_active = true
         ORDER BY oi.fiscal_year, oi.pillar_indicator_id, oi.updated_at DESC
       ),
-      merged AS (
+      per_campus AS (
         SELECT
-          oi.pillar_indicator_id, oi.fiscal_year, pit.pillar_type, pit.unit_type,
-          MAX(oi.target_q1) AS target_q1, MAX(oi.target_q2) AS target_q2,
-          MAX(oi.target_q3) AS target_q3, MAX(oi.target_q4) AS target_q4,
-          MAX(oi.accomplishment_q1) AS accomplishment_q1, MAX(oi.accomplishment_q2) AS accomplishment_q2,
-          MAX(oi.accomplishment_q3) AS accomplishment_q3, MAX(oi.accomplishment_q4) AS accomplishment_q4
+          oi.pillar_indicator_id, oi.campus, oi.fiscal_year, pit.pillar_type, pit.unit_type,
+          ${campusQuarterColumns()}
         FROM operation_indicators oi
         JOIN canonical_ops co ON oi.operation_id = co.operation_id
           AND oi.pillar_indicator_id = co.pillar_indicator_id
           AND oi.fiscal_year = co.fiscal_year
         JOIN pillar_indicator_taxonomy pit ON oi.pillar_indicator_id = pit.id
         WHERE oi.fiscal_year IN (${yqs}) AND oi.deleted_at IS NULL
-        GROUP BY oi.pillar_indicator_id, oi.fiscal_year, pit.pillar_type, pit.unit_type
+        GROUP BY oi.pillar_indicator_id, oi.campus, oi.fiscal_year, pit.pillar_type, pit.unit_type
+      ),
+      merged AS (
+        SELECT
+          c.pillar_indicator_id, c.fiscal_year, c.pillar_type, c.unit_type,
+          ${combinedQuarterColumns()}
+        FROM per_campus c
+        GROUP BY c.pillar_indicator_id, c.fiscal_year, c.pillar_type, c.unit_type
       )
       SELECT
         deduped.fiscal_year,
@@ -770,14 +864,16 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
           merged.*,
           (COALESCE(merged.target_q1,0)+COALESCE(merged.target_q2,0)+COALESCE(merged.target_q3,0)+COALESCE(merged.target_q4,0)) AS _sum_target,
           (COALESCE(merged.accomplishment_q1,0)+COALESCE(merged.accomplishment_q2,0)+COALESCE(merged.accomplishment_q3,0)+COALESCE(merged.accomplishment_q4,0)) AS _sum_actual,
-          (CASE WHEN merged.target_q1 IS NOT NULL AND merged.target_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q2 IS NOT NULL AND merged.target_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q3 IS NOT NULL AND merged.target_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.target_q4 IS NOT NULL AND merged.target_q4 != 0 THEN 1 ELSE 0 END) AS _filled_target_qs,
-          (CASE WHEN merged.accomplishment_q1 IS NOT NULL AND merged.accomplishment_q1 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q2 IS NOT NULL AND merged.accomplishment_q2 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q3 IS NOT NULL AND merged.accomplishment_q3 != 0 THEN 1 ELSE 0 END +
-           CASE WHEN merged.accomplishment_q4 IS NOT NULL AND merged.accomplishment_q4 != 0 THEN 1 ELSE 0 END) AS _filled_actual_qs
+          -- A quarter recorded as 0 counts toward the divisor: it is reported data, not a
+          -- blank, and the numerators above already include it through COALESCE.
+          (CASE WHEN merged.target_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.target_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_target_qs,
+          (CASE WHEN merged.accomplishment_q1 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q2 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q3 IS NOT NULL THEN 1 ELSE 0 END +
+           CASE WHEN merged.accomplishment_q4 IS NOT NULL THEN 1 ELSE 0 END) AS _filled_actual_qs
         FROM merged
       ) AS deduped
       GROUP BY deduped.fiscal_year, deduped.pillar_type
@@ -796,7 +892,14 @@ export class OperationIndicatorRepository extends EntityRepository<OperationIndi
     statement: string,
     params: any[],
   ): Promise<Record<string, any>[]> {
-    return this.getEntityManager().getConnection().execute(statement, params);
+    const em = this.getEntityManager();
+    // The transaction context is passed so these statements run on the same connection as the
+    // surrounding work. Without it they take their own connection and cannot see anything the
+    // open transaction has written — a caller that inserts and then aggregates would read
+    // figures that silently predate its own insert.
+    return em
+      .getConnection()
+      .execute(statement, params, 'all', em.getTransactionContext());
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────────
