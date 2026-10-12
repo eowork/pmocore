@@ -1,8 +1,6 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
-import {
-  ConstructionProgressReportRepository
-} from '../../construction-projects/repository/construction-progress-report.repository';
+import { ConstructionProgressReportRepository } from '../../construction-projects/repository/construction-progress-report.repository';
 
 /**
  * Phase NE-A (2026-05-21): Chronological progress reports (MPR/WAR-aligned).

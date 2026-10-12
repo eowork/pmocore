@@ -1,8 +1,6 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
-import {
-  ConstructionRevisionOrderRepository
-} from '../../construction-projects/repository/construction-revision-order.repository';
+import { ConstructionRevisionOrderRepository } from '../../construction-projects/repository/construction-revision-order.repository';
 
 /**
  * Phase ND-A (2026-05-21): Audit-tracked revision orders (VOR/CTE/WSO/WRO/etc.).

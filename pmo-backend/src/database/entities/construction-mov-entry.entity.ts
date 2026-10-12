@@ -1,8 +1,6 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
-import {
-  ConstructionMovEntryRepository
-} from '../../construction-projects/repository/construction-mov-entry.repository';
+import { ConstructionMovEntryRepository } from '../../construction-projects/repository/construction-mov-entry.repository';
 
 /**
  * Phase KO: MOV (Means of Verification) evidence entries.

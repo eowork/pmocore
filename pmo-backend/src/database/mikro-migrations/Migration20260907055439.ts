@@ -1,7 +1,6 @@
 import { Migration } from '@mikro-orm/migrations';
 
 export class Migration20260907055439 extends Migration {
-
   override async up(): Promise<void> {
     this.addSql(`alter table "roles" drop column "metadata";`);
 

@@ -722,7 +722,6 @@ export class UsersService {
     newPassword: string,
     adminId: string,
   ): Promise<void> {
-
     // NOTE: Uncomment this during production, I did this so that I can change the password of
     //  pmo account because it override during restoration of back up.
     // if (userId === adminId) {

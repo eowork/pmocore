@@ -1,9 +1,7 @@
 import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { User } from './user.entity';
 import { ConstructionProject } from './construction-project.entity';
-import {
-  ConstructionDiaryEntryRepository
-} from '../../construction-projects/repository/construction-diary-entry.repository';
+import { ConstructionDiaryEntryRepository } from '../../construction-projects/repository/construction-diary-entry.repository';
 
 @Entity({
   tableName: 'construction_diary_entries',
