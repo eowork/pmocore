@@ -57,9 +57,7 @@ export class ActivityLogService {
     }
   }
 
-  async findLogs(
-    filter: ActivityLogFilter,
-  ): Promise<{
+  async findLogs(filter: ActivityLogFilter): Promise<{
     data: ActivityLog[];
     total: number;
     page: number;

@@ -774,7 +774,9 @@ export class AuthService implements OnModuleInit {
   // PHASE BBBA (BBBA-0b) parity: every newly created account gets an explicit
   // can_access=false row per module — default-DENY made explicit rather than implicit
   // (absence of a row also denies, but this makes the deny visible/auditable from creation).
-  private async createDefaultPermissionOverrides(userId: string): Promise<void> {
+  private async createDefaultPermissionOverrides(
+    userId: string,
+  ): Promise<void> {
     const overrides = VALID_MODULE_KEYS.map((moduleKey) =>
       this.em.create(UserPermissionOverride, {
         userId,

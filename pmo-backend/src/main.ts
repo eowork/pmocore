@@ -13,11 +13,11 @@ import { createUploadedFilesHandler } from './uploads/uploaded-files.handler';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule,{
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: new ConsoleLogger({
       json: true,
       colors: true,
-    })
+    }),
   });
 
   // KY-A1: Serve uploaded files as static assets at /uploads prefix.
