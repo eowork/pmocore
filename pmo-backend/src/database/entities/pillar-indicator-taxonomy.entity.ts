@@ -1,7 +1,5 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
-import {
-  PillarIndicatorTaxonomyRepository
-} from '../../university-operations/repository/pillar-indicator-taxonomy.repository';
+import { PillarIndicatorTaxonomyRepository } from '../../university-operations/repository/pillar-indicator-taxonomy.repository';
 
 // READ-ONLY entity — seeded by migration 016. Never write/persist against this entity.
 @Entity({

@@ -45,7 +45,9 @@ export class ConstructionDiaryEntryRepository extends EntityRepository<Construct
       author_id: e.authorId ?? null,
       created_at: e.createdAt,
       updated_at: e.updatedAt,
-      author_name: e.author ? `${e.author.firstName} ${e.author.lastName}` : null,
+      author_name: e.author
+        ? `${e.author.firstName} ${e.author.lastName}`
+        : null,
     }));
   }
 }

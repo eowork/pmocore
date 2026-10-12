@@ -243,9 +243,8 @@ export class AccessRequestsService {
       // upgraded to Contributor stays untouched). Both start at Viewer, never higher —
       // an admin still upgrades them explicitly via users/access-[id].vue.
       if (req.requestedModule === 'university_operations') {
-        const existingOverrides = await this.usersService.getPermissionOverrides(
-          req.userId,
-        );
+        const existingOverrides =
+          await this.usersService.getPermissionOverrides(req.userId);
         for (const subModuleKey of UNIVERSITY_OPERATIONS_SUBMODULES) {
           const existing = existingOverrides.find(
             (o) => o.module_key === subModuleKey,

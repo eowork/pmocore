@@ -26,7 +26,9 @@ export class Migration20260907000000_SeedPermissionsCatalog extends Migration {
         ADD COLUMN IF NOT EXISTS created_by uuid;
     `);
     // Entity declares action as length 100; live column was varchar(50) — widen to match.
-    this.addSql(`ALTER TABLE permissions ALTER COLUMN action TYPE varchar(100);`);
+    this.addSql(
+      `ALTER TABLE permissions ALTER COLUMN action TYPE varchar(100);`,
+    );
 
     this.addSql(`
       INSERT INTO permissions (name, display_name, description, module, resource, action, is_system, created_at, updated_at)
@@ -86,7 +88,9 @@ export class Migration20260907000000_SeedPermissionsCatalog extends Migration {
       );
     `);
 
-    this.addSql(`ALTER TABLE permissions ALTER COLUMN action TYPE varchar(50);`);
+    this.addSql(
+      `ALTER TABLE permissions ALTER COLUMN action TYPE varchar(50);`,
+    );
     this.addSql(`
       ALTER TABLE permissions
         DROP COLUMN IF EXISTS display_name,
