@@ -100,7 +100,10 @@ export class RepairProjectsController {
   // permissionResolver.canApproveModule().
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Publish (approve) a draft (Admin, or Approver/Manager module level)' })
+  @ApiOperation({
+    summary:
+      'Publish (approve) a draft (Admin, or Approver/Manager module level)',
+  })
   publish(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: JwtPayload,
@@ -110,7 +113,10 @@ export class RepairProjectsController {
 
   @Post(':id/reject')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reject a draft with notes (Admin, or Approver/Manager module level)' })
+  @ApiOperation({
+    summary:
+      'Reject a draft with notes (Admin, or Approver/Manager module level)',
+  })
   reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('notes') notes: string,

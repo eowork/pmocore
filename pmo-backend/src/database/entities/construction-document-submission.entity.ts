@@ -2,9 +2,7 @@ import { Entity, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { Document } from './document.entity';
 import { User } from './user.entity';
 import { ConstructionProject } from './construction-project.entity';
-import {
-  ConstructionDocumentSubmissionRepository
-} from '../../construction-projects/repository/construction-document-submission.repository';
+import { ConstructionDocumentSubmissionRepository } from '../../construction-projects/repository/construction-document-submission.repository';
 
 @Entity({
   tableName: 'construction_document_submissions',

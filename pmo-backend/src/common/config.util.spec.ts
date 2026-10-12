@@ -8,7 +8,9 @@ function csWith(value: unknown) {
 
 describe('numberFromConfig', () => {
   it('coerces a numeric string (the .env case) to a real number', () => {
-    expect(numberFromConfig(csWith('28800'), 'AUTH_JWT_EXPIRES_IN', 111)).toBe(28800);
+    expect(numberFromConfig(csWith('28800'), 'AUTH_JWT_EXPIRES_IN', 111)).toBe(
+      28800,
+    );
     expect(typeof numberFromConfig(csWith('28800'), 'K', 1)).toBe('number');
   });
 
@@ -31,13 +33,20 @@ describe('JWT expiry regression (exp - iat)', () => {
   const SECRET = 'test-secret';
 
   it('signing with the RAW string "28800" would expire in ~29s (documents the bug)', () => {
-    const jwt = new JwtService({ secret: SECRET, signOptions: { expiresIn: '28800' as any } });
+    const jwt = new JwtService({
+      secret: SECRET,
+      signOptions: { expiresIn: '28800' as any },
+    });
     const decoded: any = jwt.decode(jwt.sign({ sub: 'x' }));
     expect(decoded.exp - decoded.iat).toBe(28); // 28800 ms -> 28s
   });
 
   it('signing with the COERCED number lasts 8h (the fix)', () => {
-    const expiresIn = numberFromConfig(csWith('28800'), 'AUTH_JWT_EXPIRES_IN', 28800);
+    const expiresIn = numberFromConfig(
+      csWith('28800'),
+      'AUTH_JWT_EXPIRES_IN',
+      28800,
+    );
     const jwt = new JwtService({ secret: SECRET, signOptions: { expiresIn } });
     const decoded: any = jwt.decode(jwt.sign({ sub: 'x' }));
     expect(decoded.exp - decoded.iat).toBe(28800); // 8 hours

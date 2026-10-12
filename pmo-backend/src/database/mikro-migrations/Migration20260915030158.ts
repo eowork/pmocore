@@ -338,9 +338,15 @@ export class Migration20260915030158 extends Migration {
       `alter table "gad_student_parity_data" drop constraint if exists "gad_student_parity_data_submitted_by_fkey";`,
     );
 
-    this.addSql(`alter table "media" drop constraint if exists "media_created_by_fkey";`);
-    this.addSql(`alter table "media" drop constraint if exists "media_deleted_by_fkey";`);
-    this.addSql(`alter table "media" drop constraint if exists "media_updated_by_fkey";`);
+    this.addSql(
+      `alter table "media" drop constraint if exists "media_created_by_fkey";`,
+    );
+    this.addSql(
+      `alter table "media" drop constraint if exists "media_deleted_by_fkey";`,
+    );
+    this.addSql(
+      `alter table "media" drop constraint if exists "media_updated_by_fkey";`,
+    );
     this.addSql(
       `alter table "media" drop constraint if exists "media_uploaded_by_fkey";`,
     );
@@ -592,8 +598,12 @@ export class Migration20260915030158 extends Migration {
       `alter table "university_operations" drop constraint if exists "university_operations_updated_by_fkey";`,
     );
 
-    this.addSql(`alter table "users" drop constraint if exists "users_created_by_fkey";`);
-    this.addSql(`alter table "users" drop constraint if exists "users_updated_by_fkey";`);
+    this.addSql(
+      `alter table "users" drop constraint if exists "users_created_by_fkey";`,
+    );
+    this.addSql(
+      `alter table "users" drop constraint if exists "users_updated_by_fkey";`,
+    );
 
     this.addSql(
       `alter table "activity_logs" drop constraint if exists "activity_logs_user_id_fkey";`,
@@ -663,8 +673,12 @@ export class Migration20260915030158 extends Migration {
       `alter table "construction_document_checklist" alter column "submission_status" type varchar(30) using ("submission_status"::varchar(30));`,
     );
 
-    this.addSql(`drop index if exists "idx_construction_document_folders_parent";`);
-    this.addSql(`drop index if exists "idx_construction_document_folders_project";`);
+    this.addSql(
+      `drop index if exists "idx_construction_document_folders_parent";`,
+    );
+    this.addSql(
+      `drop index if exists "idx_construction_document_folders_project";`,
+    );
 
     this.addSql(`drop index if exists "idx_doc_submissions_checklist";`);
     this.addSql(`drop index if exists "idx_doc_submissions_project";`);
@@ -708,11 +722,17 @@ export class Migration20260915030158 extends Migration {
     this.addSql(`drop index if exists "idx_conproj_start_date";`);
     this.addSql(`drop index if exists "idx_conproj_status";`);
     this.addSql(`drop index if exists "idx_conproj_target_date";`);
-    this.addSql(`drop index if exists "idx_construction_projects_assigned_to";`);
+    this.addSql(
+      `drop index if exists "idx_construction_projects_assigned_to";`,
+    );
     this.addSql(`drop index if exists "idx_construction_projects_campus";`);
-    this.addSql(`drop index if exists "idx_construction_projects_campus_status";`);
+    this.addSql(
+      `drop index if exists "idx_construction_projects_campus_status";`,
+    );
     this.addSql(`drop index if exists "idx_construction_projects_created_by";`);
-    this.addSql(`drop index if exists "idx_construction_projects_publication_status";`);
+    this.addSql(
+      `drop index if exists "idx_construction_projects_publication_status";`,
+    );
     this.addSql(
       `alter table "construction_projects" drop column "location_coordinates", drop column "risk_register", drop column "escalation_records";`,
     );
@@ -873,7 +893,9 @@ export class Migration20260915030158 extends Migration {
     this.addSql(
       `alter table "facilities" alter column "campus" type varchar(50) using ("campus"::varchar(50));`,
     );
-    this.addSql(`alter table "facilities" alter column "campus" set default 'MAIN';`);
+    this.addSql(
+      `alter table "facilities" alter column "campus" set default 'MAIN';`,
+    );
     this.addSql(
       `alter table "facilities" alter column "condition_rating" drop default;`,
     );
@@ -938,7 +960,9 @@ export class Migration20260915030158 extends Migration {
     this.addSql(`drop index if exists "idx_oi_subcategory_data";`);
     this.addSql(`drop index if exists "idx_oi_uacs";`);
     this.addSql(`drop index if exists "idx_oi_year";`);
-    this.addSql(`drop index if exists "idx_operation_indicators_pillar_indicator_id";`);
+    this.addSql(
+      `drop index if exists "idx_operation_indicators_pillar_indicator_id";`,
+    );
     this.addSql(`drop index if exists "uq_oi_quarterly_per_quarter";`);
     this.addSql(`drop index if exists "uq_operation_indicators_orphan";`);
 
@@ -1033,9 +1057,13 @@ export class Migration20260915030158 extends Migration {
 
     this.addSql(`drop index if exists "idx_quarterly_reports_created_by";`);
     this.addSql(`drop index if exists "idx_quarterly_reports_fiscal_year";`);
-    this.addSql(`drop index if exists "idx_quarterly_reports_publication_status";`);
+    this.addSql(
+      `drop index if exists "idx_quarterly_reports_publication_status";`,
+    );
     this.addSql(`drop index if exists "idx_quarterly_reports_unique_active";`);
-    this.addSql(`drop index if exists "idx_quarterly_reports_unlock_requested";`);
+    this.addSql(
+      `drop index if exists "idx_quarterly_reports_unlock_requested";`,
+    );
 
     this.addSql(
       `alter table "quarterly_reports" alter column "quarter" type varchar(2) using ("quarter"::varchar(2));`,
@@ -1072,7 +1100,9 @@ export class Migration20260915030158 extends Migration {
     this.addSql(`drop index if exists "idx_repair_projects_campus";`);
     this.addSql(`drop index if exists "idx_repair_projects_campus_status";`);
     this.addSql(`drop index if exists "idx_repair_projects_created_by";`);
-    this.addSql(`drop index if exists "idx_repair_projects_publication_status";`);
+    this.addSql(
+      `drop index if exists "idx_repair_projects_publication_status";`,
+    );
     this.addSql(`drop index if exists "idx_repairs_building";`);
     this.addSql(`drop index if exists "idx_repairs_campus";`);
     this.addSql(`drop index if exists "idx_repairs_emergency";`);
@@ -1148,11 +1178,17 @@ export class Migration20260915030158 extends Migration {
     this.addSql(`drop index if exists "idx_univ_ops_coordinator";`);
     this.addSql(`drop index if exists "idx_univ_ops_status";`);
     this.addSql(`drop index if exists "idx_univ_ops_type";`);
-    this.addSql(`drop index if exists "idx_university_operations_assigned_to";`);
+    this.addSql(
+      `drop index if exists "idx_university_operations_assigned_to";`,
+    );
     this.addSql(`drop index if exists "idx_university_operations_campus";`);
-    this.addSql(`drop index if exists "idx_university_operations_campus_status";`);
+    this.addSql(
+      `drop index if exists "idx_university_operations_campus_status";`,
+    );
     this.addSql(`drop index if exists "idx_university_operations_created_by";`);
-    this.addSql(`drop index if exists "idx_university_operations_publication_status";`);
+    this.addSql(
+      `drop index if exists "idx_university_operations_publication_status";`,
+    );
     this.addSql(`drop index if exists "idx_uo_fiscal_year";`);
     this.addSql(`drop index if exists "idx_uo_fiscal_year_campus";`);
 
@@ -1251,8 +1287,12 @@ export class Migration20260915030158 extends Migration {
       `alter table "user_module_assignments" add constraint "user_module_assignments_module_check" check("module" in ('CONSTRUCTION', 'REPAIR', 'OPERATIONS', 'ALL'));`,
     );
 
-    this.addSql(`drop index if exists "idx_user_permission_overrides_module_key";`);
-    this.addSql(`drop index if exists "idx_user_permission_overrides_user_id";`);
+    this.addSql(
+      `drop index if exists "idx_user_permission_overrides_module_key";`,
+    );
+    this.addSql(
+      `drop index if exists "idx_user_permission_overrides_user_id";`,
+    );
     this.addSql(
       `alter table "user_permission_overrides" drop constraint if exists "uq_user_module";`,
     );

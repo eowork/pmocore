@@ -262,7 +262,11 @@ describe('AuthService', () => {
       mockEm.getConnection.mockReturnValueOnce({
         execute: jest.fn().mockResolvedValue([]),
       });
-      const created = { id: 'u9', email: 'herbert.caringal@carsu.edu.ph', isActive: true };
+      const created = {
+        id: 'u9',
+        email: 'herbert.caringal@carsu.edu.ph',
+        isActive: true,
+      };
       mockEm.create.mockReturnValueOnce(created);
       mockEm.persistAndFlush.mockResolvedValueOnce(undefined);
 
