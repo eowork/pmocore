@@ -5,3 +5,8 @@ export enum UprStatus {
   APPROVED = 'APPROVED',
   RETURNED = 'RETURNED',
 }
+
+export enum ChallengeOpportunityType {
+  CHALLENGE = 'CHALLENGE',
+  OPPORTUNITY = 'OPPORTUNITY',
+}

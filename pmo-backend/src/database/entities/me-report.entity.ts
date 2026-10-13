@@ -38,10 +38,7 @@ export class UPRReport {
 
   @ManyToOne(() => User, {
     fieldName: 'prepared_by',
-    nullable: false,
-    persist: false,
-    hidden: true,
-    createForeignKeyConstraint: false,
+    deleteRule: 'cascade',
   })
   prepared_by: User;
 
