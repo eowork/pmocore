@@ -125,7 +125,7 @@ export class MeReportService {
   private readonly logger = new Logger(MeReportService.name);
 
   /**
-   * Resolve the template. The compiled service runs from dist/me-report and
+   * Resolve the template. The compiled service runs from dist/upr-report and
    * nest-cli copies the template to dist/me-pdf/template; the src path is kept
    * as a fallback so the file is still found when running from source.
    */
