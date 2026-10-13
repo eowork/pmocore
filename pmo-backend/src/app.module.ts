@@ -32,7 +32,7 @@ import { ContractorAuthModule } from './contractor-auth/contractor-auth.module';
 import { AccessRequestsModule } from './access-requests/access-requests.module';
 import { HomepageModule } from './homepage/homepage.module';
 import { JwtAuthGuard } from './auth/guards';
-import { MeReportModule } from './me-report/me-report.module';
+import { MeReportModule } from './upr-report/me-report.module';
 
 @Module({
   imports: [

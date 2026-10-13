@@ -20,7 +20,7 @@ import { Roles } from '../auth/decorators';
 
 @ApiTags('M&E Report')
 @ApiBearerAuth('JWT-auth')
-@Controller('me-report')
+@Controller('upr-report')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class MeReportController {
   constructor(private readonly service: MeReportService) {}
