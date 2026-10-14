@@ -1,13 +1,17 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ConstructionProjectsService } from './construction-projects.service';
+import { GalleryService } from './service/gallery.service';
 import { QueryConstructionProjectDto, QueryGalleryDto } from './dto';
 import { Public } from '../auth/decorators';
 
 @ApiTags('Public — Construction Projects')
 @Controller('public/construction-projects')
 export class PublicConstructionController {
-  constructor(private readonly service: ConstructionProjectsService) {}
+  constructor(
+    private readonly service: ConstructionProjectsService,
+    private readonly galleryService: GalleryService,
+  ) {}
 
   // UUU-C: Dynamic template manifest. Declared BEFORE the ':id' routes so the
   // static two-segment path is matched without colliding with the UUID param route.
@@ -53,7 +57,7 @@ export class PublicConstructionController {
     @Query() query: QueryGalleryDto,
   ) {
     await this.service.findPublicOne(id);
-    return this.service.findGallery(id, query);
+    return this.galleryService.findGallery(id, query);
   }
 
   // POW public route REMOVED (Phase ME, 2026-05-21)

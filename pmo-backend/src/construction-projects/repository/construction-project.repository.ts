@@ -237,6 +237,11 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     };
   }
 
+  /** Whether a live (not soft-deleted) project with this id exists. */
+  async existsActive(id: string): Promise<boolean> {
+    return (await this.count({ id, deletedAt: null }, { filters: false })) > 0;
+  }
+
   /** Who created a project, or null when there is no live row with that id. */
   async findCreatedBy(id: string): Promise<string | null> {
     const project = await this.findOne(
