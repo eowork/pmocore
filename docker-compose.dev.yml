@@ -124,7 +124,7 @@ services:
   # 2025-05-24 onward reduce the console to a login-only page, which makes
   # eyeballing objects while building the driver much harder.
   minio:
-    image: 'quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z'
+    image: 'ghcr.io/coollabsio/minio:RELEASE.2025-04-22T22-12-26Z'
     restart: unless-stopped
     command:
       - server
@@ -158,7 +158,7 @@ services:
   # types only and serves documents exclusively through the JWT-guarded download
   # endpoint. An anonymous-readable bucket would hand out every stored document.
   minio-init:
-    image: 'quay.io/minio/mc:latest'
+    image: 'ghcr.io/coollabsio/mx:0.1.0'
     restart: 'no'
     depends_on:
       minio:
@@ -208,9 +208,6 @@ services:
 volumes:
   pgdata:
   backend_uploads:
-  # MINIO-0: dev-only for now — docker-compose.yml has no minio service yet, so
-  # objects written here do NOT follow a switch to the prod stack. Add the same
-  # service + volume there before the driver cutover.
   minio_data:
 networks:
   pmo-network:
