@@ -14,6 +14,7 @@
  * Beneficiary aggregate count removed per ECO directive 2026-05-21.
  */
 import type { BasicInfoFormState } from '~/utils/coiFormState'
+import type { ProjectCodeCheck } from '~/composables/useProjectCodeAvailability'
 import { LIKHA_OPTIONS, RDP_OPTIONS, SOCIOECONOMIC_OPTIONS, SDG_OPTIONS, RDP2017_OPTIONS, POINT_AGENDA_10_OPTIONS, PRIMARY_FUNDING_SOURCE_OPTIONS } from '~/utils/coiHierarchies'
 // NC fix (2026-05-21): Explicit imports — Nuxt default auto-import path-prefixes
 // nested-dir components (components/coi/Foo.vue → <CoiFoo>), so the filename-only
@@ -32,8 +33,26 @@ const props = withDefaults(defineProps<{
     projectCode?:   (v: string)          => boolean | string
   }
   readOnly?: boolean
+  // Live project-code availability, supplied by useProjectCodeAvailability. Optional: the
+  // create form passes it, the edit form does not, and without it the code field behaves
+  // exactly as it did before.
+  codeCheck?: ProjectCodeCheck
 }>(), {
   readOnly: false,
+})
+
+// Fires when the user leaves the code field, so the parent can check immediately instead of
+// waiting out the debounce.
+const emit = defineEmits<{ codeBlur: [] }>()
+
+// `error-messages` already carries the taken case; this is the non-error line beneath the
+// field, which Vuetify hides when it is empty.
+const codeFieldHint = computed(() => {
+  const check = props.codeCheck
+  if (!check || check.status === 'taken') return ''
+  return check.status === 'available' || check.status === 'error'
+    ? (check.message ?? '')
+    : ''
 })
 
 // NC: Hierarchy data sourced from utils/coiHierarchies.ts (single source of truth)
@@ -166,12 +185,55 @@ const totalAlignmentCount = computed(() =>
             label="Project Code"
             placeholder="e.g., CP-2026-001"
             :rules="[r.required]"
+            :error="codeCheck?.status === 'taken'"
+            :error-messages="codeCheck?.status === 'taken' && codeCheck.message ? [codeCheck.message] : []"
+            :messages="codeFieldHint"
             density="compact"
             variant="outlined"
             hide-details="auto"
+            @blur="emit('codeBlur')"
           >
             <template #label>Project Code <span class="required-star">*</span></template>
+            <!-- Availability indicator. Rendered only when the parent passes `codeCheck`,
+                 so the edit form, which does not, is unchanged. -->
+            <template v-if="codeCheck && codeCheck.status !== 'idle'" #append-inner>
+              <v-progress-circular
+                v-if="codeCheck.status === 'checking'"
+                indeterminate
+                size="18"
+                width="2"
+                color="primary"
+              />
+              <v-icon
+                v-else-if="codeCheck.status === 'available'"
+                icon="mdi-check-circle"
+                color="success"
+                size="small"
+              />
+              <v-icon
+                v-else-if="codeCheck.status === 'error'"
+                icon="mdi-alert-outline"
+                color="warning"
+                size="small"
+              />
+            </template>
           </v-text-field>
+          <div
+            v-if="codeCheck?.status === 'taken' && codeCheck.suggestions.length"
+            class="d-flex flex-wrap align-center ga-1 mt-1"
+          >
+            <span class="text-caption text-grey-darken-1">Available instead:</span>
+            <v-chip
+              v-for="suggestion in codeCheck.suggestions"
+              :key="suggestion"
+              size="x-small"
+              color="primary"
+              variant="tonal"
+              @click="form.project_code = suggestion"
+            >
+              {{ suggestion }}
+            </v-chip>
+          </div>
         </v-col>
         <v-col cols="12" sm="4">
           <v-select
