@@ -53,6 +53,27 @@ export class ProjectRepository extends EntityRepository<Project> {
     return entity;
   }
 
+  /**
+   * The live project carrying this code, or null. Soft-deleted rows are excluded because the
+   * partial unique index they sit outside of lets their code be used again.
+   */
+  async findActiveByCode(code: string): Promise<Project | null> {
+    return await this.findOne(
+      { projectCode: code, deletedAt: null },
+      { filters: false },
+    );
+  }
+
+  /** Which of these codes a live project already carries. */
+  async findTakenCodes(codes: string[]): Promise<Set<string>> {
+    if (codes.length === 0) return new Set();
+    const rows = await this.find(
+      { projectCode: { $in: codes }, deletedAt: null },
+      { fields: ['projectCode'], filters: false },
+    );
+    return new Set(rows.map((row) => row.projectCode));
+  }
+
   /** Soft-delete. Returns the number of rows affected (0 when the id does not exist). */
   softDelete(id: string, userId: string): Promise<number> {
     return this.nativeUpdate(
