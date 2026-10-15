@@ -111,6 +111,15 @@ export class ConstructionProjectsController {
     return this.service.getMyProjectPermissions(user.sub);
   }
 
+  @Get('/code/availability')
+  @Roles()
+  @ApiOperation({
+    summary: 'Check if a construction project code is available',
+  })
+  checkCodeAvailability(@Query('code') code: string) {
+    return this.service.checkCodeAvailability(code);
+  }
+
   @Get(':id')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
   @ApiOperation({ summary: 'Get construction project details' })

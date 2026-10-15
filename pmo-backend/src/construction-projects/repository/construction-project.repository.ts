@@ -264,6 +264,28 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     return (await this.count(where, { filters: false })) > 0;
   }
 
+  /**
+   * The project carrying this code, soft-deleted rows included.
+   *
+   * Creation refuses a code that any row holds, not just a live one — see
+   * ConstructionProjectsService.create — so the availability check has to look past the
+   * soft-delete filter the same way, otherwise it would call a code free that create() then
+   * rejects with a 409.
+   */
+  async findAnyByCode(code: string): Promise<ConstructionProject | null> {
+    return await this.findOne({ projectCode: code }, { filters: false });
+  }
+
+  /** Which of these codes are already carried by a project, soft-deleted ones included. */
+  async findTakenCodes(codes: string[]): Promise<Set<string>> {
+    if (codes.length === 0) return new Set();
+    const rows = await this.find(
+      { projectCode: { $in: codes } },
+      { fields: ['projectCode'], filters: false },
+    );
+    return new Set(rows.map((row) => row.projectCode));
+  }
+
   /** Everything awaiting review, oldest submission first. */
   async findPendingReview(): Promise<Record<string, any>[]> {
     const projects = await this.find(

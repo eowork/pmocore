@@ -71,6 +71,36 @@ export type PublicationStatus =
   | 'PUBLISHED'
   | 'REJECTED';
 
+// construction_projects.project_code and projects.project_code are both varchar(50), so a
+// suggestion longer than this would be refused by the column it is meant for.
+const PROJECT_CODE_MAX_LENGTH = 50;
+const CODE_SUGGESTION_COUNT = 3;
+const CODE_SUGGESTION_BATCH = 10;
+// A ceiling on how far the suggestion search walks. Reaching it returns fewer suggestions
+// rather than scanning the whole code space.
+const MAX_CODE_SUGGESTION_PROBES = 200;
+
+/** What is holding a project code that was asked about. */
+export interface ProjectCodeConflict {
+  // 'construction_project' — a COI project, which may be soft-deleted and still block the
+  // code. 'project' — a live row in the shared projects table, typically another module's.
+  scope: 'construction_project' | 'project';
+  project_id: string;
+  title: string;
+  deleted: boolean;
+}
+
+export interface ProjectCodeAvailability {
+  // The code as it was checked, trimmed.
+  code: string;
+  available: boolean;
+  conflict: ProjectCodeConflict | null;
+  // The code itself when it is free, otherwise the first suggestion (null if none was found).
+  recommended: string | null;
+  // Free alternatives, nearest first. Empty when the code is available.
+  suggestions: string[];
+}
+
 @Injectable()
 export class ConstructionProjectsService {
   private readonly logger = new Logger(ConstructionProjectsService.name);
@@ -481,6 +511,122 @@ export class ConstructionProjectsService {
       );
     }
     return result;
+  }
+
+  /**
+   * Whether a project code is free for a new construction project, and what to use instead
+   * when it is not.
+   *
+   * Two tables have to agree before create() will accept a code. create() refuses one that any
+   * construction_projects row carries, soft-deleted rows included, and it then inserts a
+   * parent projects row whose partial unique index covers live rows only. Both are checked
+   * here so the answer matches what creation will actually do — checking only the index would
+   * call a soft-deleted project's code free and hand the user a 409 on submit.
+   */
+  async checkCodeAvailability(code: string): Promise<ProjectCodeAvailability> {
+    const requested = (code ?? '').trim();
+    if (!requested) {
+      throw new BadRequestException('Query parameter "code" is required');
+    }
+    if (requested.length > PROJECT_CODE_MAX_LENGTH) {
+      throw new BadRequestException(
+        `Project code must be at most ${PROJECT_CODE_MAX_LENGTH} characters`,
+      );
+    }
+
+    const conflict = await this.findCodeConflict(requested);
+    if (!conflict) {
+      return {
+        code: requested,
+        available: true,
+        conflict: null,
+        recommended: requested,
+        suggestions: [],
+      };
+    }
+
+    const suggestions = await this.suggestProjectCodes(
+      requested,
+      CODE_SUGGESTION_COUNT,
+    );
+    return {
+      code: requested,
+      available: false,
+      conflict,
+      recommended: suggestions[0] ?? null,
+      suggestions,
+    };
+  }
+
+  /** The row standing in the way of a project code, or null when nothing holds it. */
+  private async findCodeConflict(
+    code: string,
+  ): Promise<ProjectCodeConflict | null> {
+    const project = await this.cpRepo.findAnyByCode(code);
+    if (project) {
+      return {
+        scope: 'construction_project',
+        project_id: project.id,
+        title: project.title,
+        deleted: !!project.deletedAt,
+      };
+    }
+
+    // No construction project holds it, but the parent projects table is shared with the other
+    // modules, so a repair or operations project may have taken the code already.
+    const parent = await this.projectRepo.findActiveByCode(code);
+    if (parent) {
+      return {
+        scope: 'project',
+        project_id: parent.id,
+        title: parent.title,
+        deleted: false,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Free codes near the requested one, in the order a user would try them. Candidates are
+   * probed in batches rather than one query each, so a long run of taken codes costs a handful
+   * of queries instead of dozens.
+   */
+  private async suggestProjectCodes(
+    code: string,
+    count: number,
+  ): Promise<string[]> {
+    const suggestions: string[] = [];
+    let offset = 1;
+
+    while (suggestions.length < count && offset <= MAX_CODE_SUGGESTION_PROBES) {
+      const candidates: string[] = [];
+      while (
+        candidates.length < CODE_SUGGESTION_BATCH &&
+        offset <= MAX_CODE_SUGGESTION_PROBES
+      ) {
+        const candidate = nextProjectCode(code, offset);
+        offset += 1;
+        if (candidate.length <= PROJECT_CODE_MAX_LENGTH) {
+          candidates.push(candidate);
+        }
+      }
+      if (candidates.length === 0) break;
+
+      const taken = await this.cpRepo.findTakenCodes(candidates);
+      for (const parentCode of await this.projectRepo.findTakenCodes(
+        candidates,
+      )) {
+        taken.add(parentCode);
+      }
+
+      for (const candidate of candidates) {
+        if (taken.has(candidate)) continue;
+        suggestions.push(candidate);
+        if (suggestions.length === count) break;
+      }
+    }
+
+    return suggestions;
   }
 
   async create(
@@ -1706,4 +1852,21 @@ function toDate(value?: string | null): Date | undefined {
  */
 function toDecimal(value?: number | null): string | undefined {
   return value === null || value === undefined ? undefined : String(value);
+}
+
+/**
+ * The requested code with its trailing number advanced by `offset`, keeping the original zero
+ * padding: CP-2026-001 with an offset of 1 becomes CP-2026-002.
+ *
+ * The number taken is the last run of digits in the code, so the year in CP-2026-001 is left
+ * alone. A code ending in no digits has the offset appended as a new segment instead —
+ * CP-ANNEX becomes CP-ANNEX-2 — which keeps the first suggestion readable rather than turning
+ * it into CP-ANNEX1.
+ */
+function nextProjectCode(code: string, offset: number): string {
+  const match = /^(.*?)(\d+)(\D*)$/.exec(code);
+  if (!match) return `${code}-${offset + 1}`;
+  const [, prefix, digits, suffix] = match;
+  const next = String(Number(digits) + offset);
+  return `${prefix}${next.padStart(digits.length, '0')}${suffix}`;
 }
