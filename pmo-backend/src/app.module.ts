@@ -32,6 +32,7 @@ import { ContractorAuthModule } from './contractor-auth/contractor-auth.module';
 import { AccessRequestsModule } from './access-requests/access-requests.module';
 import { HomepageModule } from './homepage/homepage.module';
 import { JwtAuthGuard } from './auth/guards';
+import { MeReportModule } from './upr-report/me-report.module';
 
 @Module({
   imports: [
@@ -107,6 +108,7 @@ import { JwtAuthGuard } from './auth/guards';
     AccessRequestsModule,
     // CMS-backed public homepage content (T-HOME-CMS)
     HomepageModule,
+    MeReportModule,
   ],
   controllers: [AppController],
   providers: [

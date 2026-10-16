@@ -188,7 +188,8 @@ export class PermissionResolverService {
       [user.sub, ...keys],
     );
     return rows.some(
-      (r: any) => r.granted_level === 'Approver' || r.granted_level === 'Manager',
+      (r: any) =>
+        r.granted_level === 'Approver' || r.granted_level === 'Manager',
     );
   }
 }

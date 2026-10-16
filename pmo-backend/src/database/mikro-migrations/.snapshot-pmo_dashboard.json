@@ -220,6 +220,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -238,6 +246,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -460,6 +479,14 @@
         }
       },
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -478,6 +505,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -631,6 +669,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -649,6 +695,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -920,6 +977,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -938,6 +1003,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -1171,6 +1247,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -1189,6 +1273,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -1358,6 +1453,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -1376,6 +1479,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -1571,6 +1685,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -1589,6 +1711,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -1742,6 +1875,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -1760,6 +1901,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -2041,6 +2193,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -2059,6 +2219,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -2372,6 +2543,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -2390,6 +2569,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -2815,6 +3005,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -2833,6 +3031,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -4371,6 +4580,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -4389,6 +4606,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -4686,6 +4914,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -4704,6 +4940,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -4889,6 +5136,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -4907,6 +5162,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -5492,6 +5758,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -5510,6 +5784,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -5705,6 +5990,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -5723,6 +6016,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -5992,6 +6296,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -6010,6 +6322,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -6307,6 +6630,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -6325,6 +6656,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -6616,6 +6958,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -6634,6 +6984,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -7059,6 +7420,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -7077,6 +7446,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -7310,6 +7690,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -7328,6 +7716,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -7433,6 +7832,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -7451,6 +7858,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -7652,6 +8070,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -7670,6 +8096,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -8015,6 +8452,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -8033,6 +8478,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -8298,6 +8754,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -8316,6 +8780,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -8645,6 +9120,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -8663,6 +9146,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -8912,6 +9406,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -8930,6 +9432,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -9179,6 +9692,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -9197,6 +9718,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -9462,6 +9994,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -9480,6 +10020,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -9729,6 +10280,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -9747,6 +10306,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -10300,6 +10870,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -10318,6 +10896,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -10497,6 +11086,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -10515,6 +11112,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -10978,6 +11586,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -10996,6 +11612,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -11499,6 +12126,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -11517,6 +12152,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -12751,6 +13397,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -12769,6 +13423,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -13012,6 +13677,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -13030,6 +13703,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -13167,6 +13851,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -13185,6 +13877,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -13444,6 +14147,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -13462,6 +14173,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -13679,6 +14401,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -13697,6 +14427,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -13866,6 +14607,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -13884,6 +14633,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -14192,6 +14952,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -14210,6 +14978,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -14475,6 +15254,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -14493,6 +15280,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -14838,6 +15636,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -14856,6 +15662,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -15073,6 +15890,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -15091,6 +15916,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -15452,6 +16288,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -15470,6 +16314,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -15735,6 +16590,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -15753,6 +16616,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -15954,6 +16828,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -15972,6 +16854,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -16721,6 +17614,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -16739,6 +17640,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -16924,6 +17836,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -16942,6 +17862,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -17032,6 +17963,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -17050,6 +17989,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -17277,6 +18227,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -17295,6 +18253,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -17544,6 +18513,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -17562,6 +18539,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -18077,6 +19065,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -18095,6 +19091,1222 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "uploaded_by": {
+          "name": "uploaded_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "object_key": {
+          "name": "object_key",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": true,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "bucket_name": {
+          "name": "bucket_name",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "int8",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 64,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "bigint"
+        },
+        "checksum_sha256": {
+          "name": "checksum_sha256",
+          "type": "varchar(64)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 64,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "attachment_type": {
+          "name": "attachment_type",
+          "type": "varchar(255)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 255,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "name": "upr_attachments",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_attachments_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "report_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_attachments_report_id_index",
+          "unique": false,
+          "primary": false
+        },
+        {
+          "columnNames": [
+            "uploaded_by"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_attachments_uploaded_by_index",
+          "unique": false,
+          "primary": false
+        },
+        {
+          "columnNames": [
+            "object_key"
+          ],
+          "composite": false,
+          "constraint": true,
+          "keyName": "uq_object_key",
+          "unique": true,
+          "primary": false
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {
+        "upr_attachments_report_id_foreign": {
+          "columnNames": [
+            "report_id"
+          ],
+          "constraintName": "upr_attachments_report_id_foreign",
+          "localTableName": "public.upr_attachments",
+          "referencedTableName": "public.upr_reports",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        },
+        "upr_attachments_uploaded_by_foreign": {
+          "columnNames": [
+            "uploaded_by"
+          ],
+          "constraintName": "upr_attachments_uploaded_by_foreign",
+          "localTableName": "public.upr_attachments",
+          "referencedTableName": "public.users",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "restrict"
+        }
+      },
+      "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "name": "upr_best_practices",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_best_practices_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "report_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_best_practices_report_id_index",
+          "unique": false,
+          "primary": false
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {
+        "upr_best_practices_report_id_foreign": {
+          "columnNames": [
+            "report_id"
+          ],
+          "constraintName": "upr_best_practices_report_id_foreign",
+          "localTableName": "public.upr_best_practices",
+          "referencedTableName": "public.upr_reports",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        }
+      },
+      "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "item_type": {
+          "name": "item_type",
+          "type": "challenge_opportunity_type_enum",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ],
+          "mappedType": "unknown",
+          "nativeEnumName": "challenge_opportunity_type_enum"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "name": "upr_challenges_opportunities",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_challenges_opportunities_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "report_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_challenges_opportunities_report_id_index",
+          "unique": false,
+          "primary": false
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {
+        "upr_challenges_opportunities_report_id_foreign": {
+          "columnNames": [
+            "report_id"
+          ],
+          "constraintName": "upr_challenges_opportunities_report_id_foreign",
+          "localTableName": "public.upr_challenges_opportunities",
+          "referencedTableName": "public.upr_reports",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        }
+      },
+      "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(150)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 150,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "drive_link": {
+          "name": "drive_link",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "attachment_id": {
+          "name": "attachment_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": true,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "name": "upr_initiatives",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "attachment_id"
+          ],
+          "composite": false,
+          "constraint": true,
+          "keyName": "upr_initiatives_attachment_id_unique",
+          "unique": true,
+          "primary": false
+        },
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_initiatives_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "report_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_initiatives_report_id_index",
+          "unique": false,
+          "primary": false
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {
+        "upr_initiatives_attachment_id_foreign": {
+          "columnNames": [
+            "attachment_id"
+          ],
+          "constraintName": "upr_initiatives_attachment_id_foreign",
+          "localTableName": "public.upr_initiatives",
+          "referencedTableName": "public.upr_attachments",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "set null"
+        },
+        "upr_initiatives_report_id_foreign": {
+          "columnNames": [
+            "report_id"
+          ],
+          "constraintName": "upr_initiatives_report_id_foreign",
+          "localTableName": "public.upr_initiatives",
+          "referencedTableName": "public.upr_reports",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        }
+      },
+      "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "office_name": {
+          "name": "office_name",
+          "type": "varchar(150)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": true,
+          "length": 150,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "fiscal_year": {
+          "name": "fiscal_year",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "quarter": {
+          "name": "quarter",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "unit_office_profile": {
+          "name": "unit_office_profile",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "quality_objective": {
+          "name": "quality_objective",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "status": {
+          "name": "status",
+          "type": "upr_status_enum",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "'DRAFT'",
+          "comment": null,
+          "enumItems": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ],
+          "mappedType": "unknown",
+          "nativeEnumName": "upr_status_enum"
+        },
+        "prepared_by": {
+          "name": "prepared_by",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "name": "upr_reports",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_reports_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "prepared_by"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_reports_prepared_by_index",
+          "unique": false,
+          "primary": false
+        },
+        {
+          "columnNames": [
+            "office_name",
+            "fiscal_year",
+            "quarter"
+          ],
+          "composite": true,
+          "constraint": false,
+          "keyName": "uq_upr_reports_office_period",
+          "unique": true,
+          "primary": false,
+          "expression": "CREATE UNIQUE INDEX uq_upr_reports_office_period ON public.upr_reports USING btree (office_name, fiscal_year, quarter) WHERE (deleted_at IS NULL)"
+        }
+      ],
+      "checks": [
+        {
+          "name": "upr_reports_quarter_check",
+          "columnName": "quarter",
+          "definition": "CHECK (((quarter >= 1) AND (quarter <= 4)))",
+          "expression": "(quarter >= 1) AND (quarter <= 4)"
+        }
+      ],
+      "foreignKeys": {
+        "upr_reports_prepared_by_foreign": {
+          "columnNames": [
+            "prepared_by"
+          ],
+          "constraintName": "upr_reports_prepared_by_foreign",
+          "localTableName": "public.upr_reports",
+          "referencedTableName": "public.users",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "restrict"
+        }
+      },
+      "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -18201,6 +20413,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -18219,6 +20439,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -18345,6 +20576,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -18363,6 +20602,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -18532,6 +20782,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -18550,6 +20808,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -18660,6 +20929,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -18678,6 +20955,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -18816,6 +21104,14 @@
       "checks": [],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -18834,6 +21130,17 @@
             "REPAIR",
             "OPERATIONS",
             "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
           ]
         }
       },
@@ -19304,9 +21611,24 @@
           "primary": true
         }
       ],
-      "checks": [],
+      "checks": [
+        {
+          "name": "chk_users_rank_level",
+          "columnName": "rank_level",
+          "definition": "CHECK (((rank_level >= 10) AND (rank_level <= 100)))",
+          "expression": "(rank_level >= 10) AND (rank_level <= 100)"
+        }
+      ],
       "foreignKeys": {},
       "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
         "media_type_enum": {
           "name": "media_type_enum",
           "schema": "public",
@@ -19326,12 +21648,31 @@
             "OPERATIONS",
             "ALL"
           ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
         }
       },
       "comment": null
     }
   ],
   "nativeEnums": {
+    "challenge_opportunity_type_enum": {
+      "name": "challenge_opportunity_type_enum",
+      "schema": "public",
+      "items": [
+        "CHALLENGE",
+        "OPPORTUNITY"
+      ]
+    },
     "media_type_enum": {
       "name": "media_type_enum",
       "schema": "public",
@@ -19350,6 +21691,17 @@
         "REPAIR",
         "OPERATIONS",
         "ALL"
+      ]
+    },
+    "upr_status_enum": {
+      "name": "upr_status_enum",
+      "schema": "public",
+      "items": [
+        "DRAFT",
+        "SUBMITTED",
+        "UNDER_REVIEW",
+        "APPROVED",
+        "RETURNED"
       ]
     }
   }

@@ -1,8 +1,5 @@
 import { Entity, PrimaryKey, Property } from '@mikro-orm/core';
-import {
-  ConstructionDocumentTypeRepository
-} from '../../construction-projects/repository/construction-document-type.repository';
-
+import { ConstructionDocumentTypeRepository } from '../../construction-projects/repository/construction-document-type.repository';
 
 /**
  * Phase KB-E: Reference table for CPES/infrastructure document types.

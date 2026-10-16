@@ -54,3 +54,8 @@ export { PillarIndicatorTaxonomy } from './pillar-indicator-taxonomy.entity';
 export { OperationOrganizationalInfo } from './operation-organizational-info.entity';
 export { HomepageSetting } from './homepage-setting.entity';
 export { HomepageItem } from './homepage-item.entity';
+export { UPRReport } from './upr-report.entity';
+export { UprChallengesOpportunities } from './upr-challenges-opportunities.entity';
+export { UprBestPractices } from './upr-best-practices.entity';
+export { UprInitiative } from './upr-initiatives.entity';
+export { UprAttachment } from './upr-attachment.entity';

@@ -141,6 +141,13 @@ const othersPersonnelRows     = ref<OthersPersonnelRow[]>([])
 const fundingSources = ref<{ id: string; name: string; type?: string }[]>([])
 const contractors = ref<{ id: string; name: string }[]>([])
 
+// Live project-code availability. The endpoint is debounced inside the composable, so typing
+// a code does not send a request per keystroke — only the pause at the end does, plus one
+// when the field loses focus.
+const { state: codeCheck, checkNow: checkCodeNow } = useProjectCodeAvailability(
+  computed(() => form.value.project_code),
+)
+
 // MG: Relaxed project code validation â€" free-form per ECO directive.
 const rules = {
   required: (v: string) => !!v || 'This field is required',
@@ -347,12 +354,12 @@ const tabCompletion = computed(() => ({
     form.value.project_duration_days ||
     form.value.original_contract_duration
   ),
-  progress: !!(
-    (form.value.physical_progress != null && form.value.physical_progress !== 0) ||
-    form.value.as_of_date ||
-    (form.value.cost_incurred_to_date != null) ||
-    form.value.date_completed ||
-    (form.value.remarks_log_entries && form.value.remarks_log_entries.length > 0)
+  progress: (
+      (form.value.physical_progress != null && form.value.physical_progress !== 0) ||
+      form.value.as_of_date ||
+      (form.value.cost_incurred_to_date != null) ||
+      form.value.date_completed ||
+      (form.value.remarks_log_entries && form.value.remarks_log_entries.length > 0)
   ),
   personnel: !!(
     form.value.project_engineer ||
@@ -367,8 +374,12 @@ const tabCompletion = computed(() => ({
 
 // JO-B: Required-field validity for navigation gating (separate from engagement)
 // FIX: see tabCompletion above — must match the field the UI actually binds.
+// A code the availability check has already rejected blocks NEXT and SUBMIT here rather than
+// letting the wizard run to the end and fail on the server with a 409. A check that errored
+// or has not answered yet does not block — the server decides on save.
 const tabRequired = computed<TabValidity>(() => ({
-  basic: !!(form.value.project_code && form.value.title && form.value.campus && form.value.status && form.value.primary_funding_source),
+  basic: !!(form.value.project_code && form.value.title && form.value.campus && form.value.status && form.value.primary_funding_source)
+    && codeCheck.value.status !== 'taken',
   schedule: true,
   progress: true,
   personnel: true,
@@ -918,11 +929,26 @@ onBeforeUnmount(() => {
             these required fields are still empty:
             <strong>{{ missingBasicFields.join(', ') }}</strong>
           </v-alert>
+          <!-- The alert above only covers empty fields; a filled but already-used project
+               code blocks the same way and needs its own reason. -->
+          <v-alert
+            v-if="blockedTab === 'basic' && !missingBasicFields.length && codeCheck.status === 'taken'"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+            icon="mdi-alert-circle-outline"
+          >
+            <span class="font-weight-medium">Cannot continue —</span>
+            {{ codeCheck.message }}
+          </v-alert>
           <CiBasicInfoForm
             v-model="form"
             :funding-sources="fundingSources"
             :contractors="contractors"
             :rules="rules"
+            :code-check="codeCheck"
+            @code-blur="checkCodeNow"
           />
         </v-window-item>
 

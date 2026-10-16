@@ -237,6 +237,11 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     };
   }
 
+  /** Whether a live (not soft-deleted) project with this id exists. */
+  async existsActive(id: string): Promise<boolean> {
+    return (await this.count({ id, deletedAt: null }, { filters: false })) > 0;
+  }
+
   /** Who created a project, or null when there is no live row with that id. */
   async findCreatedBy(id: string): Promise<string | null> {
     const project = await this.findOne(
@@ -257,6 +262,28 @@ export class ConstructionProjectRepository extends EntityRepository<Construction
     };
     if (excludeId) Object.assign(where, { id: { $ne: excludeId } });
     return (await this.count(where, { filters: false })) > 0;
+  }
+
+  /**
+   * The project carrying this code, soft-deleted rows included.
+   *
+   * Creation refuses a code that any row holds, not just a live one — see
+   * ConstructionProjectsService.create — so the availability check has to look past the
+   * soft-delete filter the same way, otherwise it would call a code free that create() then
+   * rejects with a 409.
+   */
+  async findAnyByCode(code: string): Promise<ConstructionProject | null> {
+    return await this.findOne({ projectCode: code }, { filters: false });
+  }
+
+  /** Which of these codes are already carried by a project, soft-deleted ones included. */
+  async findTakenCodes(codes: string[]): Promise<Set<string>> {
+    if (codes.length === 0) return new Set();
+    const rows = await this.find(
+      { projectCode: { $in: codes } },
+      { fields: ['projectCode'], filters: false },
+    );
+    return new Set(rows.map((row) => row.projectCode));
   }
 
   /** Everything awaiting review, oldest submission first. */

@@ -1,8 +1,6 @@
 import { Entity, Enum, ManyToOne, PrimaryKey, Property } from '@mikro-orm/core';
 import { ConstructionProject } from './construction-project.entity';
-import {
-  ConstructionDocumentChecklistRepository
-} from '../../construction-projects/repository/construction-document-checklist.repository';
+import { ConstructionDocumentChecklistRepository } from '../../construction-projects/repository/construction-document-checklist.repository';
 
 /**
  * Phase KB-E: Per-project document checklist instances.
