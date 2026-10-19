@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Header,
+  Param,
+  ParseUUIDPipe,
   Query,
   StreamableFile,
   UseGuards,
@@ -10,6 +12,7 @@ import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiQuery,
   ApiTags,
@@ -66,5 +69,35 @@ export class MeReportController {
   )
   testGenerate(@Query('flatten') flatten?: string): Promise<StreamableFile> {
     return this.service.generateTestReport(flatten !== 'false');
+  }
+
+  // The real thing: a stored report rendered onto the same template.
+  @Get(':id/pdf')
+  @Roles()
+  @ApiOperation({ summary: 'Generate the M&E PDF for a stored UPR report' })
+  @ApiParam({ name: 'id', description: 'UPR report id' })
+  @ApiQuery({
+    name: 'flatten',
+    required: false,
+    enum: ['true', 'false'],
+    description:
+      'false keeps the AcroForm fields editable; anything else flattens them.',
+  })
+  @ApiProduces('application/pdf')
+  @ApiOkResponse({
+    description: 'The filled M&E quarterly report',
+    content: {
+      'application/pdf': { schema: { type: 'string', format: 'binary' } },
+    },
+  })
+  // Content-Disposition is deliberately not set here the way it is above: the renderer names
+  // the file after the report's year and quarter, and a header set on the route would win over
+  // the one the StreamableFile carries.
+  @Header('Content-Type', 'application/pdf')
+  generate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('flatten') flatten?: string,
+  ): Promise<StreamableFile> {
+    return this.service.generateReport(id, flatten !== 'false');
   }
 }

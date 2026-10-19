@@ -2,8 +2,18 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
   StreamableFile,
 } from '@nestjs/common';
+import { EntityManager } from '@mikro-orm/postgresql';
+import { QueryOrder } from '@mikro-orm/core';
+import {
+  UprBestPractices,
+  UprChallengesOpportunities,
+  UprFutureGoal,
+  UprInitiative,
+  UPRReport,
+} from '../database/entities';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,6 +26,7 @@ import {
   PDFRadioGroup,
   PDFTextField,
 } from 'pdf-lib';
+import { createReportTypography, renderPdfReport } from './pdf-renderer';
 
 /** One AcroForm field as the inspection endpoint reports it. */
 export interface PdfFieldInfo {
@@ -124,6 +135,53 @@ export class MeReportService {
 
   private readonly logger = new Logger(MeReportService.name);
 
+  constructor(private readonly em: EntityManager) {}
+
+  /**
+   * Generate the PDF for a stored report.
+   *
+   * The sections are fetched separately rather than through `populate` because each one is a
+   * plain list that has to come back in its own `sort_order` — the order the rows carry is the
+   * order they were given on the form, and it is what the printed table has to show.
+   */
+  async generateReport(
+    reportId: string,
+    flatten = true,
+  ): Promise<StreamableFile> {
+    const basic_information = await this.em.findOne(
+      UPRReport,
+      { id: reportId },
+      { populate: ['prepared_by'] },
+    );
+    if (!basic_information) {
+      throw new NotFoundException(`UPR report ${reportId} not found`);
+    }
+
+    const where = { report: basic_information };
+    const orderBy = { sort_order: QueryOrder.ASC } as const;
+    const [initiatives, best_practices, challenge_opportunities, future_goals] =
+      await Promise.all([
+        this.em.find(UprInitiative, where, {
+          populate: ['attachment'],
+          orderBy,
+        }),
+        this.em.find(UprBestPractices, where, { orderBy }),
+        this.em.find(UprChallengesOpportunities, where, { orderBy }),
+        this.em.find(UprFutureGoal, where, { orderBy }),
+      ]);
+
+    return renderPdfReport(
+      {
+        basic_information,
+        initiatives,
+        best_practices,
+        challenge_opportunities,
+        future_goals,
+      },
+      flatten,
+    );
+  }
+
   /**
    * Resolve the template. The compiled service runs from dist/upr-report and
    * nest-cli copies the template to dist/me-pdf/template; the src path is kept
@@ -197,6 +255,10 @@ export class MeReportService {
    */
   async generateTestReport(flatten = true): Promise<StreamableFile> {
     const { pdfDoc, form } = await this.loadForm();
+    // Without this the template's own `/Helv 0 Tf` is honoured, which means auto-size: pdf-lib
+    // grows the text until it fills the widget, so the two full-page narrative boxes come out
+    // at around 90pt while a crowded table cell drops to 4pt.
+    const typography = await createReportTypography(pdfDoc);
 
     // Match on the trimmed name so a field that picks up stray whitespace in a
     // later revision of the template still resolves.
@@ -215,7 +277,7 @@ export class MeReportService {
 
       const field = form.getField(name);
       if (field instanceof PDFTextField) {
-        field.setText(String(value));
+        field.setText(typography.text(value));
       } else if (field instanceof PDFCheckBox) {
         if (value) {
           field.check();
@@ -238,11 +300,15 @@ export class MeReportService {
       this.logger.warn(`Sample keys not applied: ${skipped.join(', ')}`);
     }
 
+    typography.apply(form);
+
     if (flatten) {
-      form.flatten();
+      // The appearances were just drawn with the embedded font; letting flatten redraw them
+      // would fall back to pdf-lib's built-in Helvetica and undo the sizing above.
+      form.flatten({ updateFieldAppearances: false });
     }
 
-    const bytes = await pdfDoc.save();
+    const bytes = await pdfDoc.save({ updateFieldAppearances: false });
     return new StreamableFile(Buffer.from(bytes), {
       type: 'application/pdf',
       disposition: 'attachment; filename="me-quarterly-report-test.pdf"',
