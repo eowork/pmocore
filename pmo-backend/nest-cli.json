@@ -9,6 +9,11 @@
         "include": "me-pdf/template/*.pdf",
         "outDir": "dist",
         "watchAssets": true
+      },
+      {
+        "include": "me-pdf/fonts/*",
+        "outDir": "dist",
+        "watchAssets": true
       }
     ]
   }
