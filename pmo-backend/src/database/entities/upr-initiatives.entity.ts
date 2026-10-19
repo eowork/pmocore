@@ -28,6 +28,11 @@ export class UprInitiative {
   @Property({ type: 'string', length: 150 })
   title!: string;
 
+  // defaultRaw covers rows written outside the ORM; the initializer covers the ORM itself,
+  // which would otherwise hand back an entity whose date is still undefined until refetched.
+  @Property({ columnType: 'timestamptz', defaultRaw: 'now()' })
+  date_conducted: Date = new Date();
+
   @Property({ type: 'text' })
   description!: string;
 
