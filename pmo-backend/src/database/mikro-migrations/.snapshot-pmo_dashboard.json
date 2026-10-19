@@ -19820,6 +19820,204 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
+        "initiative": {
+          "name": "initiative",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "target_date_of_completion": {
+          "name": "target_date_of_completion",
+          "type": "date",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 0,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "date"
+        },
+        "outcomes": {
+          "name": "outcomes",
+          "type": "text[]",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "array"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "int4",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": 32,
+          "scale": 0,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "name": "upr_future_goals",
+      "schema": "public",
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_future_goals_pkey",
+          "unique": true,
+          "primary": true
+        },
+        {
+          "columnNames": [
+            "report_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "upr_future_goals_report_id_index",
+          "unique": false,
+          "primary": false
+        }
+      ],
+      "checks": [],
+      "foreignKeys": {
+        "upr_future_goals_report_id_foreign": {
+          "columnNames": [
+            "report_id"
+          ],
+          "constraintName": "upr_future_goals_report_id_foreign",
+          "localTableName": "public.upr_future_goals",
+          "referencedTableName": "public.upr_reports",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        }
+      },
+      "nativeEnums": {
+        "challenge_opportunity_type_enum": {
+          "name": "challenge_opportunity_type_enum",
+          "schema": "public",
+          "items": [
+            "CHALLENGE",
+            "OPPORTUNITY"
+          ]
+        },
+        "media_type_enum": {
+          "name": "media_type_enum",
+          "schema": "public",
+          "items": [
+            "IMAGE",
+            "VIDEO",
+            "DOCUMENT",
+            "OTHER"
+          ]
+        },
+        "module_type": {
+          "name": "module_type",
+          "schema": "public",
+          "items": [
+            "CONSTRUCTION",
+            "REPAIR",
+            "OPERATIONS",
+            "ALL"
+          ]
+        },
+        "upr_status_enum": {
+          "name": "upr_status_enum",
+          "schema": "public",
+          "items": [
+            "DRAFT",
+            "SUBMITTED",
+            "UNDER_REVIEW",
+            "APPROVED",
+            "RETURNED"
+          ]
+        }
+      },
+      "comment": null
+    },
+    {
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "gen_random_uuid()",
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
+        "report_id": {
+          "name": "report_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
+        },
         "title": {
           "name": "title",
           "type": "varchar(150)",
@@ -19912,6 +20110,22 @@
           "precision": null,
           "scale": null,
           "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "date_conducted": {
+          "name": "date_conducted",
+          "type": "timestamptz(6)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": 6,
+          "precision": null,
+          "scale": null,
+          "default": "now()",
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
