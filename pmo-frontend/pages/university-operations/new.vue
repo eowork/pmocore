@@ -23,9 +23,6 @@ const pillarDisplayNames: Record<string, string> = {
   'TECHNICAL_ADVISORY': 'Technical Advisory Extension Program',
 }
 
-// Phase AO: Staff users for assignment dropdown
-const staffUsers = ref<{ id: string; first_name: string; last_name: string }[]>([])
-
 // Form data
 const form = ref({
   title: '',
@@ -41,6 +38,12 @@ const form = ref({
   fiscal_year: null as number | null,
   // Phase AW: Multi-select assignment
   assigned_user_ids: [] as string[],
+})
+
+// Phase AO: staff for the assignment dropdown. The search runs on the server; the ids already
+// picked are held so narrowing the list never blanks a chip.
+const { staffUsers, staffLoading, loadStaff, onStaffSearch, onStaffFocus } = useStaffSearch({
+  heldIds: () => form.value.assigned_user_ids,
 })
 
 // Dropdown options
@@ -71,21 +74,10 @@ const rules = {
   positiveNumber: (v: number | null) => v === null || v >= 0 || 'Must be a positive number',
 }
 
-// Phase AV: Fetch eligible staff once on mount (global, no campus filter)
-async function fetchEligibleStaff() {
-  try {
-    const res = await api.get<{ id: string; first_name: string; last_name: string }[]>(
-      '/api/users/eligible-for-assignment'
-    )
-    staffUsers.value = Array.isArray(res) ? res : []
-  } catch (err) {
-    console.error('[UniOps Create] Failed to fetch eligible staff:', err)
-    staffUsers.value = []
-  }
-}
-
 onMounted(() => {
-  fetchEligibleStaff()
+  // Phase AV: an unfiltered first page (global, no campus filter) so the dropdown has
+  // something to show before anything is typed.
+  void loadStaff()
 
   // Phase CX-B: Pre-fill form from query params
   if (pillarParam.value) {
@@ -332,10 +324,14 @@ function goBack() {
                 chips
                 closable-chips
                 clearable
-                hint="Search and assign one or more staff members"
+                hint="Search by name or email and assign one or more staff members"
                 persistent-hint
                 variant="outlined"
                 density="comfortable"
+                :loading="staffLoading"
+                no-filter
+                @update:focused="onStaffFocus"
+                @update:search="onStaffSearch"
               />
             </v-card-text>
           </v-card>

@@ -73,8 +73,11 @@ const statusOptions = [
 
 // Lookup data
 const repairTypes = ref<{ id: string; name: string }[]>([])
-// Phase AF: Staff users for delegation
-const staffUsers = ref<{ id: string; first_name: string; last_name: string }[]>([])
+// Phase AF: staff for delegation. The search runs on the server; the ids already assigned to
+// this repair are held so narrowing the list never blanks a chip.
+const { staffUsers, staffLoading, loadStaff, onStaffSearch, onStaffFocus } = useStaffSearch({
+  heldIds: () => form.value.assigned_user_ids,
+})
 
 // Validation rules
 const rules = {
@@ -129,11 +132,9 @@ async function fetchData() {
       assigned_user_ids: ((repairRes as any).assigned_users || []).map((u: { id: string }) => u.id),
     }
 
-    // STEP 2: Load eligible users (Phase AV: global, no campus filter)
-    const usersRes = await api.get<{ id: string; first_name: string; last_name: string }[]>(
-      '/api/users/eligible-for-assignment'
-    )
-    staffUsers.value = Array.isArray(usersRes) ? usersRes : []
+    // STEP 2: Load eligible users (Phase AV: global, no campus filter). This first page is
+    // unfiltered, so it carries the labels for the chips the form was just hydrated with.
+    await loadStaff()
 
     console.log('[Repairs Edit] Form populated with repair_type_id:', form.value.repair_type_id)
   } catch (err: unknown) {
@@ -464,10 +465,14 @@ onMounted(() => {
                 chips
                 closable-chips
                 clearable
-                hint="Search and assign one or more staff members"
+                hint="Search by name or email and assign one or more staff members"
                 persistent-hint
                 variant="outlined"
                 density="comfortable"
+                :loading="staffLoading"
+                no-filter
+                @update:focused="onStaffFocus"
+                @update:search="onStaffSearch"
               />
             </v-card-text>
           </v-card>

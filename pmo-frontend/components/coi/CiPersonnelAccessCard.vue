@@ -105,60 +105,15 @@ function actionLabel(key: string): string {
 }
 
 // ── Staff search (shared by both panels) ────────────────────────────────────
-// The search runs on the server: /api/users/eligible-for-assignment takes an optional
-// `search` term and matches it against first name, last name and email. Before, the whole
-// active-user list was fetched once and filtered in the browser, so the autocompletes could
-// only match what they rendered — the name — and typing an email found nothing.
-type StaffUser = { id: string; first_name: string; last_name: string; email?: string; campus?: string }
-
-const staffUsers = ref<StaffUser[]>([])
-const staffLoading = ref(false)
-// The term the current contents of staffUsers were fetched for. Vuetify re-emits update:search
-// when an item is picked, and this is what stops that from firing a second identical request.
-const staffLoadedTerm = ref<string | null>(null)
-let staffSearchTimer: ReturnType<typeof setTimeout> | null = null
-
-async function loadStaff(search = '') {
-  const term = search.trim()
-  if (staffLoadedTerm.value === term) return
-  staffLoading.value = true
-  staffLoadedTerm.value = term
-  try {
-    const query = term ? `?search=${encodeURIComponent(term)}` : ''
-    const res = await api.get<StaffUser[]>(`/api/users/eligible-for-assignment${query}`)
-    const rows = Array.isArray(res) ? res : []
-    // A narrower search must not drop a user who is already picked or ticked: the
-    // autocomplete would render a blank label for a model value with no matching item, and
-    // commitBatch looks each selected id up in this same list.
-    const byId = new Map(rows.map(u => [u.id, u]))
-    const held = staffUsers.value.filter(u =>
-      u.id === addUserId.value ||
-      u.id === addExternalUserId.value ||
-      batchSelected.value.includes(u.id)
-    )
-    for (const u of held) if (!byId.has(u.id)) byId.set(u.id, u)
-    staffUsers.value = [...byId.values()]
-  } catch {
-    // Leave the previous results in place and allow the same term to be retried.
-    staffLoadedTerm.value = null
-  } finally {
-    staffLoading.value = false
-  }
-}
-
-// Each keystroke is debounced so typing a name is one request, not one per character.
-function onStaffSearch(search: string | null) {
-  if (staffSearchTimer) clearTimeout(staffSearchTimer)
-  staffSearchTimer = setTimeout(() => { void loadStaff(search ?? '') }, 300)
-}
-
-// The first focus populates the list; after that the search term decides what is fetched, so
-// focusing the field again must not throw away the results the user is looking at.
-function onStaffFocus(focused: boolean) {
-  if (focused && staffLoadedTerm.value === null) void loadStaff()
-}
-
-onBeforeUnmount(() => { if (staffSearchTimer) clearTimeout(staffSearchTimer) })
+// Held ids cover both single-pick fields and the batch dialog's tick list: commitBatch looks
+// every ticked id up in staffUsers, so a narrower search must not drop one.
+const { staffUsers, staffLoading, loadStaff, onStaffSearch, onStaffFocus } = useStaffSearch({
+  heldIds: () => [
+    ...(addUserId.value ? [addUserId.value] : []),
+    ...(addExternalUserId.value ? [addExternalUserId.value] : []),
+    ...batchSelected.value,
+  ],
+})
 
 // ── Local draft ─────────────────────────────────────────────────────────────
 const draft = ref<DraftUser[]>([])
