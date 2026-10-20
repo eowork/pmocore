@@ -596,8 +596,22 @@ const filteredProjects = computed(() => {
 async function fetchProjects() {
   loading.value = true
   try {
-    const response = await api.get<{ data: BackendProject[] }>('/api/construction-projects')
-    projects.value = adaptProjects(response.data || [])
+    // Every page of the portfolio, not just the first. This request used to be the bare URL,
+    // which takes the endpoint's default of 20 rows — and because the filters, the sort, the
+    // card and list views and the table pager all work over whatever is in `projects`, the
+    // other projects were unreachable: even "All" rows per page showed those same 20, while
+    // the Total Projects card read the true count from analytics/summary and disagreed.
+    const { rows, total, truncated } = await fetchAllPages<BackendProject>((page, limit) =>
+      api.get<{ data: BackendProject[]; meta?: { total: number; totalPages: number } }>(
+        `/api/construction-projects?page=${page}&limit=${limit}`,
+      ),
+    )
+    projects.value = adaptProjects(rows)
+    if (truncated) {
+      toast.warning(
+        `Showing the first ${rows.length} of ${total} projects. Narrow the filters to see the rest.`,
+      )
+    }
     computeStats(projects.value)
   } catch (err: unknown) {
     const error = err as { message?: string }

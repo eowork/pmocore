@@ -108,8 +108,18 @@ const filteredRecords = computed(() => {
 // Fetch records
 async function fetchRecords() {
   try {
-    const response = await api.get<{ data: any[] }>('/api/gad/gpb-accomplishments')
-    records.value = response.data || []
+    // Every page of the list, not just the first: the endpoint answers with 20 rows by
+    // default, and this page filters, sorts and paginates in the browser over whatever
+    // it is handed — so the rest of the table was unreachable.
+    const { rows, total, truncated } = await fetchAllPages<any>((page, limit) =>
+      api.get<{ data: any[]; meta?: { total: number; totalPages: number } }>(
+        `/api/gad/gpb-accomplishments?page=${page}&limit=${limit}`,
+      ),
+    )
+    records.value = rows
+    if (truncated) {
+      toast.warning(`Showing the first ${rows.length} of ${total} records. Narrow the filters to see the rest.`)
+    }
   } catch (err: unknown) {
     const apiError = err as { message?: string }
     toast.error(apiError.message || 'Failed to load records')
