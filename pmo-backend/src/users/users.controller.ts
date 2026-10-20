@@ -17,6 +17,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import {
@@ -63,8 +64,14 @@ export class UsersController {
     summary:
       'List users eligible for record delegation (Admin/Staff) — Phase AV: Global, no campus filter',
   })
-  findEligibleForAssignment() {
-    return this.service.findEligibleForAssignment();
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description:
+      'Filters on first name, last name or email. Omit to list everyone.',
+  })
+  findEligibleForAssignment(@Query('search') search?: string) {
+    return this.service.findEligibleForAssignment(search);
   }
 
   @Get('eligible-contractors')

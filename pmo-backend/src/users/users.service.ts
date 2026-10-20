@@ -33,6 +33,12 @@ import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import { JwtPayload } from '../common/interfaces';
 import { AccessLevel } from '../common/enums';
+import { InjectRepository } from '@mikro-orm/nestjs';
+import {
+  EligibleContractorRow,
+  EligibleUserRow,
+  UserRepository,
+} from './user.repository';
 
 // Rank hierarchy constants (lower = higher authority)
 export const RANK_LEVELS = {
@@ -57,11 +63,14 @@ export class UsersService {
     last_name: 'lastName',
     is_active: 'isActive',
     rank_level: 'rankLevel',
+    last_login_at: 'lastLoginAt',
   };
 
   constructor(
     private readonly em: EntityManager,
     private readonly activityLog: ActivityLogService,
+    @InjectRepository(User)
+    private readonly userRepository: UserRepository,
   ) {}
 
   private async getActorRank(
@@ -123,11 +132,16 @@ export class UsersService {
     }
 
     if (query.search) {
+      // Role name is matched too: the user list has always searched roles, and it did so in
+      // the browser over whichever page happened to be loaded. With the table paging on the
+      // server, a role the current page does not contain has to be found here or not at all.
       conditions.push(
-        '(u.email ILIKE ? OR u.first_name ILIKE ? OR u.last_name ILIKE ?)',
+        `(u.email ILIKE ? OR u.first_name ILIKE ? OR u.last_name ILIKE ?
+          OR EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
+                      WHERE ur.user_id = u.id AND r.name ILIKE ?))`,
       );
       const pat = `%${query.search}%`;
-      params.push(pat, pat, pat);
+      params.push(pat, pat, pat, pat);
     }
 
     if (query.role) {
@@ -137,7 +151,11 @@ export class UsersService {
       params.push(query.role);
     }
 
-    if (query.campus) {
+    if (query.campus === '__none__') {
+      // The "No Campus Assigned" option. Blank is treated as unassigned alongside NULL,
+      // because the column is free text and older rows carry an empty string.
+      conditions.push(`(u.campus IS NULL OR u.campus = '')`);
+    } else if (query.campus) {
       conditions.push('u.campus = ?');
       params.push(query.campus);
     }
@@ -170,8 +188,13 @@ export class UsersService {
       lastName: 'last_name',
       isActive: 'is_active',
       rankLevel: 'rank_level',
+      lastLoginAt: 'last_login_at',
     };
     const sortColumn = sortColumnMap[sortProp] || 'created_at';
+    // last_login_at is null for an account that has never signed in, and Postgres sorts nulls
+    // first on a descending order — which would put those accounts at the top of "most recent
+    // login". Every other sortable column here is NOT NULL.
+    const nullOrder = sortColumn === 'last_login_at' ? ' NULLS LAST' : '';
 
     const dataResult = await conn.execute(
       `SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url,
@@ -187,7 +210,7 @@ export class UsersService {
               ) as roles
        FROM users u
        WHERE ${whereClause}
-       ORDER BY u.${sortColumn} ${sortOrder}
+       ORDER BY u.${sortColumn} ${sortOrder}${nullOrder}
        LIMIT ? OFFSET ?`,
       [...params, limit, offset],
     );
@@ -204,37 +227,17 @@ export class UsersService {
     return null;
   }
 
-  async findEligibleForAssignment(): Promise<any[]> {
-    // ZB-1: Return all active users regardless of role — external personnel
-    // (Contractor, Consultant, etc.) must appear alongside institutional staff.
-    const conn = this.em.getConnection();
-    const result = await conn.execute(
-      `SELECT u.id, u.first_name, u.last_name, u.email, u.campus
-       FROM users u
-       WHERE u.deleted_at IS NULL
-         AND u.is_active = true
-       ORDER BY u.last_name, u.first_name`,
-      [],
-    );
-    return result;
+  /**
+   * ZB-1: every active user regardless of role — external personnel (Contractor, Consultant)
+   * must appear alongside institutional staff. The optional term filters on name or email.
+   */
+  findEligibleForAssignment(search?: string): Promise<EligibleUserRow[]> {
+    return this.userRepository.findEligibleForAssignment(search);
   }
 
-  // QE-A: Returns users with Contractor role — used by CiPersonnelAccessCard Quick Assign feature
-  async findEligibleContractors(): Promise<any[]> {
-    const conn = this.em.getConnection();
-    return conn.execute(
-      `SELECT u.id, u.first_name, u.last_name, u.email,
-              u.campus, u.metadata->>'companyName' as company_name,
-              u.metadata->>'position' as position,
-              (SELECT COUNT(*)::int FROM record_assignments ra
-               WHERE ra.user_id = u.id AND ra.module = 'CONSTRUCTION') as assignment_count
-       FROM users u
-       WHERE u.deleted_at IS NULL AND u.is_active = true
-         AND EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
-                     WHERE ur.user_id = u.id AND r.name = 'Contractor')
-       ORDER BY u.last_name, u.first_name`,
-      [],
-    );
+  // QE-A: users with the Contractor role — used by CiPersonnelAccessCard Quick Assign.
+  findEligibleContractors(): Promise<EligibleContractorRow[]> {
+    return this.userRepository.findEligibleContractors();
   }
 
   async findOne(id: string): Promise<any> {

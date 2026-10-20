@@ -1,7 +1,8 @@
 import { Entity, Filter, PrimaryKey, Property } from '@mikro-orm/core';
+import { UserRepository } from '../../users/user.repository';
 
 @Filter({ name: 'notDeleted', cond: { deletedAt: null }, default: true })
-@Entity({ tableName: 'users' })
+@Entity({ tableName: 'users', repository: () => UserRepository })
 export class User {
   @PrimaryKey({ type: 'uuid', defaultRaw: 'gen_random_uuid()' })
   id!: string;

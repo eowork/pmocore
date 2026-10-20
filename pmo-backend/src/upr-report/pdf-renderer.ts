@@ -1,10 +1,3 @@
-import {
-  UprBestPractices,
-  UprChallengesOpportunities,
-  UprFutureGoal,
-  UprInitiative,
-  UPRReport,
-} from '../database/entities';
 import { ChallengeOpportunityType } from './enums';
 import { readFile } from 'node:fs/promises';
 import { getFontPath, getTemplatePath } from './helper';
@@ -25,16 +18,56 @@ import {
 } from 'pdf-lib';
 import { StreamableFile } from '@nestjs/common';
 
+/*
+ * The input is described by what the form prints rather than by the entity classes, so the
+ * stored entities satisfy it as they are while a hand-written sample (see
+ * MeReportService.generateTestReport) does not have to fabricate a whole User to be rendered.
+ */
+
+export interface ReportBasicInformation {
+  office_name: string;
+  fiscal_year: number;
+  quarter: number;
+  unit_office_profile: string;
+  quality_objective: string;
+  prepared_by?: { firstName?: string; lastName?: string } | null;
+  created_at?: Date;
+  updated_at?: Date | null;
+}
+
+export interface ReportInitiative {
+  title: string;
+  description: string;
+  date_conducted?: Date;
+  drive_link?: string | null;
+  attachment?: { original_filename?: string } | null;
+}
+
+export interface ReportBestPractice {
+  description: string;
+}
+
+export interface ReportChallengeOpportunity {
+  item_type: ChallengeOpportunityType;
+  description: string;
+}
+
+export interface ReportFutureGoal {
+  initiative: string;
+  target_date_of_completion?: Date | null;
+  outcomes?: string[];
+}
+
 /**
  * One report as the PDF needs it: the header row plus each repeating section, already ordered
  * the way it should appear on the form.
  */
 export interface Report {
-  basic_information: UPRReport;
-  initiatives: UprInitiative[];
-  best_practices: UprBestPractices[];
-  challenge_opportunities: UprChallengesOpportunities[];
-  future_goals: UprFutureGoal[];
+  basic_information: ReportBasicInformation;
+  initiatives: ReportInitiative[];
+  best_practices: ReportBestPractice[];
+  challenge_opportunities: ReportChallengeOpportunity[];
+  future_goals: ReportFutureGoal[];
 }
 
 /** How many rows each repeating section of the template offers. */
@@ -78,8 +111,8 @@ function toFormFields(
 ): { fields: FormFields; dropped: string[] } {
   const basic = report.basic_information;
   const fields: FormFields = {
-    'Fiscal Year': String(basic.fiscal_year),
-    Name: fullName(basic.prepared_by),
+    s1_fiscal_year: String(basic.fiscal_year),
+    prepared_name: fullName(basic.prepared_by),
     s1_name: basic.office_name,
     s1_unit_profile: basic.unit_office_profile,
     s1_quality_objective: basic.quality_objective,
@@ -95,7 +128,8 @@ function toFormFields(
     designation_date_1: formatDate(basic.updated_at ?? basic.created_at),
   };
 
-  // The approver block is deliberately left blank: nothing on UPRReport records who approved
+  // The approver block — approved_name, approved_signature, approved_designation_office and
+  // designation_date_2 — is deliberately left blank: nothing on UPRReport records who approved
   // a report, so printing the preparer there would be a false signature line.
 
   const dropped: string[] = [];
