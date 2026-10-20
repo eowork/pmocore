@@ -1,10 +1,9 @@
 import { IsOptional, IsBoolean, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
-import { PaginationDto } from '../../common/dto';
+import { BooleanQuery, PaginationDto } from '../../common/dto';
 
 export class QueryUserDto extends PaginationDto {
   @IsOptional()
-  @Type(() => Boolean)
+  @BooleanQuery()
   @IsBoolean()
   is_active?: boolean;
 
