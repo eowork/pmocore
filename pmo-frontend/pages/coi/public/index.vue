@@ -63,10 +63,18 @@ const filteredProjects = computed(() => {
 async function fetchProjects() {
   loading.value = true
   try {
-    const response = await api.get<{ data: BackendProject[] }>(
-      '/api/public/construction-projects',
+    // Every page of the list, not just the first: the endpoint answers with 20 rows by
+    // default, and this page filters, sorts and paginates in the browser over whatever
+    // it is handed — so the rest of the table was unreachable.
+    const { rows, total, truncated } = await fetchAllPages<BackendProject>((page, limit) =>
+      api.get<{ data: BackendProject[]; meta?: { total: number; totalPages: number } }>(
+        `/api/public/construction-projects?page=${page}&limit=${limit}`,
+      ),
     )
-    projects.value = adaptProjects(response.data || [])
+    projects.value = adaptProjects(rows)
+    if (truncated) {
+      console.warn(`[COI Public] Showing ${rows.length} of ${total}; raise maxPages to read the rest.`)
+    }
   } catch (err) {
     console.error('[COI Public] Failed to fetch:', err)
   } finally {

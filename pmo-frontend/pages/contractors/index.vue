@@ -92,8 +92,18 @@ const filteredContractors = computed(() => {
 async function fetchContractors() {
   loading.value = true
   try {
-    const response = await api.get<{ data: BackendContractor[] }>('/api/contractors')
-    contractors.value = adaptContractors(response.data || [])
+    // Every page of the list, not just the first: the endpoint answers with 20 rows by
+    // default, and this page filters, sorts and paginates in the browser over whatever
+    // it is handed — so the rest of the table was unreachable.
+    const { rows, total, truncated } = await fetchAllPages<BackendContractor>((page, limit) =>
+      api.get<{ data: BackendContractor[]; meta?: { total: number; totalPages: number } }>(
+        `/api/contractors?page=${page}&limit=${limit}`,
+      ),
+    )
+    contractors.value = adaptContractors(rows)
+    if (truncated) {
+      toast.warning(`Showing the first ${rows.length} of ${total} contractors. Narrow the filters to see the rest.`)
+    }
   } catch (err: unknown) {
     const error = err as { message?: string }
     toast.error(error.message || 'Failed to load contractors')
