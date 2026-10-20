@@ -28,17 +28,6 @@ import { Roles } from '../auth/decorators';
 export class MeReportController {
   constructor(private readonly service: MeReportService) {}
 
-  // Inspection helper: lists the AcroForm field names the template exposes, so
-  // the report data can be mapped onto them once the tables exist.
-  @Get('pdf-fields')
-  @Roles()
-  @ApiOperation({
-    summary: 'List every AcroForm field in the M&E PDF template',
-  })
-  getPdfFields(): Promise<PdfFieldReport> {
-    return this.service.getPdfFields();
-  }
-
   // Fills the template with a static sample. Temporary: there is no database
   // behind the M&E report yet.
   @Get('test-generate')
