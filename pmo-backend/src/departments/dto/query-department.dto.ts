@@ -6,6 +6,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { BooleanQuery } from '../../common/dto';
 import { DepartmentStatus } from '../../common/enums';
 
 export class QueryDepartmentDto {
@@ -38,7 +39,7 @@ export class QueryDepartmentDto {
   name?: string;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
+  @BooleanQuery()
   @IsBoolean()
   tree?: boolean;
 }
