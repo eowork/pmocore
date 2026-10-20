@@ -33,6 +33,12 @@ import { ActivityLogService } from '../activity-logs/activity-log.service';
 import { ActivityAction } from '../activity-logs/activity-log.entity';
 import { JwtPayload } from '../common/interfaces';
 import { AccessLevel } from '../common/enums';
+import { InjectRepository } from '@mikro-orm/nestjs';
+import {
+  EligibleContractorRow,
+  EligibleUserRow,
+  UserRepository,
+} from './user.repository';
 
 // Rank hierarchy constants (lower = higher authority)
 export const RANK_LEVELS = {
@@ -62,6 +68,8 @@ export class UsersService {
   constructor(
     private readonly em: EntityManager,
     private readonly activityLog: ActivityLogService,
+    @InjectRepository(User)
+    private readonly userRepository: UserRepository,
   ) {}
 
   private async getActorRank(
@@ -204,37 +212,17 @@ export class UsersService {
     return null;
   }
 
-  async findEligibleForAssignment(): Promise<any[]> {
-    // ZB-1: Return all active users regardless of role — external personnel
-    // (Contractor, Consultant, etc.) must appear alongside institutional staff.
-    const conn = this.em.getConnection();
-    const result = await conn.execute(
-      `SELECT u.id, u.first_name, u.last_name, u.email, u.campus
-       FROM users u
-       WHERE u.deleted_at IS NULL
-         AND u.is_active = true
-       ORDER BY u.last_name, u.first_name`,
-      [],
-    );
-    return result;
+  /**
+   * ZB-1: every active user regardless of role — external personnel (Contractor, Consultant)
+   * must appear alongside institutional staff. The optional term filters on name or email.
+   */
+  findEligibleForAssignment(search?: string): Promise<EligibleUserRow[]> {
+    return this.userRepository.findEligibleForAssignment(search);
   }
 
-  // QE-A: Returns users with Contractor role — used by CiPersonnelAccessCard Quick Assign feature
-  async findEligibleContractors(): Promise<any[]> {
-    const conn = this.em.getConnection();
-    return conn.execute(
-      `SELECT u.id, u.first_name, u.last_name, u.email,
-              u.campus, u.metadata->>'companyName' as company_name,
-              u.metadata->>'position' as position,
-              (SELECT COUNT(*)::int FROM record_assignments ra
-               WHERE ra.user_id = u.id AND ra.module = 'CONSTRUCTION') as assignment_count
-       FROM users u
-       WHERE u.deleted_at IS NULL AND u.is_active = true
-         AND EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON ur.role_id = r.id
-                     WHERE ur.user_id = u.id AND r.name = 'Contractor')
-       ORDER BY u.last_name, u.first_name`,
-      [],
-    );
+  // QE-A: users with the Contractor role — used by CiPersonnelAccessCard Quick Assign.
+  findEligibleContractors(): Promise<EligibleContractorRow[]> {
+    return this.userRepository.findEligibleContractors();
   }
 
   async findOne(id: string): Promise<any> {
