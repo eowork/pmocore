@@ -88,8 +88,18 @@ const filteredSources = computed(() => {
 async function fetchSources() {
   loading.value = true
   try {
-    const response = await api.get<{ data: BackendFundingSource[] }>('/api/funding-sources')
-    fundingSources.value = adaptFundingSources(response.data || [])
+    // Every page of the list, not just the first: the endpoint answers with 20 rows by
+    // default, and this page filters, sorts and paginates in the browser over whatever
+    // it is handed — so the rest of the table was unreachable.
+    const { rows, total, truncated } = await fetchAllPages<BackendFundingSource>((page, limit) =>
+      api.get<{ data: BackendFundingSource[]; meta?: { total: number; totalPages: number } }>(
+        `/api/funding-sources?page=${page}&limit=${limit}`,
+      ),
+    )
+    fundingSources.value = adaptFundingSources(rows)
+    if (truncated) {
+      toast.warning(`Showing the first ${rows.length} of ${total} funding sources. Narrow the filters to see the rest.`)
+    }
   } catch (err: unknown) {
     const error = err as { message?: string }
     toast.error(error.message || 'Failed to load funding sources')
