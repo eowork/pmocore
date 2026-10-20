@@ -20,6 +20,29 @@ const { canEdit, isSuperAdmin } = usePermissions()
 const users = ref<UIUserList[]>([])
 const search = ref('')
 const loading = ref(true)
+
+// The table pages on the server. It used to request /api/users with no page or limit, take the
+// 20 rows the endpoint defaults to, and paginate those in the browser — so "100 per page" only
+// ever re-sliced the same 20 users and the rest of the directory was unreachable. Page size,
+// sort and every filter below are now part of the request.
+const totalUsers = ref(0)
+const page = ref(1)
+const itemsPerPage = ref(20)
+const sortBy = ref<{ key: string; order?: 'asc' | 'desc' }[]>([])
+
+// 100 is the endpoint's maximum limit, so there is deliberately no "All" option: it would be
+// sent as -1 and rejected.
+const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
+
+// Table column key to the sort name the endpoint accepts. A key missing here is not sortable
+// server-side, which is why those columns are declared sortable: false.
+const SORT_KEYS: Record<string, string> = {
+  fullName: 'first_name',
+  email: 'email',
+  rankLevel: 'rank_level',
+  isActive: 'is_active',
+  lastLoginAt: 'last_login_at',
+}
 const deleting = ref(false)
 const deleteDialog = ref(false)
 const userToDelete = ref<UIUserList | null>(null)
@@ -112,7 +135,9 @@ async function deleteUser() {
   try {
     await api.del(`/api/users/${userToDelete.value.id}`)
     const deletedName = userToDelete.value.fullName
-    users.value = users.value.filter(u => u.id !== userToDelete.value!.id)
+    // Refetched rather than spliced out locally: the row count and the page boundaries are
+    // the server's now, and dropping one row from the current page would misreport both.
+    await fetchUsers()
     toast.success(`User "${deletedName}" deleted successfully`)
   } catch (err: unknown) {
     const error = err as { message?: string }
@@ -136,46 +161,39 @@ function getStatusText(isActive: boolean): string {
 
 // formatDate imported from utils/userFormat (formatDateTime alias).
 
-// Filtered users
-const filteredUsers = computed(() => {
-  let result = users.value
+function buildQuery(): string {
+  const params = new URLSearchParams({
+    page: String(page.value),
+    limit: String(itemsPerPage.value),
+  })
 
-  // Search filter
-  if (search.value) {
-    const term = search.value.toLowerCase()
-    result = result.filter(
-      (u) =>
-        u.fullName.toLowerCase().includes(term) ||
-        u.email.toLowerCase().includes(term) ||
-        u.roles.some(role => role.toLowerCase().includes(term))
-    )
+  const [sort] = sortBy.value
+  const sortKey = sort ? SORT_KEYS[sort.key] : undefined
+  if (sortKey) {
+    params.set('sort', sortKey)
+    params.set('order', sort.order === 'asc' ? 'asc' : 'desc')
   }
 
-  // Status filter
-  if (statusFilter.value !== null) {
-    result = result.filter(u => u.isActive === statusFilter.value)
-  }
+  const term = search.value.trim()
+  if (term) params.set('search', term)
+  // The endpoint matches the term against email, first name, last name and role name.
+  if (statusFilter.value !== null) params.set('is_active', String(statusFilter.value))
+  if (roleFilter.value) params.set('role', roleFilter.value)
+  // '__none__' is the "No Campus Assigned" option, which the endpoint reads as null or blank.
+  if (campusFilter.value) params.set('campus', campusFilter.value)
 
-  // Role filter
-  if (roleFilter.value) {
-    result = result.filter(u => u.roles.includes(roleFilter.value))
-  }
-
-  // Campus filter
-  if (campusFilter.value === '__none__') {
-    result = result.filter(u => !u.campus)
-  } else if (campusFilter.value) {
-    result = result.filter(u => u.campus === campusFilter.value)
-  }
-
-  return result
-})
+  return params.toString()
+}
 
 async function fetchUsers() {
   loading.value = true
   try {
-    const response = await api.get<{ data: BackendUserList[] }>('/api/users')
+    const response = await api.get<{
+      data: BackendUserList[]
+      meta?: { total: number }
+    }>(`/api/users?${buildQuery()}`)
     users.value = adaptUsersList(response.data || [])
+    totalUsers.value = response.meta?.total ?? users.value.length
   } catch (err: unknown) {
     const error = err as { message?: string }
     toast.error(error.message || 'Failed to load users')
@@ -184,6 +202,40 @@ async function fetchUsers() {
     loading.value = false
   }
 }
+
+/**
+ * The table owns page, page size and sort, and reports them here — including once on mount,
+ * which is what performs the first load.
+ */
+function onTableOptions(options: {
+  page: number
+  itemsPerPage: number
+  sortBy: { key: string; order?: 'asc' | 'desc' }[]
+}) {
+  page.value = options.page
+  itemsPerPage.value = options.itemsPerPage
+  sortBy.value = options.sortBy
+  void fetchUsers()
+}
+
+// A changed filter invalidates the current page number: page 3 of "all users" is rarely page 3
+// of the filtered set, and asking for it would answer with nothing. Setting page back to 1 is
+// what triggers the refetch when the table is not already on page 1.
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+function applyFilters() {
+  if (page.value === 1) void fetchUsers()
+  else page.value = 1
+}
+
+watch([statusFilter, roleFilter, campusFilter], applyFilters)
+
+watch(search, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(applyFilters, 300)
+})
+
+onBeforeUnmount(() => { if (searchTimer) clearTimeout(searchTimer) })
 
 // PHASE BBBB (BBBB-5c): reset-request fetch/accept moved to pages/admin/password-resets.vue.
 
@@ -248,7 +300,8 @@ function pendingUserType(user: any): string {
 }
 
 onMounted(() => {
-  fetchUsers()
+  // fetchUsers is not called here: the table emits update:options once on mount, and that is
+  // what performs the first load with the page size it starts on.
   fetchPendingRegistrations()
 })
 </script>
@@ -397,7 +450,7 @@ onMounted(() => {
 
         <v-spacer />
         <v-chip color="primary" variant="tonal">
-          {{ filteredUsers.length }} users
+          {{ totalUsers }} users
         </v-chip>
       </v-card-title>
 
@@ -469,17 +522,21 @@ onMounted(() => {
       </v-slide-y-transition>
 
       <!-- Table -->
-      <v-data-table
-        :key="users.length"
-        :headers="headers"
-        :items="filteredUsers"
-        :loading="loading"
-        :search="search"
+      <v-data-table-server
         v-model="selectedUsers"
+        v-model:page="page"
+        v-model:items-per-page="itemsPerPage"
+        v-model:sort-by="sortBy"
+        :headers="headers"
+        :items="users"
+        :items-length="totalUsers"
+        :items-per-page-options="ITEMS_PER_PAGE_OPTIONS"
+        :loading="loading"
         item-value="id"
         :show-select="isSuperAdmin"
         hover
         class="elevation-0 cursor-pointer-rows"
+        @update:options="onTableOptions"
         @click:row="(_event: any, { item }: any) => viewUser(item)"
       >
         <!-- Name with Avatar -->
@@ -607,7 +664,7 @@ onMounted(() => {
             <p class="text-body-2 text-grey">Users will appear here once added</p>
           </div>
         </template>
-      </v-data-table>
+      </v-data-table-server>
     </v-card>
 
     <!-- Delete Confirmation Dialog -->
