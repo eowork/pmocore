@@ -288,7 +288,6 @@ const statusOptions = [
 // Lookup data
 const fundingSources = ref<{ id: string; name: string; type?: string }[]>([])
 const contractors = ref<{ id: string; name: string }[]>([])
-const staffUsers = ref<{ id: string; first_name: string; last_name: string }[]>([])
 
 // MG: Relaxed project code validation — free-form per ECO directive.
 const rules = {
@@ -521,11 +520,6 @@ async function fetchData() {
         ]
     contractorPersonnelRows.value = pg.contractor || []
     othersPersonnelRows.value = pg.others || []
-
-    const usersRes = await api.get<{ id: string; first_name: string; last_name: string }[]>(
-      '/api/users/eligible-for-assignment'
-    )
-    staffUsers.value = Array.isArray(usersRes) ? usersRes : []
   } catch (err: unknown) {
     const apiError = err as { message?: string }
     toast.error(apiError.message || 'Failed to load project data')
