@@ -105,21 +105,15 @@ function actionLabel(key: string): string {
 }
 
 // ── Staff search (shared by both panels) ────────────────────────────────────
-const staffUsers = ref<{ id: string; first_name: string; last_name: string; email?: string; campus?: string }[]>([])
-const staffLoading = ref(false)
-
-async function loadStaff() {
-  if (staffLoading.value || staffUsers.value.length > 0) return
-  staffLoading.value = true
-  try {
-    const res = await api.get<{ id: string; first_name: string; last_name: string; email?: string; campus?: string }[]>(
-      '/api/users/eligible-for-assignment'
-    )
-    staffUsers.value = Array.isArray(res) ? res : []
-  } catch { /* silent */ } finally {
-    staffLoading.value = false
-  }
-}
+// Held ids cover both single-pick fields and the batch dialog's tick list: commitBatch looks
+// every ticked id up in staffUsers, so a narrower search must not drop one.
+const { staffUsers, staffLoading, loadStaff, onStaffSearch, onStaffFocus } = useStaffSearch({
+  heldIds: () => [
+    ...(addUserId.value ? [addUserId.value] : []),
+    ...(addExternalUserId.value ? [addExternalUserId.value] : []),
+    ...batchSelected.value,
+  ],
+})
 
 // ── Local draft ─────────────────────────────────────────────────────────────
 const draft = ref<DraftUser[]>([])
@@ -216,6 +210,9 @@ const batchSearch = ref('')
 // YA-F: batch mode determines category options and default permissions
 const batchMode = ref<'institutional' | 'external'>('institutional')
 
+// The same term is sent to the server (below) and applied here. The local pass is what keeps
+// the list responsive between the keystroke and the response, and it is also what hides users
+// who are already in the draft — a rule the endpoint knows nothing about.
 const filteredBatchStaff = computed(() =>
   staffUsers.value.filter(u =>
     !draft.value.some(d => d.id === u.id) &&
@@ -224,6 +221,12 @@ const filteredBatchStaff = computed(() =>
         .toLowerCase().includes(batchSearch.value.toLowerCase()))
   )
 )
+
+// Only while the dialog is open: closing it resets batchSearch, and that reset should not
+// fire a request.
+watch(batchSearch, (term) => {
+  if (batchDialog.value) onStaffSearch(term)
+})
 
 function toggleBatchSelect(id: string) {
   const idx = batchSelected.value.indexOf(id)
@@ -369,13 +372,15 @@ function accessLevelDisplayLabel(level: string): string {
                   :items="staffUsers"
                   :item-title="(u: any) => `${u.first_name} ${u.last_name}`"
                   item-value="id"
-                  label="Search user"
+                  label="Search name or email"
                   density="compact"
                   variant="outlined"
                   hide-details
                   clearable
                   :loading="staffLoading"
-                  @update:focused="(v: boolean) => v && loadStaff()"
+                  no-filter
+                  @update:focused="onStaffFocus"
+                  @update:search="onStaffSearch"
                 >
                   <template #item="{ item, props: iProps }">
                     <v-list-item v-bind="iProps">
@@ -517,13 +522,15 @@ function accessLevelDisplayLabel(level: string): string {
                   :items="staffUsers"
                   :item-title="(u: any) => `${u.first_name} ${u.last_name}`"
                   item-value="id"
-                  label="Search user"
+                  label="Search name or email"
                   density="compact"
                   variant="outlined"
                   hide-details
                   clearable
                   :loading="staffLoading"
-                  @update:focused="(v: boolean) => v && loadStaff()"
+                  no-filter
+                  @update:focused="onStaffFocus"
+                  @update:search="onStaffSearch"
                 >
                   <template #item="{ item, props: iProps }">
                     <v-list-item v-bind="iProps">
@@ -667,6 +674,7 @@ function accessLevelDisplayLabel(level: string): string {
           variant="outlined"
           hide-details
           prepend-inner-icon="mdi-magnify"
+          :loading="staffLoading"
           class="mb-3"
         />
         <v-row dense class="mb-3">
