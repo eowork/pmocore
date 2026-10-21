@@ -29,9 +29,6 @@ const toast = useToast()
 const loading = ref(false)
 // `submitting` is derived from the wizard machine below — see snapshot.matches('submitting').
 
-// Phase AO: Staff users for assignment dropdown
-const staffUsers = ref<{ id: string; first_name: string; last_name: string }[]>([])
-
 // MG (2026-05-21): Form state restructured to match BasicInfoFormState interface.
 // Status default updated to PROPOSAL (PLANNING removed in MF normalization).
 const form = ref({
@@ -714,19 +711,6 @@ function goBack() {
   router.push('/coi')
 }
 
-// Phase AV: Fetch eligible staff once on mount (global, no campus filter)
-async function fetchEligibleStaff() {
-  try {
-    const res = await api.get<{ id: string; first_name: string; last_name: string }[]>(
-      '/api/users/eligible-for-assignment'
-    )
-    staffUsers.value = Array.isArray(res) ? res : []
-  } catch (err) {
-    console.error('[COI Create] Failed to fetch eligible staff:', err)
-    staffUsers.value = []
-  }
-}
-
 // WWW-D: Autosave — localStorage draft + beforeunload warning
 const hasUnsavedChanges = ref(false)
 const draftRestoreSnackbar = ref(false)
@@ -782,7 +766,6 @@ function restoreDraft() {
 
 onMounted(() => {
   fetchLookups()
-  fetchEligibleStaff()
   window.addEventListener('beforeunload', handleBeforeUnload)
   // XXX-C: poll to refresh "X ago" label every 30s
   elapsedTick = setInterval(() => { if (lastSavedAt.value) lastSavedAt.value = lastSavedAt.value }, 30_000)

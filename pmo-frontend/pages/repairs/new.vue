@@ -10,9 +10,6 @@ const toast = useToast()
 const loading = ref(false)
 const submitting = ref(false)
 
-// Phase AO: Staff users for assignment dropdown
-const staffUsers = ref<{ id: string; first_name: string; last_name: string }[]>([])
-
 // Form data
 const form = ref({
   project_code: '',
@@ -32,6 +29,12 @@ const form = ref({
   assigned_technician: '',
   // Phase AW: Multi-select assignment
   assigned_user_ids: [] as string[],
+})
+
+// Phase AO: staff for the assignment dropdown. The search runs on the server; the ids already
+// picked are held so narrowing the list never blanks a chip.
+const { staffUsers, staffLoading, loadStaff, onStaffSearch, onStaffFocus } = useStaffSearch({
+  heldIds: () => form.value.assigned_user_ids,
 })
 
 // Dropdown options
@@ -123,22 +126,11 @@ function goBack() {
   router.push('/repairs')
 }
 
-// Phase AV: Fetch eligible staff once on mount (global, no campus filter)
-async function fetchEligibleStaff() {
-  try {
-    const res = await api.get<{ id: string; first_name: string; last_name: string }[]>(
-      '/api/users/eligible-for-assignment'
-    )
-    staffUsers.value = Array.isArray(res) ? res : []
-  } catch (err) {
-    console.error('[Repairs Create] Failed to fetch eligible staff:', err)
-    staffUsers.value = []
-  }
-}
-
 onMounted(() => {
   fetchLookups()
-  fetchEligibleStaff()
+  // Phase AV: an unfiltered first page (global, no campus filter) so the dropdown has
+  // something to show before anything is typed.
+  void loadStaff()
 })
 </script>
 
@@ -377,10 +369,14 @@ onMounted(() => {
                 chips
                 closable-chips
                 clearable
-                hint="Search and assign one or more staff members"
+                hint="Search by name or email and assign one or more staff members"
                 persistent-hint
                 variant="outlined"
                 density="comfortable"
+                :loading="staffLoading"
+                no-filter
+                @update:focused="onStaffFocus"
+                @update:search="onStaffSearch"
               />
             </v-card-text>
           </v-card>

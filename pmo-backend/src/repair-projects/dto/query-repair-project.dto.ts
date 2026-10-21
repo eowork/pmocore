@@ -1,6 +1,5 @@
 import { IsOptional, IsEnum, IsUUID, IsBoolean } from 'class-validator';
-import { Transform } from 'class-transformer';
-import { PaginationDto } from '../../common/dto';
+import { BooleanQuery, PaginationDto } from '../../common/dto';
 import { RepairStatus, UrgencyLevel, Campus } from '../../common/enums';
 
 export class QueryRepairProjectDto extends PaginationDto {
@@ -13,7 +12,7 @@ export class QueryRepairProjectDto extends PaginationDto {
   urgency?: UrgencyLevel;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  @BooleanQuery()
   @IsBoolean()
   is_emergency?: boolean;
 

@@ -44,6 +44,12 @@ const config: Options<PostgreSqlDriver> = {
     // A drop this tool infers is far more likely to be a gap in the mapping than a real
     // intention, so drops are written by hand, in their own migration, deliberately.
     safe: true,
+    // One transaction per migration instead of one around the whole queue. With the default
+    // (true), a single failing migration rolls back every migration that ran before it in the
+    // same boot, so nothing is ever recorded and the next boot repeats the identical failure —
+    // a database stuck 15 migrations behind with a container restarting forever. Per-migration
+    // commits stop the queue at the migration that actually failed and keep the work before it.
+    allOrNothing: false,
   },
   filters: {
     notDeleted: { cond: { deletedAt: null }, default: false },

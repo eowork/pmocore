@@ -261,8 +261,18 @@ const filteredRepairs = computed(() => {
 async function fetchRepairs() {
   loading.value = true
   try {
-    const response = await api.get<{ data: BackendRepairProject[] }>('/api/repair-projects')
-    repairs.value = adaptRepairProjects(response.data || [])
+    // Every page of the list, not just the first: the endpoint answers with 20 rows by
+    // default, and this page filters, sorts and paginates in the browser over whatever
+    // it is handed — so the rest of the table was unreachable.
+    const { rows, total, truncated } = await fetchAllPages<BackendRepairProject>((page, limit) =>
+      api.get<{ data: BackendRepairProject[]; meta?: { total: number; totalPages: number } }>(
+        `/api/repair-projects?page=${page}&limit=${limit}`,
+      ),
+    )
+    repairs.value = adaptRepairProjects(rows)
+    if (truncated) {
+      toast.warning(`Showing the first ${rows.length} of ${total} repairs. Narrow the filters to see the rest.`)
+    }
   } catch (err: unknown) {
     const error = err as { message?: string }
     toast.error(error.message || 'Failed to load repairs')

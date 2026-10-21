@@ -1,5 +1,6 @@
 import { IsOptional, IsString, IsBoolean, IsEnum } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { BooleanQuery } from '../../common/dto';
 import { SettingDataType } from '../../common/enums';
 
 export class QuerySettingDto {
@@ -24,7 +25,7 @@ export class QuerySettingDto {
   group?: string;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
+  @BooleanQuery()
   @IsBoolean()
   is_public?: boolean;
 

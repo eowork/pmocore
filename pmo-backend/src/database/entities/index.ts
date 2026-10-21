@@ -59,3 +59,4 @@ export { UprChallengesOpportunities } from './upr-challenges-opportunities.entit
 export { UprBestPractices } from './upr-best-practices.entity';
 export { UprInitiative } from './upr-initiatives.entity';
 export { UprAttachment } from './upr-attachment.entity';
+export { UprFutureGoal } from './upr-future-goal.entity';
