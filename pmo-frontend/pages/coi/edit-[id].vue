@@ -2008,6 +2008,7 @@ onBeforeUnmount(() => {
             :can-upload="canUploadDocuments"
             :can-delete="canDeleteResources"
             :can-edit-remarks="canEditCurrentProject"
+            :can-reclassify="canEditCurrentProject"
             :custom-key-sections="rawProject?.customKeySections ?? []"
             :custom-supporting-sections="rawProject?.customSupportingSections ?? []"
           />

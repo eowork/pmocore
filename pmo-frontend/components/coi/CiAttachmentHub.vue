@@ -70,6 +70,10 @@ interface Props {
   canUpload?: boolean
   canDelete?: boolean
   canEditRemarks?: boolean
+  // Whether a checklist submission may be dragged onto a different document type. Separate
+  // from canUpload: re-filing an existing submission is an edit of the project record, which
+  // is the permission the endpoint checks (canEdit), not permission to add new files.
+  canReclassify?: boolean
   modelValue?: StagedQueue
   customKeySections?: CustomKeySection[]
   customSupportingSections?: CustomKeySection[]
@@ -81,6 +85,7 @@ const props = withDefaults(defineProps<Props>(), {
   canUpload: false,
   canDelete: false,
   canEditRemarks: false,
+  canReclassify: false,
   modelValue: () => ({ docs: [], images: [], links: [] }),
   customKeySections: () => [],
   customSupportingSections: () => [],
@@ -805,6 +810,18 @@ const sections = computed(() => {
 // OOO-C: after a folder/document upload, refresh documents AND re-sync the
 // compliance checklist (backend auto-links checklist items on upload).
 const checklistRef = ref<{ refresh: () => void } | null>(null)
+
+/**
+ * A checklist submission was dragged onto a different document type.
+ *
+ * The move re-types the underlying files, and every repository card here partitions
+ * `documents` by type code — so without this refetch the file keeps appearing under the
+ * repository it was just moved out of. The checklist refreshes itself before emitting.
+ */
+async function onChecklistMoved() {
+  await fetchDocuments()
+}
+
 async function onFolderUploaded() {
   await fetchDocuments()
   checklistRef.value?.refresh()
@@ -1178,8 +1195,10 @@ defineExpose({ fetchDocuments, fetchGallery })
           :supporting-doc-count="[...sdOrdersCodes, ...sdReportsCodes, ...sdCertsCodes, ...ecoFormCodes].reduce((acc, c) => acc + allDocs.filter(d => d.documentType === c).length, 0)"
           :gallery-count="gallery.length"
           :misc-doc-count="otherDocs.length"
+          :can-move="canReclassify && hasProject"
           @remarks-update="handleRemarksUpdate"
           @navigate="onChecklistNavigate"
+          @moved="onChecklistMoved"
         />
       </v-window-item>
 
