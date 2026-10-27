@@ -41,7 +41,7 @@ const isTabVisible = computed(() => {
 })
 
 // SC-B: redirect activeTab when it becomes hidden after permissions load
-const DETAIL_TAB_ORDER = ['overview', 'progress', 'analytics', 'documents', 'team', 'others', 'audit'] as const
+const DETAIL_TAB_ORDER = ['overview', 'progress', 'analytics', 'documents', 'checklist', 'team', 'others', 'audit'] as const
 
 watch(
   () => DETAIL_TAB_ORDER.filter(t => isTabVisible.value(t)),
@@ -107,6 +107,9 @@ async function fetchProject() {
     console.log('[COI Detail] Fetching project:', projectId)
     const response = await api.get<BackendProjectDetail>(`/api/construction-projects/${projectId}`)
     project.value = adaptProjectDetail(response)
+    // Per-group checklist remarks are not part of UIProjectDetail, so they are read off the
+    // raw payload rather than costing the Checklist tab a second request for the same project.
+    checklistGroupRemarks.value = normalizeChecklistRemarks((response as any)?.documentChecklistRemarks)
   } catch (err: unknown) {
     const apiError = err as { message?: string }
     toast.error(apiError.message || 'Failed to load project details')
@@ -498,6 +501,95 @@ const keyDocuments = computed(() =>
   documentFiles.value.filter(d => (KEY_DOC_TYPECODES as readonly string[]).includes(d.documentType || ''))
 )
 
+// ── Compliance Checklist tab ────────────────────────────────────────────────
+// The checklist used to be the sixth section inside CiAttachmentHub. It is its own tab here,
+// so this page now supplies what the hub used to: the documents behind it, the cross-section
+// counters, the per-group remarks, and the bridge back to the Attachments tab.
+
+const SUPPORTING_GROUP_CODES = ['SD_ORDERS', 'SD_REPORTS', 'SD_CERTS', 'ECO_FORMS']
+
+const supportingTypeCodes = computed(() =>
+  docTypes.value.filter(t => SUPPORTING_GROUP_CODES.includes(t.groupCode)).map(t => t.typeCode),
+)
+const cpesTypeCodes = computed(() =>
+  docTypes.value.filter(t => t.groupCode === 'CPES_DOCS').map(t => t.typeCode),
+)
+
+/** Every type code a repository card in the Attachments tab claims. The rest is Miscellaneous. */
+const managedTypeCodes = computed(() => new Set<string>([
+  ...(KEY_DOC_TYPECODES as readonly string[]),
+  ...supportingTypeCodes.value,
+  ...cpesTypeCodes.value,
+  ...(project.value?.customKeySections ?? []).map(s => s.typeCode),
+  ...(project.value?.customSupportingSections ?? []).map(s => s.typeCode),
+]))
+
+/** Mirrors CiAttachmentHub's isLink: a link is filed as a document but holds no bytes. */
+function isLinkDoc(doc: DocumentItem): boolean {
+  return isExternalLinkDoc(doc) || doc.documentType === 'link'
+}
+
+const checklistKeyDocCount = computed(() =>
+  documents.value.filter(d => (KEY_DOC_TYPECODES as readonly string[]).includes(d.documentType || '')).length,
+)
+const checklistSupportingDocCount = computed(() =>
+  documents.value.filter(d => supportingTypeCodes.value.includes(d.documentType || '')).length,
+)
+const checklistMiscDocCount = computed(() =>
+  documents.value.filter(d => !managedTypeCodes.value.has(d.documentType || '') && !isLinkDoc(d)).length,
+)
+
+interface ChecklistRemarkEntry {
+  text: string
+  author?: string | null
+  timestamp: string
+}
+
+const checklistGroupRemarks = ref<Record<string, ChecklistRemarkEntry[]>>({})
+
+function normalizeChecklistRemarks(raw: unknown): Record<string, ChecklistRemarkEntry[]> {
+  const source = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {}
+  const normalized: Record<string, ChecklistRemarkEntry[]> = {}
+  Object.entries(source).forEach(([groupCode, value]) => {
+    if (Array.isArray(value)) {
+      normalized[groupCode] = value
+        .map((entry: any) => ({
+          text: String(entry?.text ?? '').trim(),
+          author: entry?.author ? String(entry.author) : null,
+          timestamp: String(entry?.timestamp ?? ''),
+        }))
+        .filter((entry) => entry.text.length > 0)
+    } else if (typeof value === 'string' && value.trim()) {
+      normalized[groupCode] = [{ text: value.trim(), author: null, timestamp: '' }]
+    }
+  })
+  return normalized
+}
+
+// The hub owns the Attachments tab, so a checklist row pointing at a repository has to reach
+// it from here. The request carries a seq because the same target twice in a row must still
+// re-trigger the hub's watcher, and it survives the hub not being mounted yet: switching tabs
+// is what mounts it, and the watcher is immediate.
+const attachmentHubRef = ref<InstanceType<typeof CiAttachmentHub> | null>(null)
+const attachmentNavRequest = ref<{ groupCode?: string; typeCode?: string; seq: number } | null>(null)
+let attachmentNavSeq = 0
+
+function onChecklistNavigate(payload: { groupCode?: string; typeCode?: string }) {
+  attachmentNavRequest.value = { ...payload, seq: ++attachmentNavSeq }
+  if (isTabVisible.value('documents')) activeTab.value = 'documents'
+}
+
+/**
+ * A checklist submission was dragged onto a different document type.
+ *
+ * The move re-types the underlying files, so this page's own document list and the hub's copy
+ * are both stale. The hub refetches on mount, hence the optional call.
+ */
+async function onChecklistMoved() {
+  await fetchDocuments()
+  await attachmentHubRef.value?.fetchDocuments()
+}
+
 // JW-B: Render facilities (newline-separated text) as bullet list per client prototype contract
 const facilitiesList = computed(() => {
   const raw = project.value?.facilities
@@ -845,6 +937,9 @@ async function uploadTemplate(docType: DocTypeRow, file: File) {
 
 watch(activeTab, (tab) => {
   if (tab === 'others' && isAdmin.value) fetchDocTypes()
+  // The checklist's cross-section counters partition documents by type code, so they stay at
+  // zero until the taxonomy is in hand.
+  if (tab === 'checklist') fetchDocTypes()
 })
 
 // ACE-R15 Tier 3: Simple onMounted (no watchEffect complexity)
@@ -1043,6 +1138,10 @@ onMounted(() => {
         </v-tab>
         <v-tab v-if="isTabVisible('documents')" value="documents">
           <v-icon start icon="mdi-paperclip" />Attachments
+        </v-tab>
+        <!-- Compliance Checklist — promoted out of CiAttachmentHub into its own tab -->
+        <v-tab v-if="isTabVisible('checklist')" value="checklist">
+          <v-icon start icon="mdi-clipboard-check-outline" />Compliance Checklist
         </v-tab>
         <v-tab v-if="isTabVisible('team')" value="team">
           <v-icon start icon="mdi-account-group" />Team
@@ -2358,14 +2457,35 @@ onMounted(() => {
         <v-window-item value="documents">
           <!-- ZZ-B: Attachment tab fully delegated to CiAttachmentHub (view mode) -->
           <CiAttachmentHub
+            ref="attachmentHubRef"
             :project-id="projectId"
             mode="view"
             :can-upload="false"
             :can-delete="false"
             :can-edit-remarks="false"
             :can-reclassify="canEditCurrentProject"
+            :show-checklist="false"
+            :nav-request="attachmentNavRequest"
             :custom-key-sections="project?.customKeySections ?? []"
             :custom-supporting-sections="project?.customSupportingSections ?? []"
+          />
+        </v-window-item>
+
+        <!-- ============= COMPLIANCE CHECKLIST TAB ============= -->
+        <v-window-item value="checklist">
+          <CiDocumentChecklist
+            :project-id="projectId"
+            :can-edit="false"
+            :documents="documents"
+            :group-remarks="checklistGroupRemarks"
+            :can-edit-remarks="false"
+            :can-move="canEditCurrentProject"
+            :key-doc-count="checklistKeyDocCount"
+            :supporting-doc-count="checklistSupportingDocCount"
+            :gallery-count="gallery.length"
+            :misc-doc-count="checklistMiscDocCount"
+            @navigate="onChecklistNavigate"
+            @moved="onChecklistMoved"
           />
         </v-window-item>
 
