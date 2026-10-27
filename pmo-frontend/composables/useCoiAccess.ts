@@ -23,6 +23,7 @@ const TAB_MIN_LEVEL: Record<string, number> = {
   overview: 0,    // Project Profile / Strategic Alignment / Financial Summary / Gallery / General Info
   progress: 1,    // Progress & Milestones — Contributor+
   documents: 1,   // Attachments — Contributor+
+  checklist: 1,   // Compliance Checklist — Contributor+ (same gate as Attachments)
   team: 1,        // Team — Contributor+
   others: 2,      // Others — Approver+
   analytics: 2,   // Analytics — Approver+
@@ -32,6 +33,9 @@ const TAB_PERMKEY: Record<string, string> = {
   overview: 'tabProjectProfile',
   progress: 'tabProgressReport',
   documents: 'tabAttachments',
+  // The checklist reads the same attachment record, so it rides the attachments grant
+  // rather than introducing a permission nobody has been assigned yet.
+  checklist: 'tabAttachments',
   team: 'tabPersonnel',
   others: 'tabOthers',
 }
