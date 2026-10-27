@@ -78,10 +78,6 @@ interface Props {
   // page turns it off because it promotes the checklist to a tab of its own; the edit and
   // staging pages keep it here.
   showChecklist?: boolean
-  // A navigation request raised outside this hub — the checklist, when it lives on the page
-  // instead of in here, asks the hub to open the section (and repository) a row points at.
-  // Carries a seq so the same target twice in a row still re-triggers.
-  navRequest?: { groupCode?: string; typeCode?: string; seq: number } | null
   modelValue?: StagedQueue
   customKeySections?: CustomKeySection[]
   customSupportingSections?: CustomKeySection[]
@@ -95,7 +91,6 @@ const props = withDefaults(defineProps<Props>(), {
   canEditRemarks: false,
   canReclassify: false,
   showChecklist: true,
-  navRequest: null,
   modelValue: () => ({ docs: [], images: [], links: [] }),
   customKeySections: () => [],
   customSupportingSections: () => [],
@@ -840,9 +835,7 @@ async function onFolderUploaded() {
 function onFolderDeleted() { fetchDocuments() }
 
 onMounted(() => {
-  // An immediate navRequest watcher runs during setup, so a pending request has already
-  // chosen the section by now; only an untouched hub falls back to its default.
-  if (!activeSection.value) activeSection.value = showsChecklist.value ? 'checklist' : 'key'
+  activeSection.value = showsChecklist.value ? 'checklist' : 'key'
   fetchDocTypes()
   if (hasProject.value) {
     fetchDocuments()
@@ -851,18 +844,6 @@ onMounted(() => {
     if (showsChecklist.value) fetchChecklistRemarks()
   }
 })
-
-// A navigate request from a checklist rendered outside this hub. immediate so a request
-// raised before the hub mounted (the page switches tabs, which is what mounts it) is still
-// honoured on mount.
-watch(
-  () => props.navRequest,
-  (req) => {
-    if (!req) return
-    onChecklistNavigate({ groupCode: req.groupCode, typeCode: req.typeCode })
-  },
-  { immediate: true },
-)
 
 defineExpose({ fetchDocuments, fetchGallery })
 </script>
