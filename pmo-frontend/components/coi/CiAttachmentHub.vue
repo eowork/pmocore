@@ -74,6 +74,14 @@ interface Props {
   // from canUpload: re-filing an existing submission is an edit of the project record, which
   // is the permission the endpoint checks (canEdit), not permission to add new files.
   canReclassify?: boolean
+  // Whether the Compliance Checklist is rendered as one of this hub's sections. The detail
+  // page turns it off because it promotes the checklist to a tab of its own; the edit and
+  // staging pages keep it here.
+  showChecklist?: boolean
+  // A navigation request raised outside this hub — the checklist, when it lives on the page
+  // instead of in here, asks the hub to open the section (and repository) a row points at.
+  // Carries a seq so the same target twice in a row still re-triggers.
+  navRequest?: { groupCode?: string; typeCode?: string; seq: number } | null
   modelValue?: StagedQueue
   customKeySections?: CustomKeySection[]
   customSupportingSections?: CustomKeySection[]
@@ -86,6 +94,8 @@ const props = withDefaults(defineProps<Props>(), {
   canDelete: false,
   canEditRemarks: false,
   canReclassify: false,
+  showChecklist: true,
+  navRequest: null,
   modelValue: () => ({ docs: [], images: [], links: [] }),
   customKeySections: () => [],
   customSupportingSections: () => [],
@@ -100,6 +110,7 @@ const { public: { apiBase } } = useRuntimeConfig()
 
 const isStaging = computed(() => props.mode === 'staging')
 const hasProject = computed(() => !!props.projectId && !isStaging.value)
+const showsChecklist = computed(() => hasProject.value && props.showChecklist)
 
 // ── State ───────────────────────────────────────────────────
 const documents = ref<HubDoc[]>([])
@@ -790,7 +801,7 @@ function onRepoLink(payload: { url: string; title: string; description: string }
 
 const sections = computed(() => {
   const base: { value: string; label: string; icon: string }[] = []
-  if (hasProject.value) base.push({ value: 'checklist', label: 'Compliance Checklist', icon: 'mdi-clipboard-check-outline' })
+  if (showsChecklist.value) base.push({ value: 'checklist', label: 'Compliance Checklist', icon: 'mdi-clipboard-check-outline' })
   base.push(
     { value: 'key',        label: 'Key Documents',       icon: 'mdi-file-star-outline' },
     { value: 'gallery',    label: 'Gallery',              icon: 'mdi-image-multiple' },
@@ -829,14 +840,29 @@ async function onFolderUploaded() {
 function onFolderDeleted() { fetchDocuments() }
 
 onMounted(() => {
-  activeSection.value = hasProject.value ? 'checklist' : 'key'
+  // An immediate navRequest watcher runs during setup, so a pending request has already
+  // chosen the section by now; only an untouched hub falls back to its default.
+  if (!activeSection.value) activeSection.value = showsChecklist.value ? 'checklist' : 'key'
   fetchDocTypes()
   if (hasProject.value) {
     fetchDocuments()
     fetchGallery()
-    fetchChecklistRemarks()
+    // Remarks belong to the checklist; whoever renders it fetches them.
+    if (showsChecklist.value) fetchChecklistRemarks()
   }
 })
+
+// A navigate request from a checklist rendered outside this hub. immediate so a request
+// raised before the hub mounted (the page switches tabs, which is what mounts it) is still
+// honoured on mount.
+watch(
+  () => props.navRequest,
+  (req) => {
+    if (!req) return
+    onChecklistNavigate({ groupCode: req.groupCode, typeCode: req.typeCode })
+  },
+  { immediate: true },
+)
 
 defineExpose({ fetchDocuments, fetchGallery })
 </script>
@@ -1183,7 +1209,7 @@ defineExpose({ fetchDocuments, fetchGallery })
       <!-- ZZZ-B: eager ensures CiDocumentChecklist is always mounted when hasProject,
            so checklistRef.value is never null and .refresh() fires correctly after
            uploads regardless of whether the user has visited this tab. -->
-      <v-window-item v-if="hasProject" value="checklist" eager>
+      <v-window-item v-if="showsChecklist" value="checklist" eager>
         <CiDocumentChecklist
           ref="checklistRef"
           :project-id="projectId"
