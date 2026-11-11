@@ -20,3 +20,4 @@ export * from './batch-create-milestone.dto';
 export * from './batch-create-timeline-entry.dto';
 export * from './create-document-folder.dto';
 export * from './update-document-folder.dto';
+export * from './change-checklist-document-type.dto';

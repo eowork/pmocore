@@ -5,7 +5,6 @@ import { formatDate } from '~/utils/userFormat'
 import { KEY_DOC_TYPECODES } from '~/utils/coiFormState'
 import { labelForSdg, labelForRdp, labelForSea, labelForLikha, labelForRdp2017, labelForPointAgenda10, labelForPrimaryFundingSource } from '~/utils/coiHierarchies'
 import { useCoiProgressReports, type ProgressReport } from '~/composables/useCoiProgressReports'
-import CiDocumentChecklist from '~/components/coi/CiDocumentChecklist.vue'
 import CiPersonnelAccessCard from '~/components/coi/CiPersonnelAccessCard.vue'
 import CiAuditLogPanel from '~/components/coi/CiAuditLogPanel.vue'
 import CiAttachmentHub from '~/components/coi/CiAttachmentHub.vue'
@@ -764,18 +763,6 @@ function previewNext() {
   openPreview((profilePreviewIndex.value + 1) % carouselImages.value.length)
 }
 
-// KV-D3: persist group remarks via PATCH /api/construction-projects/:id/document-remarks
-async function handleRemarksUpdate(groupCode: string, remarks: string) {
-  try {
-    await api.patch(`/api/construction-projects/${projectId}/document-remarks`, { groupCode, remarks })
-    if (project.value) {
-      project.value.documentChecklistRemarks = { ...project.value.documentChecklistRemarks, [groupCode]: remarks }
-    }
-  } catch (err) {
-    console.error('[COI Detail] Failed to save remarks:', err)
-  }
-}
-
 // ZV: Admin document type template management
 interface DocTypeRow {
   id: string
@@ -974,24 +961,24 @@ onMounted(() => {
               <div class="text-caption text-grey-darken-1 font-weight-medium text-uppercase">Physical Progress</div>
               <div class="d-flex align-center ga-2 mt-1">
                 <v-progress-linear :model-value="progressSummary.physical" height="8" rounded color="info" bg-color="grey-lighten-3" style="max-width: 120px" />
-                <span class="text-body-2 font-weight-medium">{{ progressSummary.physical?.toFixed(1) ?? 'â€”' }}%</span>
+                <span class="text-body-2 font-weight-medium">{{ progressSummary.physical?.toFixed(1) ?? '--' }}%</span>
               </div>
             </v-col>
             <v-col cols="12" sm="6" md="4">
               <div class="text-caption text-grey-darken-1 font-weight-medium text-uppercase">Financial Utilization</div>
               <div class="d-flex align-center ga-2 mt-1">
                 <v-progress-linear :model-value="progressSummary.financial" height="8" rounded color="success" bg-color="grey-lighten-3" style="max-width: 120px" />
-                <span class="text-body-2 font-weight-medium">{{ progressSummary.financial?.toFixed(1) ?? 'â€”' }}%</span>
+                <span class="text-body-2 font-weight-medium">{{ progressSummary.financial?.toFixed(1) ?? '—' }}%</span>
               </div>
             </v-col>
             <v-col cols="12" sm="6" md="4">
               <div class="text-caption text-grey-darken-1 font-weight-medium text-uppercase">Target Completion</div>
-              <div class="text-body-2">{{ formatDate(project.targetCompletionDate) || 'â€”' }}</div>
+              <div class="text-body-2">{{ formatDate(project.targetCompletionDate) || '—' }}</div>
             </v-col>
             <v-col cols="12" sm="6" md="4">
               <div class="text-caption text-grey-darken-1 font-weight-medium text-uppercase">Days Remaining</div>
               <div class="text-body-2" :class="progressSummary.daysRemaining != null && progressSummary.daysRemaining < 0 ? 'text-error font-weight-bold' : ''">
-                {{ progressSummary.daysRemaining != null ? `${progressSummary.daysRemaining} days` : 'â€”' }}
+                {{ progressSummary.daysRemaining != null ? `${progressSummary.daysRemaining} days` : '—' }}
               </div>
             </v-col>
           </v-row>
@@ -2363,6 +2350,8 @@ onMounted(() => {
             :can-upload="false"
             :can-delete="false"
             :can-edit-remarks="false"
+            :can-reclassify="canEditCurrentProject"
+            :show-checklist="false"
             :custom-key-sections="project?.customKeySections ?? []"
             :custom-supporting-sections="project?.customSupportingSections ?? []"
           />

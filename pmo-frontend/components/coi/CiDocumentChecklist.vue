@@ -18,6 +18,9 @@ interface Props {
   documents?: DocumentItem[]
   groupRemarks?: Record<string, GroupRemarkEntry[]>
   canEditRemarks?: boolean
+  // Whether a submission may be dragged onto a different document type. Backed by the
+  // canEdit project permission the endpoint itself enforces.
+  canMove?: boolean
   // WWW-G: cross-section summary counters from CiAttachmentHub
   keyDocCount?: number
   supportingDocCount?: number
@@ -29,6 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   documents: () => [],
   groupRemarks: () => ({}),
   canEditRemarks: false,
+  canMove: false,
   keyDocCount: 0,
   supportingDocCount: 0,
   galleryCount: 0,
@@ -38,6 +42,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   remarksUpdate: [groupCode: string, remarks: GroupRemarkEntry[]]
   navigate: [payload: { groupCode?: string; typeCode?: string }]
+  moved: [payload: { fromItemId: string; toItemId: string }]
 }>()
 
 const api = useApi()
@@ -201,6 +206,112 @@ function statusLabel(s: string): string {
 function linkedDoc(item: ChecklistItem): DocumentItem | null {
   if (!item.linkedDocumentId || !props.documents.length) return null
   return props.documents.find(d => d.id === item.linkedDocumentId) ?? null
+}
+
+// ── Re-filing a submission by dragging one row onto another ─────────────────
+// Every checklist row *is* a document type, so dropping a row that holds a submission onto an
+// empty row is the whole gesture: the file, its version history and its submitted-on stamp
+// move to the type that received the drop. The rules below mirror what the endpoint enforces,
+// so an invalid drop is refused by the cursor rather than by a 409 after the fact.
+const draggingItemId = ref<string | null>(null)
+const dragOverItemId = ref<string | null>(null)
+const movingItemId = ref<string | null>(null)
+
+/** Whether a row carries anything a move would take with it. */
+function hasSubmission(item: ChecklistItem): boolean {
+  return (
+    !!item.linkedDocumentId ||
+    (item.currentVersion ?? 0) > 0 ||
+    item.submissionStatus !== 'NOT_SUBMITTED'
+  )
+}
+
+const draggingItem = computed(
+  () => items.value.find(i => i.id === draggingItemId.value) ?? null,
+)
+
+function canDragItem(item: ChecklistItem): boolean {
+  return props.canMove && !movingItemId.value && hasSubmission(item)
+}
+
+function canDrop(source: ChecklistItem | null, target: ChecklistItem): boolean {
+  return (
+    !!source &&
+    props.canMove &&
+    source.id !== target.id &&
+    hasSubmission(source) &&
+    !hasSubmission(target)
+  )
+}
+
+const isDropTarget = (item: ChecklistItem) => canDrop(draggingItem.value, item)
+
+function onDragStart(item: ChecklistItem, event: DragEvent) {
+  if (!canDragItem(item)) {
+    event.preventDefault()
+    return
+  }
+  draggingItemId.value = item.id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    // Firefox starts no drag at all unless the transfer carries some data.
+    event.dataTransfer.setData('text/plain', item.id)
+  }
+}
+
+function onDragEnd() {
+  draggingItemId.value = null
+  dragOverItemId.value = null
+}
+
+function onDragOver(item: ChecklistItem, event: DragEvent) {
+  if (!isDropTarget(item)) {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    return
+  }
+  // A dragover that does not preventDefault means "not a drop zone", and the drop never fires.
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dragOverItemId.value = item.id
+}
+
+function onDragLeave(item: ChecklistItem, event: DragEvent) {
+  // dragleave also fires when the pointer crosses into a child element, so the highlight is
+  // cleared only once the pointer has actually left the row.
+  const next = event.relatedTarget as Node | null
+  if (next && (event.currentTarget as HTMLElement).contains(next)) return
+  if (dragOverItemId.value === item.id) dragOverItemId.value = null
+}
+
+function onDrop(target: ChecklistItem, event: DragEvent) {
+  event.preventDefault()
+  const source = draggingItem.value
+  draggingItemId.value = null
+  dragOverItemId.value = null
+  if (!canDrop(source, target)) return
+  void moveSubmission(source as ChecklistItem, target)
+}
+
+async function moveSubmission(source: ChecklistItem, target: ChecklistItem) {
+  movingItemId.value = source.id
+  try {
+    await api.patch(
+      `/api/construction-projects/${props.projectId}/document-checklist/${source.id}/change-document-type`,
+      { documentTypeId: target.documentTypeId },
+    )
+    const label = target.documentType?.typeLabel ?? 'the selected requirement'
+    toast.success(`Moved to ${label}. It is marked Submitted and needs reviewing again.`)
+    // Both rows changed, so the whole checklist is refetched rather than patched in place.
+    await fetchChecklist()
+    // The files were re-typed too: the repositories upstream are now showing them in the
+    // wrong card until the parent reloads its documents.
+    emit('moved', { fromItemId: source.id, toItemId: target.id })
+  } catch (err: unknown) {
+    // 409 (target occupied) and 422 (nothing to move) already read as sentences.
+    toast.error((err as { message?: string })?.message || 'Could not move the submission')
+  } finally {
+    movingItemId.value = null
+  }
 }
 
 // KV-C: group items with per-group metadata
@@ -448,8 +559,22 @@ defineExpose({ refresh: fetchChecklist })
       <div class="mt-2">No checklist initialized yet.</div>
     </div>
 
-    <!-- BBB-D: Collapsible accordion — header shows group progress, items expand on click -->
-    <v-expansion-panels v-else variant="accordion" multiple class="mb-4">
+    <template v-else>
+      <v-alert
+        v-if="canMove"
+        type="info"
+        variant="tonal"
+        density="compact"
+        class="mb-3"
+        icon="mdi-drag-variant"
+      >
+        Filed something under the wrong requirement? Drag its row onto an empty one to move the
+        file and its history there. Only requirements with no submission of their own can
+        receive a drop, and a moved submission goes back to Submitted for review.
+      </v-alert>
+
+      <!-- BBB-D: Collapsible accordion — header shows group progress, items expand on click -->
+      <v-expansion-panels variant="accordion" multiple class="mb-4">
       <v-expansion-panel v-for="g in groupedItems" :key="g.groupCode">
         <v-expansion-panel-title>
           <div class="d-flex align-center ga-2 w-100">
@@ -476,9 +601,42 @@ defineExpose({ refresh: fetchChecklist })
         <v-expansion-panel-text>
             <!-- MMM-D: compact grid rows (type code | label | status | date | kebab) -->
             <div class="pa-0">
-              <div v-for="item in g.items" :key="item.id" class="border-b">
+              <div
+                v-for="item in g.items"
+                :key="item.id"
+                class="border-b checklist-row"
+                :class="{
+                  'checklist-row--draggable': canDragItem(item),
+                  'checklist-row--dragging': draggingItemId === item.id,
+                  'checklist-row--target': isDropTarget(item),
+                  'checklist-row--over': dragOverItemId === item.id,
+                }"
+                :draggable="canDragItem(item)"
+                @dragstart="onDragStart(item, $event)"
+                @dragend="onDragEnd"
+                @dragover="onDragOver(item, $event)"
+                @dragleave="onDragLeave(item, $event)"
+                @drop="onDrop(item, $event)"
+              >
                 <!-- Main row -->
                 <div class="d-flex align-center ga-2 py-2 px-1">
+                  <!-- Col 0: drag affordance. Only rows holding a submission can be moved,
+                       and the spinner marks the one currently being re-filed. -->
+                  <div v-if="canMove" style="min-width: 20px" class="flex-shrink-0 text-center">
+                    <v-progress-circular
+                      v-if="movingItemId === item.id"
+                      indeterminate
+                      size="16"
+                      width="2"
+                      color="primary"
+                    />
+                    <v-icon
+                      v-else-if="canDragItem(item)"
+                      icon="mdi-drag-vertical"
+                      size="small"
+                      color="grey"
+                    />
+                  </div>
                   <!-- Col 1: required badge + type code -->
                   <div style="min-width: 92px; max-width: 92px">
                     <v-chip size="x-small" :color="item.documentType?.isRequired ? 'error' : 'grey'" variant="tonal">
@@ -664,7 +822,8 @@ defineExpose({ refresh: fetchChecklist })
             </div>
         </v-expansion-panel-text>
       </v-expansion-panel>
-    </v-expansion-panels>
+      </v-expansion-panels>
+    </template>
 
     <!-- ZU-4: Submission history drawer -->
     <v-navigation-drawer
@@ -824,3 +983,30 @@ defineExpose({ refresh: fetchChecklist })
     </v-dialog>
   </div>
 </template>
+
+<style scoped>
+.checklist-row {
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+/* grab, not pointer: the row is picked up, not clicked through. */
+.checklist-row--draggable {
+  cursor: grab;
+}
+
+.checklist-row--dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+/* Every row that could receive the current drag is tinted, so the legal targets are visible
+   the moment the drag starts rather than one hover at a time. */
+.checklist-row--target {
+  background-color: rgba(var(--v-theme-primary), 0.04);
+}
+
+.checklist-row--over {
+  background-color: rgba(var(--v-theme-primary), 0.12);
+  box-shadow: inset 0 0 0 2px rgb(var(--v-theme-primary));
+}
+</style>

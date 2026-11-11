@@ -23,7 +23,10 @@ import {
   RolesGuard,
 } from '../../auth';
 import { DocumentChecklistService } from '../service/document-checklist.service';
-import { UpdateDocumentChecklistDto } from '../dto';
+import {
+  ChangeChecklistDocumentTypeDto,
+  UpdateDocumentChecklistDto,
+} from '../dto';
 import { JwtPayload } from '../../common/interfaces';
 
 @ApiTags('Construction Projects Document Checklist')
@@ -62,6 +65,20 @@ export class DocumentChecklistController {
       user.sub,
       user,
     );
+  }
+
+  @Patch(':id/document-checklist/:itemId/change-document-type')
+  @Roles('Admin', 'Staff')
+  @ApiOperation({
+    summary: 'Change document type for a checklist item (Admin/Staff)',
+  })
+  changeChecklistDocumentType(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: ChangeChecklistDocumentTypeDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.changeChecklistDocumentType(id, itemId, dto, user);
   }
 
   @Patch(':id/document-remarks')
