@@ -19,14 +19,17 @@ export class DocumentTypeService {
   ) {}
 
   /**
-   * KB-E: Returns admin-managed reference list of all CPES document types.
+   * KB-E: Returns admin-managed reference list of CPES document types.
    * Used by frontend to render checklist categories and admin extension UI.
+   *
+   * @param search   Matched against group label, type code or type label (case-insensitive).
+   * @param isActive True (the default) returns active types only; false returns all types.
    */
-  async findDocumentTypes(): Promise<ConstructionDocumentType[]> {
-    return await this.docTypeRepo.find(
-      { isActive: true },
-      { orderBy: { groupCode: QueryOrder.ASC, sortOrder: QueryOrder.ASC } },
-    );
+  async findDocumentTypes(
+    search?: string,
+    isActive = true,
+  ): Promise<ConstructionDocumentType[]> {
+    return await this.docTypeRepo.findAllDocumentType(search, isActive);
   }
 
   /**
@@ -82,7 +85,7 @@ export class DocumentTypeService {
       },
     );
     return docTypes.map((t) => ({
-      typeCode: t.typeLabel,
+      typeCode: t.typeCode,
       templateUrl: t.templateUrl ?? null,
     }));
   }

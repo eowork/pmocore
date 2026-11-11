@@ -1,92 +1,38 @@
 /**
- * ZY-1: useAttachmentFilter — shared multi-dimensional filter for the COI
- * attachment hub. Narrows documents and gallery rows across all hub sections
- * simultaneously. AND-evaluates every active dimension.
+ * ZY-1: useAttachmentFilter — file search inside one repository (CiRepositoryModal).
+ *
+ * Finding WHICH repository to open is useDocumentTypeSearch's job (the hub's search box,
+ * matching document types). Once a repository is open, this narrows its uploaded files by
+ * file name, description, and document type label/code.
  */
 
 export interface FilterableDoc {
   fileName?: string
   description?: string
   documentType?: string
-  mimeType?: string
-  createdAt?: string
-  lifecycleStatus?: string
-}
-
-export interface FilterableGallery {
-  caption?: string
-  category?: string
-  imageTakenDate?: string
-  createdAt?: string
 }
 
 export function useAttachmentFilter() {
-  const searchText = ref('')
-  const filterType = ref<string | null>(null)
-  const filterSection = ref<string | null>(null)
-  const filterDateFrom = ref<string>('')
-  const filterDateTo = ref<string>('')
-  const filterStatus = ref<string | null>(null)
+  // v-text-field's clear button writes null, not ''.
+  const searchText = ref<string | null>('')
 
-  function textMatches(...fields: (string | undefined)[]): boolean {
-    if (!searchText.value) return true
-    const q = searchText.value.toLowerCase()
-    return fields.some((f) => (f ?? '').toLowerCase().includes(q))
+  const query = computed(() => (searchText.value ?? '').trim().toLowerCase())
+  const isActive = computed(() => query.value.length > 0)
+
+  /**
+   * @param typeLabel Human-readable label of the document's type. Users search by what the
+   *   UI shows ("Feasibility Study"), not by the stored code, which for custom sections is
+   *   an opaque `CKS_<uuid>`.
+   */
+  function matchesDoc(doc: FilterableDoc, typeLabel?: string): boolean {
+    if (!query.value) return true
+    return [doc.fileName, doc.description, typeLabel, doc.documentType]
+      .some((f) => (f ?? '').toLowerCase().includes(query.value))
   }
-
-  function dateInRange(iso?: string): boolean {
-    if (!filterDateFrom.value && !filterDateTo.value) return true
-    if (!iso) return false
-    const d = iso.slice(0, 10)
-    if (filterDateFrom.value && d < filterDateFrom.value) return false
-    if (filterDateTo.value && d > filterDateTo.value) return false
-    return true
-  }
-
-  function matchesDoc(doc: FilterableDoc): boolean {
-    if (!textMatches(doc.fileName, doc.description, doc.documentType)) return false
-    if (filterType.value && doc.documentType !== filterType.value) return false
-    if (filterStatus.value && doc.lifecycleStatus !== filterStatus.value) return false
-    if (!dateInRange(doc.createdAt)) return false
-    return true
-  }
-
-  function matchesGallery(img: FilterableGallery): boolean {
-    if (!textMatches(img.caption, img.category)) return false
-    if (!dateInRange(img.imageTakenDate ?? img.createdAt)) return false
-    return true
-  }
-
-  const activeCount = computed(() => {
-    let n = 0
-    if (searchText.value) n++
-    if (filterType.value) n++
-    if (filterSection.value) n++
-    if (filterDateFrom.value) n++
-    if (filterDateTo.value) n++
-    if (filterStatus.value) n++
-    return n
-  })
 
   function reset() {
     searchText.value = ''
-    filterType.value = null
-    filterSection.value = null
-    filterDateFrom.value = ''
-    filterDateTo.value = ''
-    filterStatus.value = null
   }
 
-  return {
-    searchText,
-    filterType,
-    filterSection,
-    filterDateFrom,
-    filterDateTo,
-    filterStatus,
-    matchesDoc,
-    matchesGallery,
-    activeCount,
-    reset,
-  }
+  return { searchText, query, isActive, matchesDoc, reset }
 }
