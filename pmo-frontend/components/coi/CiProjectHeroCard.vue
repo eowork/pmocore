@@ -4,11 +4,20 @@
  * Two-column hero (image + key facts) plus 4-card KPI strip and progress bars.
  */
 import type { UIProjectDetail } from '~/utils/adapters'
+import { labelForPrimaryFundingSource } from '~/utils/coiHierarchies'
 
 interface Props {
   project: UIProjectDetail
 }
 const props = defineProps<Props>()
+
+// AAAK two-level funding: show the Level-1 category label, falling back to the legacy
+// funding-source name for projects created before the split (same rule as the COI index).
+const fundingSourceLabel = computed(() =>
+  props.project.primaryFundingSource
+    ? labelForPrimaryFundingSource(props.project.primaryFundingSource)
+    : props.project.fundSource,
+)
 
 function fmtCurrency(v: string | number | null | undefined): string {
   if (v == null || v === '') return '—'
@@ -67,7 +76,7 @@ const statusColor = computed(() => {
       <v-col cols="12" md="8">
         <v-card-text>
           <div class="d-flex align-center ga-2 flex-wrap mb-2">
-            <h2 class="text-h5 font-weight-bold mb-0">{{ project.title }}</h2>
+            <h2 class="text-h5 font-weight-bold mb-0">{{ project.projectName }}</h2>
             <v-chip :color="statusColor" size="small" variant="tonal">{{ project.status || '—' }}</v-chip>
             <v-chip v-if="project.subcategory" size="small" variant="outlined">{{ project.subcategory }}</v-chip>
           </div>
@@ -80,7 +89,7 @@ const statusColor = computed(() => {
             </v-col>
             <v-col cols="12" sm="6">
               <div class="text-caption text-grey">Funding Source</div>
-              <div class="text-body-2">{{ project.fundingSource || '—' }}</div>
+              <div class="text-body-2">{{ fundingSourceLabel || '—' }}</div>
             </v-col>
             <v-col cols="12" sm="6">
               <div class="text-caption text-grey">Start Date</div>
@@ -125,7 +134,7 @@ const statusColor = computed(() => {
         <v-col cols="6" md="3">
           <v-card variant="tonal" color="info" class="pa-3">
             <div class="text-caption text-grey-darken-1">Contract Amount</div>
-            <div class="text-h6 font-weight-bold">{{ fmtCurrency(project.contractAmount) }}</div>
+            <div class="text-h6 font-weight-bold">{{ fmtCurrency(project.totalContractAmount) }}</div>
           </v-card>
         </v-col>
         <v-col cols="6" md="3">

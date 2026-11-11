@@ -100,7 +100,6 @@ const emit = defineEmits<{ 'update:modelValue': [value: StagedQueue] }>()
 
 const api = useApi()
 const toast = useToast()
-const filter = useAttachmentFilter()
 const { public: { apiBase } } = useRuntimeConfig()
 
 const isStaging = computed(() => props.mode === 'staging')
@@ -202,10 +201,12 @@ const isLink = (d: HubDoc) =>
   d.mimeType === 'application/x-external-link' ||
   d.documentType === 'link'
 
+// The global search does not narrow these: it renders its own results panel, and otherDocs
+// also feeds the checklist's Miscellaneous count, which must stay a true total.
 const otherDocs = computed(() =>
-  allDocs.value.filter((d) => !managedCodes.value.has(d.documentType) && !isLink(d) && filter.matchesDoc(d)),
+  allDocs.value.filter((d) => !managedCodes.value.has(d.documentType) && !isLink(d)),
 )
-const documentLinks = computed(() => allDocs.value.filter((d) => isLink(d) && filter.matchesDoc(d)))
+const documentLinks = computed(() => allDocs.value.filter((d) => isLink(d)))
 
 // ── Repository card stats ───────────────────────────────────
 function repoStats(codes: string[]) {
@@ -235,8 +236,12 @@ function openRepo(title: string, icon: string, color: string, typeCodes: string[
 function openMiscRepo(expand = false) {
   openRepo('Miscellaneous & Uncategorized', 'mdi-paperclip', 'blue-grey', ['__MISC__'], expand)
 }
+// Max-reduce rather than otherDocs[0]: the documents endpoint does not promise an order.
 const miscLatestUpload = computed(() =>
-  otherDocs.value.length > 0 ? (otherDocs.value[0].createdAt ?? null) : null,
+  otherDocs.value.reduce<string | null>((acc, d) => {
+    if (!d.createdAt) return acc
+    return !acc || d.createdAt > acc ? d.createdAt : acc
+  }, null),
 )
 const activeRepoDocs = computed(() => {
   // WWW-C: '__MISC__' sentinel → return all non-managed docs (otherDocs / Miscellaneous)
@@ -808,6 +813,168 @@ const sections = computed(() => {
   return base
 })
 
+// ── Document-type search ────────────────────────────────────
+// The search box finds repository CARDS (document types), not uploaded files. While a query
+// is active the section tabs give way to the matching cards from every section, each one
+// the same CiRepositoryCard the tabs render, so it opens the same repository modal. File
+// search inside a repository is the modal's own search box.
+
+interface RepoTarget {
+  title: string
+  icon: string
+  color: string
+  typeCodes: string[]
+  sectionLabel: string
+}
+
+/**
+ * The repository card a document type is shown under, with the same title, icon and colour
+ * the card itself passes to openRepo — so opening from a search result lands in the same
+ * modal the user would reach by clicking that card.
+ */
+function repoForType(code: string): RepoTarget | null {
+  const key = keyDocCardDefs.find((k) => k.typeCode === code)
+  if (key) return { title: key.label, icon: key.icon, color: key.color, typeCodes: [code], sectionLabel: 'Key Documents' }
+  if (otherKeyCodes.value.includes(code)) {
+    return { title: 'Other Key Documents', icon: 'mdi-file-star-outline', color: 'warning', typeCodes: otherKeyCodes.value, sectionLabel: 'Key Documents' }
+  }
+  const cks = customSections.value.find((s) => s.typeCode === code)
+  if (cks) return { title: cks.label, icon: 'mdi-folder-plus-outline', color: 'blue-grey', typeCodes: [code], sectionLabel: 'Key Documents' }
+  const sg = supportingTemplateGroups.value.find((g) => codesForGroup(g.key).includes(code))
+  if (sg) {
+    return { title: typeCodeToLabel.value[code] ?? code, icon: sg.icon, color: sg.color, typeCodes: [code], sectionLabel: 'Supporting Documents' }
+  }
+  const css = customSupportingSections.value.find((s) => s.typeCode === code)
+  if (css) return { title: css.label, icon: 'mdi-folder-outline', color: 'blue-grey', typeCodes: [code], sectionLabel: 'Supporting Documents' }
+  if (cpesCodes.value.includes(code)) {
+    return { title: typeCodeToLabel.value[code] ?? code, icon: 'mdi-certificate-outline', color: 'teal', typeCodes: [code], sectionLabel: 'Compliance Repository' }
+  }
+  return null
+}
+
+/** One matching repository card in the search results. */
+interface TypeCardResult {
+  /** Dedupe key: the type code, or a sentinel for cards spanning several codes. */
+  key: string
+  title: string
+  icon: string
+  color: string
+  typeCodes: string[]
+  sectionLabel: string
+  sectionOrder: number
+  sortOrder: number
+  templateUrl: string | null
+}
+
+const SECTION_ORDER: Record<string, number> = {
+  'Key Documents': 0,
+  'Supporting Documents': 1,
+  'Compliance Repository': 2,
+  'Other Document Types': 3,
+  'Miscellaneous & Uncategorized': 4,
+}
+
+const typeSearch = useDocumentTypeSearch()
+
+/**
+ * Cards for the types the server matched.
+ *
+ * Each card covers exactly one type code, even for types the tabs fold into the combined
+ * "Other Key Documents" card: the user searched for that type, so its repository should
+ * show only that type's files. Section, icon and colour still come from repoForType, so
+ * a result looks like the card it corresponds to in the tabs.
+ *
+ * If the request failed, the taxonomy the hub already loaded is matched locally instead
+ * (same three fields the endpoint matches), so search degrades rather than going blank.
+ */
+const serverTypeCards = computed<TypeCardResult[]>(() => {
+  const q = typeSearch.query.value.toLowerCase()
+  const hits = typeSearch.failed.value
+    ? allDocTypes.value.filter((t) =>
+        [t.groupLabel, t.typeCode, t.typeLabel].some((f) => (f ?? '').toLowerCase().includes(q)),
+      )
+    : typeSearch.hits.value
+  return hits.map((h) => {
+    const repo = repoForType(h.typeCode)
+    const sectionLabel = repo?.sectionLabel ?? 'Other Document Types'
+    // Prefer the hub's own taxonomy row: its templateUrl is already qualified with apiBase.
+    const local = allDocTypes.value.find((t) => t.typeCode === h.typeCode)
+    return {
+      key: h.typeCode,
+      title: h.typeLabel,
+      icon: repo?.icon ?? 'mdi-file-document-outline',
+      color: repo?.color ?? 'blue-grey',
+      typeCodes: [h.typeCode],
+      sectionLabel,
+      sectionOrder: SECTION_ORDER[sectionLabel] ?? 99,
+      sortOrder: h.sortOrder ?? 0,
+      templateUrl: local?.templateUrl ?? (qualifyBackendUrl(h.templateUrl, apiBase) || null),
+    }
+  })
+})
+
+/**
+ * Cards the document-type table cannot return, matched locally by the title shown on the card:
+ * per-project custom sections (CKS_/CSS_ codes live on the project, not in the taxonomy),
+ * the key-document cards, "Other Key Documents" and "Miscellaneous & Uncategorized".
+ */
+const localTypeCards = computed<TypeCardResult[]>(() => {
+  const q = typeSearch.query.value.toLowerCase()
+  if (!q) return []
+  const hit = (s: string) => s.toLowerCase().includes(q)
+  const cards: TypeCardResult[] = []
+  const add = (c: Omit<TypeCardResult, 'sectionOrder' | 'templateUrl' | 'sortOrder'> & { sortOrder?: number }) =>
+    cards.push({ sortOrder: 0, templateUrl: null, ...c, sectionOrder: SECTION_ORDER[c.sectionLabel] ?? 99 })
+
+  keyDocCardDefs.forEach((d, i) => {
+    if (hit(d.label)) add({ key: d.typeCode, title: d.label, icon: d.icon, color: d.color, typeCodes: [d.typeCode], sectionLabel: 'Key Documents', sortOrder: i })
+  })
+  if (hit('Other Key Documents') && otherKeyCodes.value.length) {
+    add({ key: '__OTHER_KEY__', title: 'Other Key Documents', icon: 'mdi-file-star-outline', color: 'warning', typeCodes: otherKeyCodes.value, sectionLabel: 'Key Documents', sortOrder: 50 })
+  }
+  customSections.value.forEach((s) => {
+    if (hit(s.label)) add({ key: s.typeCode, title: s.label, icon: 'mdi-folder-plus-outline', color: 'blue-grey', typeCodes: [s.typeCode], sectionLabel: 'Key Documents', sortOrder: 100 })
+  })
+  customSupportingSections.value.forEach((s) => {
+    if (hit(s.label)) add({ key: s.typeCode, title: s.label, icon: 'mdi-folder-outline', color: 'blue-grey', typeCodes: [s.typeCode], sectionLabel: 'Supporting Documents', sortOrder: 100 })
+  })
+  if (['Miscellaneous', 'Uncategorized'].some(hit)) {
+    add({ key: '__MISC__', title: 'Miscellaneous & Uncategorized', icon: 'mdi-paperclip', color: 'blue-grey', typeCodes: ['__MISC__'], sectionLabel: 'Miscellaneous & Uncategorized' })
+  }
+  return cards
+})
+
+/** Server and local matches, deduped by key and grouped by hub section in tab order. */
+const typeResultGroups = computed(() => {
+  if (!typeSearch.isActive.value) return []
+  const byKey = new Map<string, TypeCardResult>()
+  for (const c of [...serverTypeCards.value, ...localTypeCards.value]) {
+    if (!byKey.has(c.key)) byKey.set(c.key, c)
+  }
+  const sorted = [...byKey.values()].sort(
+    (a, b) => a.sectionOrder - b.sectionOrder || a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
+  )
+  const groups: { sectionLabel: string; cards: TypeCardResult[] }[] = []
+  for (const c of sorted) {
+    const last = groups.at(-1)
+    if (last && last.sectionLabel === c.sectionLabel) last.cards.push(c)
+    else groups.push({ sectionLabel: c.sectionLabel, cards: [c] })
+  }
+  return groups
+})
+const typeResultCount = computed(() => typeResultGroups.value.reduce((n, g) => n + g.cards.length, 0))
+
+/** Card stats; the Miscellaneous card counts unclassified files rather than a type code. */
+function statsForResult(c: TypeCardResult) {
+  if (c.key === '__MISC__') return { docCount: otherDocs.value.length, latestUpload: miscLatestUpload.value }
+  return repoStats(c.typeCodes)
+}
+
+function openTypeResult(c: TypeCardResult, expand = false) {
+  if (c.key === '__MISC__') openMiscRepo(expand)
+  else openRepo(c.title, c.icon, c.color, c.typeCodes, expand)
+}
+
 // SSS-D8: Supporting Documents now use the repository-card model (SSS-C), not the
 // folder-tree. The preset CONTAINER/FORM seeding (HHH-G/PPP-C/RRR-A) is retired —
 // no longer seeded on the 'supporting' watch. CiFolderRepository remains only in the
@@ -850,36 +1017,27 @@ defineExpose({ fetchDocuments, fetchGallery })
 
 <template>
   <div>
-    <!-- Global filter bar (DDD-B: responsive grid — no label collision / clipping) -->
+    <!-- Document-type search: finds repository cards across every tab. -->
     <v-row dense class="mb-3 align-center">
-      <v-col cols="12" sm="6" md="5">
+      <v-col cols="12" sm="8" md="6">
         <v-text-field
-          v-model="filter.searchText.value"
+          v-model="typeSearch.searchText.value"
           prepend-inner-icon="mdi-magnify"
-          placeholder="Search attachments by name, caption, or type…"
+          placeholder="Search document types (e.g. Feasibility Study, Orders, CPES)…"
           variant="outlined"
           density="compact"
           hide-details
           single-line
           clearable
           clear-icon="mdi-close-circle-outline"
+          :loading="typeSearch.loading.value"
         />
-      </v-col>
-      <v-col cols="6" sm="3" md="3">
-        <v-text-field v-model="filter.filterDateFrom.value" type="date" label="From" variant="outlined" density="compact" hide-details style="min-width: 140px" />
-      </v-col>
-      <v-col cols="6" sm="3" md="3">
-        <v-text-field v-model="filter.filterDateTo.value" type="date" label="To" variant="outlined" density="compact" hide-details style="min-width: 140px" />
-      </v-col>
-      <v-col cols="12" md="1" class="d-flex justify-end">
-        <v-btn v-if="filter.activeCount.value" variant="text" size="small" prepend-icon="mdi-filter-off" @click="filter.reset()">
-          Clear ({{ filter.activeCount.value }})
-        </v-btn>
       </v-col>
     </v-row>
 
-    <!-- Internal section navigation -->
-    <v-tabs v-model="activeSection" color="primary" density="comfortable" show-arrows class="mb-3">
+    <!-- Internal section navigation. v-show, not v-if: the checklist window item is eager so
+         checklistRef stays mounted for refresh() after uploads, including during a search. -->
+    <v-tabs v-show="!typeSearch.isActive.value" v-model="activeSection" color="primary" density="comfortable" show-arrows class="mb-3">
       <v-tab v-for="s in sections" :key="s.value" :value="s.value">
         <v-icon :icon="s.icon" start size="small" />{{ s.label }}
       </v-tab>
@@ -949,15 +1107,58 @@ defineExpose({ fetchDocuments, fetchGallery })
       </div>
     </v-alert>
 
-      <v-window v-model="activeSection">
+    <!-- ===== Document-type search results (replace the tabs while a query is active) ===== -->
+    <v-card v-if="typeSearch.isActive.value" variant="outlined" class="mb-3">
+      <v-card-title class="d-flex align-center ga-2 text-body-1">
+        <v-icon icon="mdi-folder-search-outline" size="small" />Matching repositories
+        <v-chip v-if="!typeSearch.loading.value" size="x-small" variant="tonal" color="primary">{{ typeResultCount }}</v-chip>
+        <v-spacer />
+        <v-btn variant="text" size="small" prepend-icon="mdi-arrow-left" @click="typeSearch.reset()">
+          Back to sections
+        </v-btn>
+      </v-card-title>
+      <v-divider />
+      <v-progress-linear v-if="typeSearch.loading.value" indeterminate color="primary" />
+      <v-card-text>
+        <v-alert v-if="typeSearch.failed.value" type="warning" variant="tonal" density="compact" class="mb-3" icon="mdi-cloud-alert-outline">
+          Document-type search is unavailable right now; showing matches from the types already loaded on this page.
+        </v-alert>
+
+        <template v-for="g in typeResultGroups" :key="g.sectionLabel">
+          <div class="text-overline text-medium-emphasis mb-1">{{ g.sectionLabel }} ({{ g.cards.length }})</div>
+          <v-row dense class="mb-3">
+            <v-col v-for="c in g.cards" :key="c.key" cols="12" md="6" lg="3">
+              <CiRepositoryCard
+                :title="c.title" :icon="c.icon" :color="c.color"
+                :doc-count="statsForResult(c).docCount"
+                :latest-upload="statsForResult(c).latestUpload"
+                :template-url="c.templateUrl"
+                :can-upload="canUpload"
+                :uploads="uploadsForCodes(c.typeCodes)"
+                @open="openTypeResult(c)"
+                @upload="openTypeResult(c, true)"
+              />
+            </v-col>
+          </v-row>
+        </template>
+
+        <div v-if="!typeResultCount && !typeSearch.loading.value" class="text-center text-medium-emphasis py-6">
+          <v-icon icon="mdi-folder-search-outline" size="32" class="mb-2" />
+          <div class="text-body-2">No document types match "{{ typeSearch.query.value }}".</div>
+          <div class="text-caption">Search covers document type names, codes and group names. To find a file, open its repository and use the search there.</div>
+        </div>
+      </v-card-text>
+    </v-card>
+
+    <v-window v-show="!typeSearch.isActive.value" v-model="activeSection">
       <!-- ===== Section 1: Key Documents ===== -->
       <v-window-item value="key">
         <v-row dense>
           <v-col v-for="def in keyDocCardDefs" :key="def.typeCode" cols="12" md="6" lg="3">
             <CiRepositoryCard
               :title="def.label" :icon="def.icon" :color="def.color"
-              :doc-count="keyCardStats[def.typeCode].docCount"
-              :latest-upload="keyCardStats[def.typeCode].latestUpload"
+              :doc-count="keyCardStats[def.typeCode]?.docCount ?? 0"
+              :latest-upload="keyCardStats[def.typeCode]?.latestUpload ?? null"
               :can-upload="canUpload"
               :uploads="uploadsForCodes([def.typeCode])"
               @open="openRepo(def.label, def.icon, def.color, [def.typeCode])"
@@ -979,8 +1180,8 @@ defineExpose({ fetchDocuments, fetchGallery })
             <div class="position-relative" style="height:100%">
               <CiRepositoryCard
                 :title="sec.label" icon="mdi-folder-plus-outline" color="blue-grey"
-                :doc-count="customSectionStats[sec.typeCode].docCount"
-                :latest-upload="customSectionStats[sec.typeCode].latestUpload"
+                :doc-count="customSectionStats[sec.typeCode]?.docCount ?? 0"
+                :latest-upload="customSectionStats[sec.typeCode]?.latestUpload ?? null"
                 :can-upload="canUpload"
                 :uploads="uploadsForCodes([sec.typeCode])"
                 @open="openRepo(sec.label, 'mdi-folder-plus-outline', 'blue-grey', [sec.typeCode])"
