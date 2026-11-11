@@ -1,16 +1,24 @@
 import {
   Controller,
+  DefaultValuePipe,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  ParseBoolPipe,
   ParseUUIDPipe,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   CurrentUser,
@@ -39,8 +47,27 @@ export class DocumentTypeController {
   @Get('document-types')
   @Roles() // PHASE BBBE (Track 1): read open to any authenticated user (visibility layer)
   @ApiOperation({ summary: 'List all CPES document types (reference)' })
-  findDocumentTypes() {
-    return this.service.findDocumentTypes();
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description:
+      'Case-insensitive match on group label, type code or type label',
+  })
+  @ApiQuery({
+    name: 'isActive',
+    required: false,
+    type: Boolean,
+    description: 'true (default) = active types only; false = all types',
+  })
+  findDocumentTypes(
+    @Query('search') search?: string,
+    // Query strings arrive as text; ParseBoolPipe turns 'true'/'false' into a boolean and
+    // rejects anything else with 400. Defaulting to true keeps existing callers unchanged.
+    @Query('isActive', new DefaultValuePipe(true), ParseBoolPipe)
+    isActive?: boolean,
+  ) {
+    return this.service.findDocumentTypes(search, isActive);
   }
 
   // ZX-3: Grouped document types for the attachment hub
