@@ -90,15 +90,28 @@ const typeSelectItems = computed(() =>
 )
 function typeLabel(code?: string): string {
   if (!code) return ''
-  return props.docTypes.find((t) => t.typeCode === code)?.typeLabel ?? code
+  const fromTaxonomy = props.docTypes.find((t) => t.typeCode === code)?.typeLabel
+  if (fromTaxonomy) return fromTaxonomy
+  // Custom key/supporting sections (CKS_/CSS_<uuid>) are not in the taxonomy; their
+  // single-code repository is titled with the section's label, which is what users search.
+  if (props.typeCodes.length === 1 && props.typeCodes[0] === code) return props.title
+  return code
 }
 // Blank-form templates available for this repository.
 const templates = computed(() => relevantTypes.value.filter((t) => !!t.templateUrl))
 
-// AAA-H-1: modal-local search / filter / sort
-const modalSearch = ref('')
+// AAA-H-1: modal-local file search / type filter / sort. The search text matching lives in
+// useAttachmentFilter (file name, description, type label/code).
+const filter = useAttachmentFilter()
 const modalFilterType = ref<string | null>(null)
 const modalSort = ref<'date-desc' | 'date-asc' | 'name-asc'>('date-desc')
+
+const filteredStaged = computed(() => {
+  if (!filter.isActive.value) return props.staged
+  return props.staged.filter((s) =>
+    filter.matchesDoc({ fileName: s.fileName, documentType: s.documentType }, typeLabel(s.documentType)),
+  )
+})
 
 // Type filter dropdown shows only types actually present in this repository.
 const typeFilterItems = computed(() => {
@@ -110,10 +123,7 @@ const typeFilterItems = computed(() => {
 
 const filteredModalDocs = computed(() => {
   let docs = [...props.documents]
-  if (modalSearch.value) {
-    const q = modalSearch.value.toLowerCase()
-    docs = docs.filter((d) => d.fileName.toLowerCase().includes(q) || (d.description ?? '').toLowerCase().includes(q))
-  }
+  if (filter.isActive.value) docs = docs.filter((d) => filter.matchesDoc(d, typeLabel(d.documentType)))
   if (modalFilterType.value) docs = docs.filter((d) => d.documentType === modalFilterType.value)
   if (modalSort.value === 'date-asc') docs.sort((a, b) => ((a.createdAt ?? '') < (b.createdAt ?? '') ? -1 : 1))
   else if (modalSort.value === 'name-asc') docs.sort((a, b) => a.fileName.localeCompare(b.fileName))
@@ -130,7 +140,15 @@ const fileModalDocs = computed(() => filteredModalDocs.value.filter(d => !isLink
 const linkModalDocs = computed(() => filteredModalDocs.value.filter(d => isLinkDoc(d)))
 const pagedModalDocs = computed(() => fileModalDocs.value.slice(0, modalDisplayLimit.value))
 const hasMoreModalDocs = computed(() => fileModalDocs.value.length > modalDisplayLimit.value)
-watch([modalSearch, modalFilterType], () => { modalDisplayLimit.value = MODAL_PAGE_SIZE })
+watch(
+  [() => filter.query.value, modalFilterType],
+  () => { modalDisplayLimit.value = MODAL_PAGE_SIZE },
+)
+const hasActiveFilters = computed(() => filter.isActive.value || !!modalFilterType.value)
+function clearFilters() {
+  filter.reset()
+  modalFilterType.value = null
+}
 
 // ZZZ-C: copy external link URL to clipboard
 const toast = useToast ? useToast() : { success: (m: string) => console.log(m), error: (m: string) => console.error(m) }
@@ -220,6 +238,10 @@ watch(
       // instance; a stale uploadType from a previously-opened repo would file uploads
       // under the wrong documentType, making them invisible in the current repository.
       uploadType.value = props.typeCodes[0] ?? ''
+      // The modal is a shared instance, so filters from the previously opened repository
+      // would otherwise carry over and hide this repository's files.
+      filter.reset()
+      modalFilterType.value = null
       modalDisplayLimit.value = MODAL_PAGE_SIZE
       fetchRecentActivity()
     }
@@ -296,9 +318,9 @@ async function downloadDoc(doc: RepoDoc) {
       <v-row dense class="px-4 pt-3 align-center">
         <v-col cols="12" sm="6" md="5">
           <v-text-field
-            v-model="modalSearch"
+            v-model="filter.searchText.value"
             prepend-inner-icon="mdi-magnify"
-            placeholder="Search files…"
+            placeholder="Search files in this repository…"
             variant="outlined" density="compact" hide-details single-line clearable
             clear-icon="mdi-close-circle-outline"
           />
@@ -465,10 +487,10 @@ async function downloadDoc(doc: RepoDoc) {
         </v-expand-transition>
 
         <!-- Staged documents (new.vue) -->
-        <template v-if="staged.length">
-          <div class="text-overline text-medium-emphasis">Pending ({{ staged.length }})</div>
+        <template v-if="filteredStaged.length">
+          <div class="text-overline text-medium-emphasis">Pending ({{ filteredStaged.length }})</div>
           <v-list density="compact" class="mb-3">
-            <v-list-item v-for="s in staged" :key="s.tempId">
+            <v-list-item v-for="s in filteredStaged" :key="s.tempId">
               <template #prepend><v-icon icon="mdi-file-clock-outline" color="orange" size="small" /></template>
               <v-list-item-title>{{ s.fileName }}</v-list-item-title>
               <v-list-item-subtitle class="text-caption">{{ typeLabel(s.documentType) }} · will upload on save</v-list-item-subtitle>
@@ -478,9 +500,13 @@ async function downloadDoc(doc: RepoDoc) {
         </template>
 
         <!-- ZZZ-C: FILES section (uploaded files only, links in separate section below) -->
-        <div v-if="!fileModalDocs.length && !linkModalDocs.length" class="text-center text-grey py-10">
+        <div v-if="!fileModalDocs.length && !linkModalDocs.length && !filteredStaged.length" class="text-center text-grey py-10">
           <v-icon icon="mdi-file-outline" size="40" color="grey-lighten-1" />
-          <div class="text-body-2 mt-2">No files match the current filters.</div>
+          <template v-if="hasActiveFilters">
+            <div class="text-body-2 mt-2">No files match the current filters.</div>
+            <v-btn variant="text" size="small" class="mt-1" prepend-icon="mdi-filter-off" @click="clearFilters">Clear filters</v-btn>
+          </template>
+          <div v-else class="text-body-2 mt-2">No files in this repository yet.</div>
         </div>
 
         <template v-if="fileModalDocs.length">

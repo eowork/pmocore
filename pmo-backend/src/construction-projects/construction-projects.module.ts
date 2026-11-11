@@ -43,6 +43,8 @@ import {
   UserModuleAssignment,
   UserPermissionOverride,
 } from '../database/entities';
+import { DocumentFolderController } from './controller/document-folder.controller';
+import { DocumentFolderService } from './service/document-folder.service';
 
 @Module({
   imports: [
@@ -82,6 +84,7 @@ import {
     DocumentChecklistController,
     ConstructionProjectsController,
     PublicConstructionController,
+    DocumentFolderController,
   ],
   providers: [
     ConstructionProjectsService,
@@ -95,6 +98,7 @@ import {
     GalleryService,
     DocumentTypeService,
     DocumentChecklistService,
+    DocumentFolderService,
   ],
   exports: [ConstructionProjectsService, ConstructionAccessService],
 })
